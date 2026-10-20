@@ -2,6 +2,14 @@
 
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { stripHtmlTags } from "@/lib/posts/reading-time";
+import {
+  SEEK_SKIP_SECONDS,
+  clampSeekTime,
+  keyboardSeekTime,
+  seekTimeFromClientX,
+  shouldShowStoredAudioSeekControls,
+  type SeekKeyboardKey,
+} from "./dispatch-audio-player-seek";
 
 export type GoogleVoice = "Puck" | "Aoede";
 
@@ -119,7 +127,13 @@ export function DispatchAudioPlayer({
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const isActiveRef = useRef(true);
   const progressBarRef = useRef<HTMLDivElement | null>(null);
+  const isScrubbingRef = useRef(false);
   const playLiveNarrationRef = useRef<(() => void) | null>(null);
+
+  const showSeekControls = shouldShowStoredAudioSeekControls({
+    hasStaticAudioSrc: Boolean(staticAudioSrc),
+    useBrowserSpeech,
+  });
 
   const stopAllPlayback = useCallback(() => {
     stopDispatchAudioResources({
@@ -323,17 +337,86 @@ export function DispatchAudioPlayer({
     }
   };
 
-  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!progressBarRef.current || duration <= 0) return;
-    const rect = progressBarRef.current.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const ratio = Math.max(0, Math.min(1, clickX / rect.width));
-    const seekTime = ratio * duration;
+  const applySeekTime = useCallback(
+    (seekTime: number) => {
+      if (!showSeekControls || duration <= 0) return;
+      const clamped = clampSeekTime(0, seekTime, duration);
+      setCurrentTime(clamped);
+      if (audioRef.current) {
+        audioRef.current.currentTime = clamped;
+      }
+    },
+    [duration, showSeekControls],
+  );
 
-    setCurrentTime(seekTime);
-    if (audioRef.current && !useBrowserSpeech) {
-      audioRef.current.currentTime = seekTime;
+  const seekFromClientX = useCallback(
+    (clientX: number) => {
+      if (!progressBarRef.current || duration <= 0) return;
+      const rect = progressBarRef.current.getBoundingClientRect();
+      applySeekTime(seekTimeFromClientX(clientX, rect, duration));
+    },
+    [applySeekTime, duration],
+  );
+
+  const handleProgressPointerDown = (
+    e: React.PointerEvent<HTMLDivElement>,
+  ) => {
+    if (!showSeekControls || duration <= 0) return;
+    e.preventDefault();
+    isScrubbingRef.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    seekFromClientX(e.clientX);
+  };
+
+  const handleProgressPointerMove = (
+    e: React.PointerEvent<HTMLDivElement>,
+  ) => {
+    if (!isScrubbingRef.current || !showSeekControls) return;
+    seekFromClientX(e.clientX);
+  };
+
+  const handleProgressPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isScrubbingRef.current) return;
+    isScrubbingRef.current = false;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
     }
+  };
+
+  const handleProgressKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!showSeekControls || duration <= 0) return;
+    const key = e.key;
+    if (
+      key !== "ArrowLeft" &&
+      key !== "ArrowRight" &&
+      key !== "Home" &&
+      key !== "End"
+    ) {
+      return;
+    }
+    e.preventDefault();
+    const next = keyboardSeekTime(
+      currentTime,
+      duration,
+      key as SeekKeyboardKey,
+    );
+    if (next !== null) {
+      applySeekTime(next);
+    }
+  };
+
+  const handleSkipBackward = () => {
+    if (!showSeekControls) return;
+    applySeekTime(
+      clampSeekTime(currentTime, -SEEK_SKIP_SECONDS, duration),
+    );
+  };
+
+  const handleSkipForward = () => {
+    if (!showSeekControls) return;
+    applySeekTime(
+      clampSeekTime(currentTime, SEEK_SKIP_SECONDS, duration),
+    );
   };
 
   const formatSeconds = (sec: number) => {
@@ -349,24 +432,46 @@ export function DispatchAudioPlayer({
     <div className="my-6 rounded-2xl border border-zinc-200/90 bg-gradient-to-r from-zinc-50 via-zinc-100/60 to-zinc-50 p-4 shadow-2xs dark:border-zinc-800 dark:from-zinc-900/90 dark:via-zinc-900/50 dark:to-zinc-900/90">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => void handleTogglePlay()}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white shadow-sm transition hover:scale-105 hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-            aria-label={
-              isPlaying
-                ? "Pause audio narration"
-                : staticAudioSrc
-                  ? "Play audio narration"
-                  : "Play audio narration with browser speech"
-            }
-          >
-            {isPlaying ? (
-              <span className="text-sm">⏸</span>
-            ) : (
-              <span className="ml-0.5 text-sm">▶</span>
-            )}
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => void handleTogglePlay()}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white shadow-sm transition hover:scale-105 hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              aria-label={
+                isPlaying
+                  ? "Pause audio narration"
+                  : staticAudioSrc
+                    ? "Play audio narration"
+                    : "Play audio narration with browser speech"
+              }
+            >
+              {isPlaying ? (
+                <span className="text-sm">⏸</span>
+              ) : (
+                <span className="ml-0.5 text-sm">▶</span>
+              )}
+            </button>
+            {showSeekControls ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleSkipBackward}
+                  className="rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs font-medium text-zinc-700 shadow-xs hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  aria-label="Seek back 10 seconds"
+                >
+                  −10s
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSkipForward}
+                  className="rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs font-medium text-zinc-700 shadow-xs hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  aria-label="Seek forward 10 seconds"
+                >
+                  +10s
+                </button>
+              </>
+            ) : null}
+          </div>
           <div>
             <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
               Listen to Dispatch
@@ -393,29 +498,36 @@ export function DispatchAudioPlayer({
         <p className="mt-2 text-xs text-zinc-500">{statusMessage ?? "Loading…"}</p>
       )}
 
-      <div className="mt-3 flex items-center gap-3">
-        <span className="w-10 text-right text-xs tabular-nums text-zinc-500">
-          {formatSeconds(currentTime)}
-        </span>
-        <div
-          ref={progressBarRef}
-          role="slider"
-          aria-valuemin={0}
-          aria-valuemax={duration}
-          aria-valuenow={currentTime}
-          tabIndex={0}
-          onClick={handleSeek}
-          className="relative h-2 flex-1 cursor-pointer rounded-full bg-zinc-200 dark:bg-zinc-700"
-        >
+      {showSeekControls ? (
+        <div className="mt-3 flex items-center gap-3">
+          <span className="w-10 text-right text-xs tabular-nums text-zinc-500">
+            {formatSeconds(currentTime)}
+          </span>
           <div
-            className="absolute inset-y-0 left-0 rounded-full bg-zinc-900 dark:bg-zinc-100"
-            style={{ width: `${progressPercent}%` }}
-          />
+            ref={progressBarRef}
+            role="slider"
+            aria-label="Playback position"
+            aria-valuemin={0}
+            aria-valuemax={Math.max(0, duration)}
+            aria-valuenow={currentTime}
+            tabIndex={0}
+            onKeyDown={handleProgressKeyDown}
+            onPointerDown={handleProgressPointerDown}
+            onPointerMove={handleProgressPointerMove}
+            onPointerUp={handleProgressPointerUp}
+            onPointerCancel={handleProgressPointerUp}
+            className="relative h-2 flex-1 touch-none cursor-pointer rounded-full bg-zinc-200 dark:bg-zinc-700"
+          >
+            <div
+              className="absolute inset-y-0 left-0 rounded-full bg-zinc-900 dark:bg-zinc-100"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+          <span className="w-10 text-xs tabular-nums text-zinc-500">
+            {formatSeconds(duration)}
+          </span>
         </div>
-        <span className="w-10 text-xs tabular-nums text-zinc-500">
-          {formatSeconds(duration)}
-        </span>
-      </div>
+      ) : null}
     </div>
   );
 }
