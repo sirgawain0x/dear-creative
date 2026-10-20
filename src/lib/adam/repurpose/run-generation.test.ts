@@ -284,7 +284,7 @@ describe("runRepurposeGeneration", () => {
     expect(stored?.status).toBe("failed");
   });
 
-  it("marks row failed when text type is unsupported in this release (501)", async () => {
+  it("marks row failed when media generation fails without API key", async () => {
     setRepurposeEnabledForTests(true);
     const db = await createPostsTestDb();
     await insertPost(db, {
@@ -306,7 +306,7 @@ describe("runRepurposeGeneration", () => {
         outputType: "audio_overview",
         auth: adamAuth,
       }),
-    ).rejects.toMatchObject({ httpStatus: 501 });
+    ).rejects.toMatchObject({ httpStatus: 500 });
 
     const stored = await getRepurposeOutputForPost(db, row.id, "audio_overview");
     expect(stored?.status).toBe("failed");
