@@ -585,6 +585,57 @@ export const predictions = sqliteTable(
 export type PredictionRecord = typeof predictions.$inferSelect;
 export type NewPredictionRecord = typeof predictions.$inferInsert;
 
+export const postRepurposeOutputStatusEnum = [
+  "generating",
+  "ready",
+  "failed",
+] as const;
+export type PostRepurposeOutputStatus =
+  (typeof postRepurposeOutputStatusEnum)[number];
 
+export const postRepurposeOutputTypeEnum = [
+  "audio_overview",
+  "slide_deck",
+  "video_overview",
+  "mind_map",
+  "report",
+  "flashcards",
+  "quiz",
+  "data_table",
+  "infographic",
+] as const;
+
+export const postRepurposeOutputs = sqliteTable(
+  "post_repurpose_outputs",
+  {
+    id: text("id").primaryKey(),
+    postId: text("post_id")
+      .notNull()
+      .references(() => posts.id, { onDelete: "cascade" }),
+    outputType: text("output_type", {
+      enum: postRepurposeOutputTypeEnum,
+    }).notNull(),
+    status: text("status", { enum: postRepurposeOutputStatusEnum }).notNull(),
+    payloadJson: text("payload_json"),
+    mediaUrl: text("media_url"),
+    mediaMimeType: text("media_mime_type"),
+    errorMessage: text("error_message"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("post_repurpose_outputs_post_type_unique").on(
+      table.postId,
+      table.outputType,
+    ),
+    index("post_repurpose_outputs_post_id_idx").on(table.postId),
+  ],
+);
+
+export type PostRepurposeOutputRecord = typeof postRepurposeOutputs.$inferSelect;
 
 

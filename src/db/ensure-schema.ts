@@ -134,6 +134,20 @@ const IDEMPOTENT_TABLE_STATEMENTS = [
   )`,
   `CREATE INDEX IF NOT EXISTS post_feedback_slug_idx ON post_feedback (slug)`,
   `CREATE INDEX IF NOT EXISTS post_feedback_created_at_idx ON post_feedback (created_at)`,
+  `CREATE TABLE IF NOT EXISTS post_repurpose_outputs (
+    id text PRIMARY KEY NOT NULL,
+    post_id text NOT NULL,
+    output_type text NOT NULL,
+    status text NOT NULL,
+    payload_json text,
+    media_url text,
+    media_mime_type text,
+    error_message text,
+    created_at integer DEFAULT (unixepoch() * 1000) NOT NULL,
+    updated_at integer DEFAULT (unixepoch() * 1000) NOT NULL
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS post_repurpose_outputs_post_type_unique ON post_repurpose_outputs (post_id, output_type)`,
+  `CREATE INDEX IF NOT EXISTS post_repurpose_outputs_post_id_idx ON post_repurpose_outputs (post_id)`,
 ];
 
 const ADDITIVE_POST_COLUMNS: Array<{ name: string; ddl: string }> = [

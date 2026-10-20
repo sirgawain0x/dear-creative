@@ -38,6 +38,7 @@ import {
 } from "@/lib/posts/post-cover-image";
 import { resolveGroveOrIpfsUrl } from "@/lib/storage/lens-grove";
 import { NARRATION_VOICES, voiceLabel } from "@/lib/audio/narration-voices";
+import { RepurposePanel } from "@/app/adam/repurpose-panel";
 
 export type StudioTab = "chat" | "ideas" | "posts" | "approvals" | "schedule";
 type VoiceEngineMode = "google" | "browser";
@@ -4171,6 +4172,11 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                   </p>
                 )}
               </div>
+
+              <RepurposePanel
+                postId={selectedEditPostId}
+                authFetch={authFetch}
+              />
 
               {/* Editor Mode & Formatting Toolbar */}
               <div>
