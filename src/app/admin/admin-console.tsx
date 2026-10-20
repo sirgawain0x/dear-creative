@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useState } from "react";
 import { useAuthSession } from "@/components/providers/app-providers";
+import { AdminPayoutsCard } from "./admin-payouts-card";
 
 export const ADMIN_OWNER_TOOL_LINKS = [
   {
@@ -193,6 +194,7 @@ export function AdminConsole() {
           </div>
         </div>
       ) : null}
+      {isSignedIn ? <AdminPayoutsCard /> : null}
       {session ? (
         <pre className="rounded-xl bg-zinc-100 p-4 text-xs dark:bg-zinc-900">
           {JSON.stringify(session, null, 2)}

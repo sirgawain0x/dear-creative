@@ -5,18 +5,27 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ADMIN_OWNER_TOOL_LINKS, AdminConsole } from "./admin-console";
 
-vi.mock("@/components/providers/app-providers", () => ({
-  useAuthSession: () => ({
-    ready: true,
-    isSignedIn: true,
-    user: { id: "did:privy:test-user" },
-    login: vi.fn(),
-    signOut: vi.fn(),
-    getAccessToken: vi.fn(async () => "test-token"),
-    privyConfigured: true,
-    privyTimedOut: false,
-  }),
+vi.mock("./admin-payouts-card", () => ({
+  AdminPayoutsCard: () => null,
 }));
+
+vi.mock("@/components/providers/app-providers", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/components/providers/app-providers")>();
+  return {
+    ...actual,
+    useAuthSession: () => ({
+      ready: true,
+      isSignedIn: true,
+      user: { id: "did:privy:test-user" },
+      login: vi.fn(),
+      signOut: vi.fn(),
+      getAccessToken: vi.fn(async () => "test-token"),
+      privyConfigured: true,
+      privyTimedOut: false,
+    }),
+  };
+});
 
 describe("AdminConsole owner tools", () => {
   it("lists four owner tool cards including Metrics", () => {
