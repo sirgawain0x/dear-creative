@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requirePrivyAuth } from "@/lib/privy/require-auth";
+import { requireStudioOrAdamAuth } from "@/lib/adam/studio-auth";
 import { isWalletEnabled } from "./feature-flag";
 
 export type AdminWalletApiContext = {
@@ -21,10 +21,10 @@ export async function requireAdminWalletApi(
     return { ok: false, response: walletFeatureDisabledResponse() };
   }
 
-  const auth = await requirePrivyAuth(request, { requireAdmin: true });
+  const auth = await requireStudioOrAdamAuth(request);
   if (!auth.ok) {
     return { ok: false, response: auth.response };
   }
 
-  return { ok: true, ctx: { userId: auth.user.userId } };
+  return { ok: true, ctx: { userId: auth.actor } };
 }

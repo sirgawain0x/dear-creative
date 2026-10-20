@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useAuthSession } from "@/components/providers/app-providers";
-import { resolveStudioBearerToken } from "@/lib/admin/studio-bearer-token";
+import { adminApiAuthorizationHeaders } from "@/lib/admin/admin-api-auth";
 import type { AdminPayoutsSnapshot } from "@/lib/admin/admin-payouts";
 import { AdminPayoutAddressRow } from "./admin-payout-address-row";
 
@@ -31,13 +31,13 @@ export function AdminPayoutsCard() {
       setError(null);
       setData(null);
 
-      const token = await resolveStudioBearerToken({
+      const headers = await adminApiAuthorizationHeaders({
         privyConfigured,
         authenticated,
         getAccessToken,
       });
 
-      if (!isSignedIn || !token) {
+      if (!isSignedIn || !headers) {
         if (!cancelled) {
           setLoading(false);
         }
@@ -47,7 +47,7 @@ export function AdminPayoutsCard() {
       try {
         const response = await fetch("/api/admin/payouts", {
           cache: "no-store",
-          headers: { Authorization: `Bearer ${token}` },
+          headers,
         });
         if (!response.ok) {
           throw new Error(`Failed to load payouts: ${response.status}`);

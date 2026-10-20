@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import QRCode from "qrcode";
+import { useAuthSession } from "@/components/providers/app-providers";
+import { adminApiAuthorizationHeaders } from "@/lib/admin/admin-api-auth";
 
 type WalletSummaryResponse =
   | {
@@ -44,16 +46,21 @@ export type AdminWalletPreviewData = {
 };
 
 type AdminWalletPanelProps = {
-  getAccessToken: () => Promise<string | null>;
   walletEnabled: boolean;
   previewData?: AdminWalletPreviewData;
 };
 
 export function AdminWalletPanel({
-  getAccessToken,
   walletEnabled,
   previewData,
 }: AdminWalletPanelProps) {
+  const {
+    ready,
+    isSignedIn,
+    authenticated,
+    getAccessToken,
+    privyConfigured,
+  } = useAuthSession();
   const [loading, setLoading] = useState(
     () => walletEnabled && !previewData,
   );
@@ -74,12 +81,15 @@ export function AdminWalletPanel({
     }
     setError(null);
     try {
-      const token = await getAccessToken();
-      if (!token) {
-        setError("Sign in with Privy to view wallet data.");
+      const headers = await adminApiAuthorizationHeaders({
+        privyConfigured,
+        authenticated,
+        getAccessToken,
+      });
+      if (!isSignedIn || !headers) {
+        setError("Sign in to view wallet data.");
         return;
       }
-      const headers = { Authorization: `Bearer ${token}` };
       const [summaryRes, historyRes] = await Promise.all([
         fetch("/api/admin/wallet", { headers }),
         fetch("/api/admin/wallet/history", { headers }),
@@ -113,10 +123,17 @@ export function AdminWalletPanel({
     } finally {
       setLoading(false);
     }
-  }, [getAccessToken, previewData, walletEnabled]);
+  }, [
+    authenticated,
+    getAccessToken,
+    isSignedIn,
+    previewData,
+    privyConfigured,
+    walletEnabled,
+  ]);
 
   useEffect(() => {
-    if (!walletEnabled || previewData) {
+    if (!ready || !walletEnabled || previewData) {
       return;
     }
     let cancelled = false;
@@ -129,7 +146,7 @@ export function AdminWalletPanel({
     return () => {
       cancelled = true;
     };
-  }, [fetchWalletFromApi, previewData, walletEnabled]);
+  }, [fetchWalletFromApi, previewData, ready, walletEnabled]);
 
   useEffect(() => {
     if (!previewData?.summary.configured) {
@@ -150,8 +167,12 @@ export function AdminWalletPanel({
     if (!walletEnabled || !summary?.configured) {
       return;
     }
-    const token = await getAccessToken();
-    if (!token) {
+    const headers = await adminApiAuthorizationHeaders({
+      privyConfigured,
+      authenticated,
+      getAccessToken,
+    });
+    if (!headers) {
       return;
     }
     const params = new URLSearchParams();
@@ -163,7 +184,7 @@ export function AdminWalletPanel({
     }
     const response = await fetch(
       `/api/admin/wallet/history?${params.toString()}`,
-      { headers: { Authorization: `Bearer ${token}` } },
+      { headers },
     );
     if (!response.ok) {
       return;

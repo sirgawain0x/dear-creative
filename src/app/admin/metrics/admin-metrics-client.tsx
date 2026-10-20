@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuthSession } from "@/components/providers/app-providers";
-import { resolveStudioBearerToken } from "@/lib/admin/studio-bearer-token";
+import { adminApiAuthorizationHeaders } from "@/lib/admin/admin-api-auth";
 
 export interface MetricsData {
   subscribers: {
@@ -122,13 +122,13 @@ export function AdminMetricsClient() {
       setNeedsSignIn(false);
       setData(null);
 
-      const token = await resolveStudioBearerToken({
+      const headers = await adminApiAuthorizationHeaders({
         privyConfigured,
         authenticated,
         getAccessToken,
       });
 
-      if (!isSignedIn || !token) {
+      if (!isSignedIn || !headers) {
         if (!cancelled) {
           setNeedsSignIn(true);
           setLoading(false);
@@ -139,7 +139,7 @@ export function AdminMetricsClient() {
       try {
         const response = await fetch("/api/admin/metrics", {
           cache: "no-store",
-          headers: { Authorization: `Bearer ${token}` },
+          headers,
         });
         if (!response.ok) {
           throw new Error(`Failed to fetch metrics: ${response.status}`);
