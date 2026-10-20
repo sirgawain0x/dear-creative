@@ -1,16 +1,11 @@
 "use client";
 
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
-import {
-  hasSpeechSynthesis,
-  isKokoroRuntimeSupported,
-  resolveFallbackAfterKokoroFailure,
-  resolvePrimaryListenBackend,
-  type DispatchListenBackend,
-} from "@/lib/audio/dispatch-playback-order";
-import { KokoroPlaybackSession } from "@/lib/audio/kokoro-client";
-import { KOKORO_DEFAULT_VOICE } from "@/lib/audio/kokoro-config";
 import { stripHtmlTags } from "@/lib/posts/reading-time";
+
+export type GoogleVoice = "Puck" | "Aoede";
+
+const BROWSER_SPEECH_VOICE: GoogleVoice = "Puck";
 
 export type DispatchAudioResources = {
   audio: Pick<
@@ -27,12 +22,11 @@ export type DispatchAudioResources = {
   utterance: Pick<SpeechSynthesisUtterance, "onend" | "onerror"> | null;
   abortController: Pick<AbortController, "abort"> | null;
   speechSynthesis?: Pick<SpeechSynthesis, "cancel"> | null;
-  kokoroSession?: { stop: () => Promise<void> } | null;
 };
 
 /**
- * Safely tears down active HTMLAudioElement, Kokoro, Web Speech synthesis, and
- * in-flight requests without triggering spurious `audio.onerror` fallbacks.
+ * Safely tears down active HTMLAudioElement and Web Speech synthesis without
+ * triggering spurious `audio.onerror` fallbacks.
  */
 export function stopDispatchAudioResources(
   resources: DispatchAudioResources,
@@ -43,10 +37,6 @@ export function stopDispatchAudioResources(
     } catch {
       // Ignore abort errors
     }
-  }
-
-  if (resources.kokoroSession) {
-    void resources.kokoroSession.stop();
   }
 
   if (resources.audio) {
@@ -97,24 +87,6 @@ type DispatchAudioPlayerProps = {
   audioVoice?: string | null;
 };
 
-function formatLoadProgress(info: {
-  status: string;
-  file?: string;
-  progress?: number;
-  loaded?: number;
-  total?: number;
-}): string {
-  if (info.status === "progress" && info.total && info.loaded !== undefined) {
-    const pct = Math.round((info.loaded / info.total) * 100);
-    const mb = (info.total / (1024 * 1024)).toFixed(1);
-    return `Downloading Kokoro model (${pct}% of ${mb} MB)…`;
-  }
-  if (info.file) {
-    return `Loading ${info.file}…`;
-  }
-  return "Loading Kokoro voice model…";
-}
-
 export function DispatchAudioPlayer({
   slug,
   title,
@@ -125,120 +97,77 @@ export function DispatchAudioPlayer({
   audioVoice,
 }: DispatchAudioPlayerProps) {
   const staticAudioSrc = audioUrl?.trim() || null;
-  const narratorName = audioVoice?.trim() || "Narrator";
+  const narratorName =
+    audioVoice?.trim() ||
+    (staticAudioSrc ? "Stored narration" : BROWSER_SPEECH_VOICE);
+
+  const plainText = stripHtmlTags(
+    `${title}. ${excerpt ? `${excerpt}. ` : ""}${bodyHtml ?? ""}`,
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [playbackRate, setPlaybackRate] = useState<1 | 1.25 | 1.5>(1);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(listenMinutes * 60);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [activeBackend, setActiveBackend] =
-    useState<DispatchListenBackend | null>(null);
-  const [kokoroDevice, setKokoroDevice] = useState<"webgpu" | "wasm" | null>(
-    null,
-  );
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [playbackRate, setPlaybackRate] = useState<1 | 1.25 | 1.5>(1);
+  const [useBrowserSpeech, setUseBrowserSpeech] = useState(!staticAudioSrc);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const kokoroSessionRef = useRef<KokoroPlaybackSession | null>(null);
-  const kokoroTickRef = useRef<number | null>(null);
-  const playLiveNarrationRef = useRef<(() => Promise<void>) | null>(null);
   const isActiveRef = useRef(true);
-
-  const plainText = `${title}. ${excerpt ? excerpt + ". " : ""}${stripHtmlTags(bodyHtml ?? "")}`;
-
-  const stopKokoroTick = useCallback(() => {
-    if (kokoroTickRef.current !== null) {
-      window.clearInterval(kokoroTickRef.current);
-      kokoroTickRef.current = null;
-    }
-  }, []);
+  const progressBarRef = useRef<HTMLDivElement | null>(null);
+  const playLiveNarrationRef = useRef<(() => void) | null>(null);
 
   const stopAllPlayback = useCallback(() => {
-    stopKokoroTick();
     stopDispatchAudioResources({
       audio: audioRef.current,
       utterance: utteranceRef.current,
-      abortController: abortControllerRef.current,
-      kokoroSession: kokoroSessionRef.current,
+      abortController: null,
     });
-    audioRef.current = null;
-    utteranceRef.current = null;
-    abortControllerRef.current = null;
-    kokoroSessionRef.current = null;
     setIsPlaying(false);
-    setIsLoading(false);
-    setStatusMessage(null);
-    setActiveBackend(null);
-    setCurrentTime(0);
-  }, [stopKokoroTick]);
+  }, []);
 
   useLayoutEffect(() => {
     isActiveRef.current = true;
-
-    const handlePageLeave = () => {
-      isActiveRef.current = false;
-      stopAllPlayback();
-    };
-
-    const handleDocumentClick = (event: MouseEvent) => {
-      if (
-        event.defaultPrevented ||
-        event.button !== 0 ||
-        event.metaKey ||
-        event.ctrlKey ||
-        event.shiftKey ||
-        event.altKey
-      ) {
-        return;
-      }
-      const target = event.target as HTMLElement | null;
-      const anchor = target?.closest?.("a[href]") as HTMLAnchorElement | null;
-      if (!anchor) return;
-      if (anchor.target && anchor.target !== "_self") return;
-      if (anchor.hasAttribute("download")) return;
-
-      try {
-        const destUrl = new URL(anchor.href, window.location.href);
-        if (
-          destUrl.origin === window.location.origin &&
-          destUrl.pathname !== window.location.pathname
-        ) {
-          isActiveRef.current = false;
-          stopAllPlayback();
-        }
-      } catch {
-        // Ignore malformed URLs
-      }
-    };
-
-    window.addEventListener("pagehide", handlePageLeave);
-    window.addEventListener("beforeunload", handlePageLeave);
-    window.addEventListener("popstate", handlePageLeave);
-    document.addEventListener("click", handleDocumentClick, true);
-
     return () => {
       isActiveRef.current = false;
-      window.removeEventListener("pagehide", handlePageLeave);
-      window.removeEventListener("beforeunload", handlePageLeave);
-      window.removeEventListener("popstate", handlePageLeave);
-      document.removeEventListener("click", handleDocumentClick, true);
       stopAllPlayback();
     };
-  }, [slug, stopAllPlayback]);
+  }, [stopAllPlayback, slug]);
 
   const fallbackToBrowserSpeech = useCallback(() => {
     if (!isActiveRef.current) return;
-
-    setActiveBackend("browser-speech-synthesis");
-    setStatusMessage(null);
+    setUseBrowserSpeech(true);
     setIsLoading(false);
+    setStatusMessage(null);
 
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(plainText);
       utterance.rate = playbackRate;
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length > 0) {
+        const nameLower = BROWSER_SPEECH_VOICE.toLowerCase();
+        const match = voices.find((v) => {
+          const voiceName = v.name.toLowerCase();
+          return (
+            voiceName.includes(nameLower) ||
+            (nameLower.includes("male") &&
+              (voiceName.includes("male") ||
+                voiceName.includes("daniel") ||
+                voiceName.includes("david") ||
+                voiceName.includes("alex") ||
+                voiceName.includes("guy")) &&
+              v.lang.startsWith("en"))
+          );
+        });
+        if (match) {
+          utterance.voice = match;
+        }
+      }
 
       utterance.onend = () => {
         setIsPlaying(false);
@@ -274,138 +203,71 @@ export function DispatchAudioPlayer({
 
       audio.onerror = () => {
         if (!isActiveRef.current) return;
-        console.warn("Stored MP3 failed; falling back to Kokoro or Web Speech");
+        console.warn("Audio playback error, switching to Web Speech fallback");
         void playLiveNarrationRef.current?.();
       };
     },
     [playbackRate],
   );
 
-  const startKokoroPlayback = useCallback(async () => {
-    if (!isActiveRef.current) return;
-
-    setIsLoading(true);
-    setStatusMessage("Preparing Kokoro (local) narration…");
-    setActiveBackend("kokoro-local");
-
-    const session = new KokoroPlaybackSession();
-    kokoroSessionRef.current = session;
-
-    session.setOnEnded(() => {
-      stopKokoroTick();
-      setIsPlaying(false);
-      setCurrentTime(0);
-    });
-
-    void session
-      .start(plainText, {
-        onLoadProgress: (info) => {
-          if (!isActiveRef.current) return;
-          setStatusMessage(formatLoadProgress(info));
-        },
-        onDevice: (device) => {
-          setKokoroDevice(device);
-        },
-        onFirstAudio: () => {
-          if (!isActiveRef.current) return;
-          setIsLoading(false);
-          setStatusMessage(null);
-          setIsPlaying(true);
-          stopKokoroTick();
-          kokoroTickRef.current = window.setInterval(() => {
-            const active = kokoroSessionRef.current;
-            if (!active) return;
-            setCurrentTime(active.getCurrentTimeSec());
-            const est = active.getEstimatedDurationSec();
-            if (est > 0) {
-              setDuration(est);
-            }
-          }, 250);
-        },
-      })
-      .then(() => {
-        stopKokoroTick();
-        setIsPlaying(false);
-        setCurrentTime(0);
-      })
-      .catch(async (error) => {
-        if (!isActiveRef.current) return;
-        console.warn("Kokoro unavailable, falling back to Web Speech:", error);
-        await session.stop();
-        kokoroSessionRef.current = null;
-        const speechFallback = resolveFallbackAfterKokoroFailure(
-          hasSpeechSynthesis(window),
-        );
-        if (speechFallback === "browser-speech-synthesis") {
-          fallbackToBrowserSpeech();
-        } else {
-          setIsLoading(false);
-          setStatusMessage("Audio narration is unavailable in this browser.");
-        }
-      });
-  }, [plainText, fallbackToBrowserSpeech, stopKokoroTick]);
-
-  const playLiveNarration = useCallback(async () => {
-    if (!isActiveRef.current) return;
-
-    const primary = resolvePrimaryListenBackend({
-      storedGeminiMp3Url: null,
-      kokoroAvailable: isKokoroRuntimeSupported(),
-      speechSynthesisAvailable:
-        typeof window !== "undefined" && hasSpeechSynthesis(window),
-    });
-
-    if (primary === "kokoro-local") {
-      await startKokoroPlayback();
-      return;
-    }
-
+  const playLiveNarration = useCallback(() => {
     fallbackToBrowserSpeech();
-  }, [fallbackToBrowserSpeech, startKokoroPlayback]);
+  }, [fallbackToBrowserSpeech]);
 
   useLayoutEffect(() => {
     playLiveNarrationRef.current = playLiveNarration;
   }, [playLiveNarration]);
 
-  const playStoredMp3 = useCallback(async () => {
-    if (!staticAudioSrc || !isActiveRef.current) return;
+  const startPlayback = useCallback(
+    async (startOffsetSec = 0) => {
+      if (!isActiveRef.current) return;
 
-    setActiveBackend("stored-gemini-mp3");
-    if (!audioRef.current) {
-      audioRef.current = new Audio(staticAudioSrc);
-    } else {
-      audioRef.current.onerror = null;
-      audioRef.current.src = staticAudioSrc;
-    }
-    setupAudioElement(audioRef.current);
-    audioRef.current.playbackRate = playbackRate;
-
-    try {
-      await audioRef.current.play();
-      if (!isActiveRef.current) {
-        stopAllPlayback();
+      if (staticAudioSrc) {
+        setUseBrowserSpeech(false);
+        if (!audioRef.current) {
+          audioRef.current = new Audio(staticAudioSrc);
+        } else {
+          audioRef.current.onerror = null;
+          audioRef.current.src = staticAudioSrc;
+        }
+        setupAudioElement(audioRef.current);
+        audioRef.current.playbackRate = playbackRate;
+        audioRef.current.currentTime = startOffsetSec > 0 ? startOffsetSec : 0;
+        try {
+          await audioRef.current.play();
+          if (!isActiveRef.current) {
+            stopAllPlayback();
+            return;
+          }
+          setIsPlaying(true);
+          setStatusMessage(null);
+        } catch (err) {
+          if (!isActiveRef.current) return;
+          console.warn("Cached audio playback failed:", err);
+          fallbackToBrowserSpeech();
+        }
         return;
       }
-      setIsPlaying(true);
-      setStatusMessage(null);
-    } catch (err) {
-      if (!isActiveRef.current) return;
-      console.warn("Stored MP3 playback failed:", err);
-      await playLiveNarration();
-    }
-  }, [staticAudioSrc, playbackRate, setupAudioElement, stopAllPlayback, playLiveNarration]);
+
+      fallbackToBrowserSpeech();
+    },
+    [
+      playbackRate,
+      fallbackToBrowserSpeech,
+      setupAudioElement,
+      staticAudioSrc,
+      stopAllPlayback,
+    ],
+  );
 
   const handleTogglePlay = useCallback(async () => {
     isActiveRef.current = true;
 
     if (isPlaying) {
-      if (activeBackend === "browser-speech-synthesis") {
+      if (useBrowserSpeech) {
         if (typeof window !== "undefined" && "speechSynthesis" in window) {
           window.speechSynthesis.pause();
         }
-      } else if (activeBackend === "kokoro-local" && kokoroSessionRef.current) {
-        await kokoroSessionRef.current.pause();
-        stopKokoroTick();
       } else if (audioRef.current) {
         audioRef.current.pause();
       }
@@ -413,7 +275,7 @@ export function DispatchAudioPlayer({
       return;
     }
 
-    if (activeBackend === "browser-speech-synthesis") {
+    if (useBrowserSpeech) {
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
         if (window.speechSynthesis.paused) {
           window.speechSynthesis.resume();
@@ -425,21 +287,9 @@ export function DispatchAudioPlayer({
       return;
     }
 
-    if (activeBackend === "kokoro-local" && kokoroSessionRef.current) {
-      await kokoroSessionRef.current.resume();
-      kokoroTickRef.current = window.setInterval(() => {
-        const session = kokoroSessionRef.current;
-        if (!session) return;
-        setCurrentTime(session.getCurrentTimeSec());
-      }, 250);
-      setIsPlaying(true);
-      return;
-    }
-
     if (
       audioRef.current &&
       audioRef.current.src &&
-      activeBackend === "stored-gemini-mp3" &&
       audioRef.current.currentTime > 0 &&
       !audioRef.current.ended
     ) {
@@ -449,21 +299,13 @@ export function DispatchAudioPlayer({
       return;
     }
 
-    if (staticAudioSrc) {
-      await playStoredMp3();
-      return;
-    }
-
-    await playLiveNarration();
+    await startPlayback(0);
   }, [
     isPlaying,
-    activeBackend,
+    useBrowserSpeech,
     playbackRate,
     fallbackToBrowserSpeech,
-    playStoredMp3,
-    playLiveNarration,
-    staticAudioSrc,
-    stopKokoroTick,
+    startPlayback,
   ]);
 
   const handleSpeedToggle = () => {
@@ -475,11 +317,7 @@ export function DispatchAudioPlayer({
       audioRef.current.playbackRate = nextRate;
     }
 
-    if (
-      activeBackend === "browser-speech-synthesis" &&
-      isPlaying &&
-      typeof window !== "undefined"
-    ) {
+    if (useBrowserSpeech && isPlaying && typeof window !== "undefined") {
       window.speechSynthesis.cancel();
       fallbackToBrowserSpeech();
     }
@@ -487,19 +325,16 @@ export function DispatchAudioPlayer({
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!progressBarRef.current || duration <= 0) return;
-    if (activeBackend !== "stored-gemini-mp3") return;
     const rect = progressBarRef.current.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const ratio = Math.max(0, Math.min(1, clickX / rect.width));
     const seekTime = ratio * duration;
 
     setCurrentTime(seekTime);
-    if (audioRef.current) {
+    if (audioRef.current && !useBrowserSpeech) {
       audioRef.current.currentTime = seekTime;
     }
   };
-
-  const progressBarRef = useRef<HTMLDivElement | null>(null);
 
   const formatSeconds = (sec: number) => {
     const safeSec = Math.max(0, Math.floor(sec));
@@ -510,24 +345,6 @@ export function DispatchAudioPlayer({
 
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
 
-  const backendLabel = (() => {
-    if (statusMessage) return null;
-    if (activeBackend === "browser-speech-synthesis") {
-      return `Browser Speech • ~${listenMinutes} min listen`;
-    }
-    if (activeBackend === "stored-gemini-mp3") {
-      return `Narrated by ${narratorName} • ~${listenMinutes} min listen`;
-    }
-    if (activeBackend === "kokoro-local") {
-      const deviceLabel = kokoroDevice === "webgpu" ? "WebGPU" : "WASM";
-      return `Kokoro (${KOKORO_DEFAULT_VOICE}, ${deviceLabel}) • ~${listenMinutes} min listen`;
-    }
-    if (staticAudioSrc) {
-      return `Narrated by ${narratorName} • ~${listenMinutes} min listen`;
-    }
-    return `Kokoro local voice • ~${listenMinutes} min listen`;
-  })();
-
   return (
     <div className="my-6 rounded-2xl border border-zinc-200/90 bg-gradient-to-r from-zinc-50 via-zinc-100/60 to-zinc-50 p-4 shadow-2xs dark:border-zinc-800 dark:from-zinc-900/90 dark:via-zinc-900/50 dark:to-zinc-900/90">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -535,84 +352,69 @@ export function DispatchAudioPlayer({
           <button
             type="button"
             onClick={() => void handleTogglePlay()}
-            disabled={isLoading}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white shadow-sm transition hover:scale-105 hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white shadow-sm transition hover:scale-105 hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
             aria-label={
-              isLoading
-                ? "Loading audio narration"
-                : isPlaying
-                  ? "Pause audio narration"
-                  : "Play audio narration"
+              isPlaying
+                ? "Pause audio narration"
+                : staticAudioSrc
+                  ? "Play audio narration"
+                  : "Play audio narration with browser speech"
             }
           >
-            {isLoading ? (
-              <span className="h-4 w-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
-            ) : isPlaying ? (
+            {isPlaying ? (
               <span className="text-sm">⏸</span>
             ) : (
               <span className="ml-0.5 text-sm">▶</span>
             )}
           </button>
-
           <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
-                Listen to Dispatch
-              </span>
-              {isPlaying ? (
-                <div className="flex items-center gap-0.5" aria-hidden="true">
-                  <span className="h-2.5 w-0.5 animate-pulse rounded-full bg-emerald-500" />
-                  <span className="h-4 w-0.5 animate-pulse rounded-full bg-emerald-500 [animation-delay:150ms]" />
-                  <span className="h-1.5 w-0.5 animate-pulse rounded-full bg-emerald-500 [animation-delay:300ms]" />
-                  <span className="h-3 w-0.5 animate-pulse rounded-full bg-emerald-500 [animation-delay:450ms]" />
-                </div>
-              ) : null}
-            </div>
-            <p className="text-[11px] text-zinc-500">
-              {statusMessage ? (
-                <span className="font-medium text-amber-600 dark:text-amber-400">
-                  {statusMessage}
-                </span>
-              ) : (
-                backendLabel
-              )}
+            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+              Listen to Dispatch
+            </p>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              {staticAudioSrc
+                ? `${narratorName} • ~${listenMinutes} min listen`
+                : `Browser speech (${BROWSER_SPEECH_VOICE}) • ~${listenMinutes} min listen`}
             </p>
           </div>
         </div>
-
         <div className="flex items-center gap-2">
-          <span className="font-mono text-xs text-zinc-500">
-            {formatSeconds(currentTime)} / {formatSeconds(duration)}
-          </span>
-
           <button
             type="button"
             onClick={handleSpeedToggle}
-            className="rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-800 transition"
-            title="Toggle playback speed"
+            className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-medium text-zinc-700 shadow-xs hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
           >
             {playbackRate}x
           </button>
         </div>
       </div>
 
-      <div
-        ref={progressBarRef}
-        onClick={handleSeek}
-        role="progressbar"
-        aria-valuenow={Math.round(progressPercent)}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        tabIndex={0}
-        className="mt-3 h-2 w-full cursor-pointer overflow-hidden rounded-full bg-zinc-200 transition hover:h-2.5 dark:bg-zinc-800"
-        title={
-          activeBackend === "stored-gemini-mp3" ? "Click to seek" : "Progress"
-        }
-      >
+      {(isLoading || statusMessage) && (
+        <p className="mt-2 text-xs text-zinc-500">{statusMessage ?? "Loading…"}</p>
+      )}
+
+      <div className="mt-3 flex items-center gap-3">
+        <span className="w-10 text-right text-xs tabular-nums text-zinc-500">
+          {formatSeconds(currentTime)}
+        </span>
         <div
-          className="h-full bg-zinc-900 transition-all duration-150 dark:bg-zinc-100"
-          style={{ width: `${Math.min(100, Math.max(0, progressPercent))}%` }}
-        />
+          ref={progressBarRef}
+          role="slider"
+          aria-valuemin={0}
+          aria-valuemax={duration}
+          aria-valuenow={currentTime}
+          tabIndex={0}
+          onClick={handleSeek}
+          className="relative h-2 flex-1 cursor-pointer rounded-full bg-zinc-200 dark:bg-zinc-700"
+        >
+          <div
+            className="absolute inset-y-0 left-0 rounded-full bg-zinc-900 dark:bg-zinc-100"
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+        <span className="w-10 text-xs tabular-nums text-zinc-500">
+          {formatSeconds(duration)}
+        </span>
       </div>
     </div>
   );

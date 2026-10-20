@@ -1,6 +1,7 @@
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { setPostNarrationAfterHookForTests } from "@/lib/audio/schedule-narration-regeneration";
 import * as schema from "@/db/schema";
 import { publishDraftToTurso } from "@/lib/adam/publish-draft";
 import {
@@ -78,6 +79,14 @@ async function createPre0013Db() {
 }
 
 describe("manage-posts compatibility with pre-0013 database schema", () => {
+  beforeEach(() => {
+    setPostNarrationAfterHookForTests(() => {});
+  });
+
+  afterEach(() => {
+    setPostNarrationAfterHookForTests(null);
+  });
+
   it("lists, loads by slug, updates, and publishes posts even when 0013 columns were not pre-migrated", async () => {
     const db = await createPre0013Db();
 

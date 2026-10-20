@@ -1,5 +1,5 @@
 import { Mp3Encoder } from "@breezystack/lamejs";
-import { synthesizeSpeechWithGoogle } from "@/lib/adam/gemini-studio";
+import { synthesizeNarrationSpeechChunk } from "./narration-synthesize";
 import { stripHtmlTags } from "@/lib/posts/reading-time";
 import {
   uploadToLensGrove,
@@ -155,7 +155,7 @@ export async function generatePostNarrationMp3(input: {
   bodyHtml?: string | null;
   voice: string;
   fetchFn?: typeof fetch;
-  synthesizeFn?: typeof synthesizeSpeechWithGoogle;
+  synthesizeFn?: typeof synthesizeNarrationSpeechChunk;
   uploadFn?: (file: File | Blob, fileName?: string) => Promise<LensGroveUploadResult>;
 }): Promise<NarrationResult> {
   const script = buildNarrationScript(input);
@@ -164,7 +164,7 @@ export async function generatePostNarrationMp3(input: {
     throw new Error("Post has no text to narrate.");
   }
 
-  const synth = input.synthesizeFn ?? synthesizeSpeechWithGoogle;
+  const synth = input.synthesizeFn ?? synthesizeNarrationSpeechChunk;
   const upload = input.uploadFn ?? uploadToLensGrove;
 
   const pcmParts: Buffer[] = [];

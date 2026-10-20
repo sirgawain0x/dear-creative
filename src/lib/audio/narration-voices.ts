@@ -1,6 +1,7 @@
 /** Voices authors can pick for pre-generated narration (client-safe module). */
 export const NARRATION_VOICES = [
-  { id: "Puck", label: "Adam (Puck) — Warm" },
+  { id: "af_heart", label: "Kokoro (af_heart) — Dispatch default" },
+  { id: "Puck", label: "Adam (Puck) — Warm (Gemini)" },
   { id: "Charon", label: "Charon — Editorial" },
   { id: "Fenrir", label: "Fenrir — Crisp" },
   { id: "Aoede", label: "Aoede — Expressive" },

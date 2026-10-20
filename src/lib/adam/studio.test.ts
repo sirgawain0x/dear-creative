@@ -18,7 +18,6 @@ import {
   transcribeAudioWithGemini,
   turnIdeaIntoDraft,
 } from "./gemini-studio";
-import { buildDearCreativeAssetNotebook } from "./colab-notebook";
 import { renderMarkdownToSafeHtml } from "@/lib/html/markdown-to-html";
 import {
   createAdamIdea,
@@ -318,27 +317,29 @@ describe("Adam Studio ideas, schedule, multimodal chat, and voice", () => {
     vi.stubEnv("GEMINI_API_KEY", "test-gemini-key");
 
     const fakeMp4Base64 = Buffer.from("fake-mp4-video").toString("base64");
-    const mockVeoFetch = vi.fn(async () =>
-      new Response(
+    const mockVeoFetch = vi.fn(async (url: string) => {
+      expect(String(url)).toContain("/v1beta/interactions");
+      return new Response(
         JSON.stringify({
-          name: "operations/veo-op-1",
-          done: true,
-          response: {
-            generateVideoResponse: {
-              generatedSamples: [
+          status: "completed",
+          model: "gemini-omni-1.1-flash",
+          object: "interaction",
+          steps: [
+            {
+              type: "model_output",
+              content: [
                 {
-                  video: {
-                    bytesBase64Encoded: fakeMp4Base64,
-                    mimeType: "video/mp4",
-                  },
+                  type: "video",
+                  mime_type: "video/mp4",
+                  data: fakeMp4Base64,
                 },
               ],
             },
-          },
+          ],
         }),
         { status: 200 },
-      ),
-    );
+      );
+    });
 
     const mockVideoUpload = vi.fn(async () => ({
       uri: "lens://video999",
@@ -353,7 +354,7 @@ describe("Adam Studio ideas, schedule, multimodal chat, and voice", () => {
       uploadFn: mockVideoUpload,
     });
 
-    expect(videoResult.provider).toBe("veo");
+    expect(videoResult.provider).toBe("gemini-omni");
     expect(videoResult.uri).toBe("lens://video999");
     expect(videoResult.url).toBe("https://api.grove.storage/video999?ext=mp4");
 
@@ -364,23 +365,4 @@ describe("Adam Studio ideas, schedule, multimodal chat, and voice", () => {
     expect(renderedHtml).toContain("https://api.grove.storage/video999?ext=mp4");
   });
 
-  it("builds a valid Google Colab (.ipynb) asset generator notebook with Banner, TTS, Veo Video, and Lens Grove cells", () => {
-    const nb = buildDearCreativeAssetNotebook({
-      title: "Pre-Generating Static Audio & Video on Lens Grove",
-      slug: "lens-grove-static-assets",
-      teaserText: "How to keep AI generation costs under $0.01 per article.",
-      voiceName: "Puck",
-    });
-
-    expect(nb.nbformat).toBe(4);
-    expect(nb.nbformat_minor).toBe(5);
-    expect(nb.metadata.colab.name).toBe(
-      "dear-creative-lens-grove-static-assets-assets.ipynb",
-    );
-    const allSources = nb.cells.map((c) => c.source.join("")).join("\n");
-    expect(allSources).toContain("imagen-3.0-generate-002");
-    expect(allSources).toContain("gemini-2.5-flash-preview-tts");
-    expect(allSources).toContain("veo-2.0-generate-001");
-    expect(allSources).toContain("https://api.grove.storage?chain_id=232");
-  });
 });
