@@ -1,8 +1,8 @@
 /**
  * Local-only fixtures for homepage spotlight screenshots and manual QA.
- * Usage:
- *   LOCAL_DATABASE_URL=file:.local/dear-creative.db tsx scripts/seed-home-spotlight-fixtures.ts
- *   LOCAL_DATABASE_URL=file:.local/dear-creative.db tsx scripts/seed-home-spotlight-fixtures.ts --single
+ *
+ *   LOCAL_DATABASE_URL=file:.local/dear-creative.db npm run seed:home-spotlight
+ *   LOCAL_DATABASE_URL=file:.local/dear-creative.db npm run seed:home-spotlight -- --no-teaser-shot
  */
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -18,21 +18,49 @@ import {
 import { posts } from "../src/db/schema";
 
 const FIXTURE_SLUGS = [
-  "fixture-spotlight-newest",
-  "fixture-spotlight-svg-fallback",
-  "fixture-spotlight-truncated-teaser",
+  "fixture-spotlight-grove-cover",
+  "fixture-spotlight-unlisted-host-cover",
+  "fixture-spotlight-no-cover",
+  "fixture-spotlight-no-teaser-paid",
   "fixture-spotlight-draft-hidden",
   "fixture-spotlight-scheduled-future",
+  "fixture-spotlight-newest",
+  "fixture-spotlight-svg-fallback",
+  "fixture-spotlight-preview-teaser",
   "hello-dear-creative",
 ] as const;
 
-const LONG_BODY_PLAIN =
-  "Onchain creators are rebuilding publishing without gatekeepers. " +
-  "This paragraph is intentionally long so the homepage spotlight can derive a teaser from plain body text when no excerpt is stored, " +
-  "stripping markup and cutting near one hundred sixty characters on a word boundary with an ellipsis at the end.";
+function hiddenPosts(now: Date): (typeof posts.$inferInsert)[] {
+  return [
+    {
+      id: randomUUID(),
+      slug: "fixture-spotlight-draft-hidden",
+      title: "Draft Hidden From Spotlight",
+      status: "draft",
+      publishedAt: null,
+      teaserText: "Must not appear on the homepage.",
+      bodyHtml: "<p>Draft fixture body.</p>",
+      source: "paragraph",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: randomUUID(),
+      slug: "fixture-spotlight-scheduled-future",
+      title: "Scheduled Future Publish",
+      status: "published",
+      publishedAt: new Date("2026-11-15T09:00:00.000Z"),
+      teaserText: "Future-dated — excluded from spotlight.",
+      bodyHtml: "<p>Scheduled fixture body.</p>",
+      source: "paragraph",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ];
+}
 
 async function main() {
-  const singleLayout = process.argv.includes("--single");
+  const noTeaserShot = process.argv.includes("--no-teaser-shot");
   const url = resolveDatabaseUrl();
 
   if (!isLocalLibsqlUrl(url)) {
@@ -54,113 +82,96 @@ async function main() {
   await db.delete(posts).where(inArray(posts.slug, [...FIXTURE_SLUGS]));
 
   const now = new Date();
-  const rows: (typeof posts.$inferInsert)[] = [
-    {
-      id: randomUUID(),
-      slug: "fixture-spotlight-newest",
-      title: "Newest: Autonomous Creator Dispatch",
-      status: "published",
-      publishedAt: new Date("2026-10-18T12:00:00.000Z"),
-      teaserText:
-        "Fixture excerpt — newest published post with a cover image in the public preview.",
-      freeContent: `<p>Lead paragraph for the newest fixture issue.</p><img src="/images/hello-dear-creative-banner.jpg" alt="Fixture cover art for newest dispatch" /><p>More context below the hero image.</p>`,
-      bodyHtml: "<p>Paid/full body (not used on homepage).</p>",
-      source: "paragraph",
-      createdAt: now,
-      updatedAt: now,
-    },
-  ];
+  let rows: (typeof posts.$inferInsert)[];
 
-  if (!singleLayout) {
-    rows.push(
+  if (noTeaserShot) {
+    rows = [
       {
         id: randomUUID(),
-        slug: "fixture-spotlight-svg-fallback",
-        title: "SVG Fallback: No Cover Image",
+        slug: "fixture-spotlight-no-teaser-paid",
+        title: "Paid Post: No Teaser",
         status: "published",
-        publishedAt: new Date("2026-10-12T09:00:00.000Z"),
-        teaserText:
-          "Fixture excerpt — middle post with no images; cover uses deterministic SVG.",
-        freeContent:
-          "<p>Plain public preview only — no embedded images, so the card should show the generated Dear Creative banner SVG.</p>",
-        bodyHtml: "<p>Paid/full body (not used on homepage).</p>",
-        source: "paragraph",
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        id: randomUUID(),
-        slug: "fixture-spotlight-preview-teaser",
-        title: "Preview-Derived Teaser",
-        status: "published",
-        publishedAt: new Date("2026-10-08T09:00:00.000Z"),
+        publishedAt: new Date("2026-10-20T12:00:00.000Z"),
         teaserText: null,
-        freeContent: LONG_BODY_PLAIN,
-        bodyHtml: "<p>Paid/full body must not appear in list teasers.</p>",
+        freeContent: null,
+        bodyHtml:
+          "<p>Paid body only — no excerpt or free preview for the public list.</p>",
         source: "paragraph",
         createdAt: now,
         updatedAt: now,
       },
-      {
-        id: randomUUID(),
-        slug: "fixture-spotlight-draft-hidden",
-        title: "Draft Hidden From Spotlight",
-        status: "draft",
-        publishedAt: null,
-        teaserText: "Should never appear on the homepage.",
-        bodyHtml: "<p>Draft fixture body.</p>",
-        source: "paragraph",
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        id: randomUUID(),
-        slug: "fixture-spotlight-scheduled-future",
-        title: "Scheduled Future Publish",
-        status: "published",
-        publishedAt: new Date("2026-11-15T09:00:00.000Z"),
-        teaserText: "Future-dated publish — excluded from spotlight.",
-        bodyHtml: "<p>Scheduled fixture body.</p>",
-        source: "paragraph",
-        createdAt: now,
-        updatedAt: now,
-      },
-    );
+      ...hiddenPosts(now),
+    ];
   } else {
-    rows.push(
+    rows = [
       {
         id: randomUUID(),
-        slug: "fixture-spotlight-draft-hidden",
-        title: "Draft Hidden From Spotlight",
-        status: "draft",
-        publishedAt: null,
-        teaserText: "Should never appear on the homepage.",
-        bodyHtml: "<p>Draft fixture body.</p>",
-        source: "paragraph",
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        id: randomUUID(),
-        slug: "fixture-spotlight-scheduled-future",
-        title: "Scheduled Future Publish",
+        slug: "fixture-spotlight-grove-cover",
+        title: "Grove Cover Image",
         status: "published",
-        publishedAt: new Date("2026-11-15T09:00:00.000Z"),
-        teaserText: "Future-dated publish — excluded from spotlight.",
-        bodyHtml: "<p>Scheduled fixture body.</p>",
+        publishedAt: new Date("2026-10-20T12:00:00.000Z"),
+        teaserText: "Fixture — cover loaded from api.grove.storage (unoptimized).",
+        freeContent:
+          '<p>Public preview with Grove art.</p><img src="https://api.grove.storage/fixture-screenshot-grove-cover" alt="Grove fixture cover" />',
+        bodyHtml: "<p>Paid/full body.</p>",
         source: "paragraph",
         createdAt: now,
         updatedAt: now,
       },
-    );
+      {
+        id: randomUUID(),
+        slug: "fixture-spotlight-unlisted-host-cover",
+        title: "Unlisted Host → SVG Banner",
+        status: "published",
+        publishedAt: new Date("2026-10-19T12:00:00.000Z"),
+        teaserText:
+          "Fixture — img host is not allowlisted; card should show deterministic SVG.",
+        freeContent:
+          '<p>Public preview references a blocked host.</p><img src="https://example.com/not-on-allowlist.png" alt="Blocked" />',
+        bodyHtml: "<p>Paid/full body.</p>",
+        source: "paragraph",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: randomUUID(),
+        slug: "fixture-spotlight-no-cover",
+        title: "No Cover Image",
+        status: "published",
+        publishedAt: new Date("2026-10-18T12:00:00.000Z"),
+        teaserText:
+          "Fixture — no image in preview; deterministic SVG banner fallback.",
+        freeContent:
+          "<p>Plain public preview text with no embedded images.</p>",
+        bodyHtml: "<p>Paid/full body.</p>",
+        source: "paragraph",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: randomUUID(),
+        slug: "fixture-spotlight-no-teaser-paid",
+        title: "Paid Post: No Teaser",
+        status: "published",
+        publishedAt: new Date("2026-10-17T12:00:00.000Z"),
+        teaserText: null,
+        freeContent: null,
+        bodyHtml:
+          "<p>Paid body only — excluded from top 3 but validates empty teaser when surfaced.</p>",
+        source: "paragraph",
+        createdAt: now,
+        updatedAt: now,
+      },
+      ...hiddenPosts(now),
+    ];
   }
 
   await db.insert(posts).values(rows);
 
   console.log(
-    singleLayout
-      ? "Seeded 1 published + draft + scheduled spotlight fixtures (--single)."
-      : "Seeded 3 published + draft + scheduled spotlight fixtures.",
+    noTeaserShot
+      ? "Seeded no-teaser spotlight shot (1 eligible + draft + future)."
+      : "Seeded 4 eligible published + draft + future (spotlight shows newest 3).",
   );
 }
 
