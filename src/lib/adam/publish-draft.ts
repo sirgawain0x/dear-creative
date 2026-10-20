@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
 import { corePostColumns, ensurePostsSchema } from "@/db/ensure-schema";
-import { approvals, posts } from "@/db/schema";
+import { approvals, posts, type PostStatus } from "@/db/schema";
+import { maybeSchedulePublishedPostNarrationRegeneration } from "@/lib/audio/schedule-narration-regeneration";
 import { computeApprovalContentHash } from "@/lib/approval/content-hash";
 import { writeAuditEvent } from "@/lib/audit/write-audit-event";
 import { renderMarkdownToSafeHtml } from "@/lib/html/markdown-to-html";
@@ -17,6 +18,8 @@ export type PublishDraftInput = {
   markdown?: string | null;
   sponsorId?: string | null;
   dryRun?: boolean;
+  /** Defaults to `draft`; when `published`, initial narration may be scheduled. */
+  status?: PostStatus;
 };
 
 export type PublishDraftResult = {
@@ -76,12 +79,15 @@ export async function publishDraftToTurso(
 
   const postId = randomUUID();
   const approvalId = randomUUID();
+  const status: PostStatus = input.status ?? "draft";
+  const publishedAt = status === "published" ? new Date() : null;
 
   await db.insert(posts).values({
     id: postId,
     slug: snapshot.slug,
     title: snapshot.title,
-    status: "draft",
+    status,
+    publishedAt,
     teaserText: snapshot.teaserText,
     emailSubject: snapshot.emailSubject,
     emailHtml: snapshot.emailHtml,
@@ -103,6 +109,28 @@ export async function publishDraftToTurso(
     entityId: postId,
     payload: { slug: snapshot.slug, contentHash },
   });
+
+  if (status === "published") {
+    const [inserted] = await db
+      .select(corePostColumns)
+      .from(posts)
+      .where(eq(posts.id, postId))
+      .limit(1);
+    if (inserted) {
+      maybeSchedulePublishedPostNarrationRegeneration({
+        db,
+        postId,
+        existing: inserted,
+        nextStatus: status,
+        nextTitle: inserted.title,
+        nextTeaserText: inserted.teaserText,
+        nextBodyHtml: inserted.bodyHtml,
+        hasStoredAudioUrl: false,
+        explicitAudioUpdate: false,
+        actor: "adam",
+      });
+    }
+  }
 
   return { postId, approvalId, contentHash, dryRun: false };
 }

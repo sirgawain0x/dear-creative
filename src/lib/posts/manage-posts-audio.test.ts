@@ -55,6 +55,29 @@ describe("manage-posts published narration regeneration", () => {
     }
   }
 
+  it("schedules initial narration when a draft is published without audio_url", async () => {
+    const db = await createPostsTestDb();
+    const postId = randomUUID();
+    await db.insert(posts).values({
+      id: postId,
+      slug: "first-publish",
+      title: "First publish",
+      status: "draft",
+      bodyHtml: "<p>Launch body</p>",
+    });
+    generatePostNarrationMp3Mock.mockResolvedValue(
+      mockNarrationResult("https://cdn.example/first.mp3"),
+    );
+
+    await updateAdminPost(db, postId, { status: "published" });
+    expect(pendingTasks).toHaveLength(1);
+    await flushBackgroundTasks();
+
+    expect(generatePostNarrationMp3Mock).toHaveBeenCalledTimes(1);
+    const audio = await getPostAudioColumns(db, postId);
+    expect(audio.audioUrl).toBe("https://cdn.example/first.mp3");
+  });
+
   it("does not call TTS when spoken text is unchanged on a published post", async () => {
     const db = await createPostsTestDb();
     const postId = randomUUID();

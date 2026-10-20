@@ -17,7 +17,23 @@ export type RegenerateStoredPostNarrationOptions = {
   actor?: string;
   generateFn?: typeof narration.generatePostNarrationMp3;
   logError?: (message: string, error: unknown) => void;
+  logStale?: (message: string) => void;
+  /** Test hook: fired after the narration script snapshot is taken, before TTS. */
+  onSynthesizedScriptReady?: (script: string) => void;
 };
+
+function narrationScriptForRow(row: {
+  title: string;
+  teaserText: string | null;
+  bodyHtml: string | null;
+  emailHtml: string | null;
+}): string {
+  return narration.buildNarrationScript({
+    title: row.title,
+    teaserText: row.teaserText,
+    bodyHtml: row.bodyHtml ?? row.emailHtml,
+  });
+}
 
 /**
  * Generates a fresh narration MP3 and updates `audio_url` when the post is
@@ -32,6 +48,11 @@ export async function regenerateStoredPostNarration(
     options.logError ??
     ((message: string, error: unknown) => {
       console.error(message, error);
+    });
+  const logStale =
+    options.logStale ??
+    ((message: string) => {
+      console.warn(message);
     });
 
   await ensurePostsSchema(db);
@@ -57,13 +78,16 @@ export async function regenerateStoredPostNarration(
     return { ok: false, reason: "unsupported_voice" };
   }
 
+  const synthesizedScript = narrationScriptForRow(row);
+  options.onSynthesizedScriptReady?.(synthesizedScript);
+
   const generate =
     options.generateFn ??
     ((params: Parameters<typeof narration.generatePostNarrationMp3>[0]) =>
       narration.generatePostNarrationMp3(params));
 
   try {
-    const narration = await generate({
+    const mp3 = await generate({
       slug: row.slug,
       title: row.title,
       teaserText: row.teaserText,
@@ -71,8 +95,29 @@ export async function regenerateStoredPostNarration(
       voice,
     });
 
+    const [current] = await db
+      .select(corePostColumns)
+      .from(posts)
+      .where(eq(posts.id, postId))
+      .limit(1);
+
+    if (!current || current.status !== "published") {
+      logStale(
+        `[narration] Dropped stale MP3 for post ${postId}: post no longer published before upload commit`,
+      );
+      return { ok: false, reason: "stale_narration" };
+    }
+
+    const currentScript = narrationScriptForRow(current);
+    if (currentScript !== synthesizedScript) {
+      logStale(
+        `[narration] Dropped stale MP3 for post ${postId}: narration text changed during TTS`,
+      );
+      return { ok: false, reason: "stale_narration" };
+    }
+
     await setPostAudioColumns(db, postId, {
-      audioUrl: narration.url,
+      audioUrl: mp3.url,
       audioVoice: voice,
     });
 
@@ -83,17 +128,17 @@ export async function regenerateStoredPostNarration(
       entityId: postId,
       payload: {
         voice,
-        uri: narration.uri,
-        bytes: narration.bytes,
-        chunks: narration.chunks,
-        provider: narration.provider,
+        uri: mp3.uri,
+        bytes: mp3.bytes,
+        chunks: mp3.chunks,
+        provider: mp3.provider,
         background: true,
       },
     });
 
     revalidateTag(publishedPostCacheTag(row.slug), "max");
 
-    return { ok: true, url: narration.url };
+    return { ok: true, url: mp3.url };
   } catch (error) {
     logError(
       `[narration] Background regeneration failed for post ${postId}`,

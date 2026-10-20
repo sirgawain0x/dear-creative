@@ -10,6 +10,8 @@ import {
 } from "@/lib/posts/manage-posts";
 import { publishedPostCacheTag } from "@/lib/posts/published-posts";
 
+export const maxDuration = 300;
+
 type RouteContext = {
   params: Promise<{ postId: string }>;
 };

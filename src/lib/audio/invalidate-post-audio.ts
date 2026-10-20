@@ -1,5 +1,3 @@
-import type { DearCreativeDb } from "@/db/client";
-import { setPostAudioColumns } from "@/db/ensure-schema";
 import type { CorePostRow } from "@/db/ensure-schema";
 import { buildNarrationScript } from "@/lib/audio/narration";
 
@@ -23,14 +21,4 @@ export function postNarrationContentChanged(
     bodyHtml: resolved.bodyHtml,
   });
   return before !== after;
-}
-
-export async function clearStoredPostAudio(
-  db: DearCreativeDb,
-  postId: string,
-): Promise<void> {
-  await setPostAudioColumns(db, postId, {
-    audioUrl: null,
-    audioVoice: null,
-  });
 }
