@@ -1,48 +1,5 @@
 import { StorageClient } from "@lens-chain/storage-client";
 
-function mergeAbortSignals(
-  a: AbortSignal | null | undefined,
-  b: AbortSignal | null | undefined,
-): AbortSignal | undefined {
-  if (!a) {
-    return b ?? undefined;
-  }
-  if (!b) {
-    return a;
-  }
-  if (a.aborted) {
-    return a;
-  }
-  if (b.aborted) {
-    return b;
-  }
-  return AbortSignal.any([a, b]);
-}
-
-/** Runs fn while global fetch merges in outerSignal (StorageClient has no signal param). */
-async function runWithAbortableFetch<T>(
-  outerSignal: AbortSignal | undefined,
-  fn: () => Promise<T>,
-): Promise<T> {
-  if (!outerSignal) {
-    return fn();
-  }
-  const baseFetch = globalThis.fetch.bind(globalThis);
-  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-    const signal = mergeAbortSignals(init?.signal, outerSignal);
-    const mergedInit = signal ? { ...init, signal } : init;
-    if (input instanceof Request) {
-      return baseFetch(new Request(input, mergedInit));
-    }
-    return baseFetch(input, mergedInit);
-  }) as typeof fetch;
-  try {
-    return await fn();
-  } finally {
-    globalThis.fetch = baseFetch;
-  }
-}
-
 export type LensGroveUploadResult = {
   uri: string;
   gatewayUrl: string;
@@ -74,6 +31,29 @@ export function resolveGroveOrIpfsUrl(
   return trimmed;
 }
 
+function abortRejection(signal: AbortSignal): Promise<never> {
+  if (signal.aborted) {
+    return Promise.reject(new DOMException("Aborted", "AbortError"));
+  }
+  return new Promise((_resolve, reject) => {
+    signal.addEventListener(
+      "abort",
+      () => reject(new DOMException("Aborted", "AbortError")),
+      { once: true },
+    );
+  });
+}
+
+async function raceWithAbortSignal<T>(
+  work: Promise<T>,
+  signal: AbortSignal | undefined,
+): Promise<T> {
+  if (!signal) {
+    return work;
+  }
+  return Promise.race([work, abortRejection(signal)]);
+}
+
 /**
  * Uploads a file (File or Blob) to Lens Grove on-chain controlled storage.
  * Returns the decentralized URI and the public gateway URL (https://api.grove.storage/...).
@@ -83,73 +63,86 @@ export async function uploadToLensGrove(
   fileName = "banner.png",
   signal?: AbortSignal,
 ): Promise<LensGroveUploadResult> {
-  return runWithAbortableFetch(signal, async () => {
-    const client = getLensGroveStorageClient();
-    const fileObj =
-      file instanceof File
-        ? file
-        : new File([file], fileName, {
-            type: file.type || "image/png",
-          });
+  const client = getLensGroveStorageClient();
+  const fileObj =
+    file instanceof File
+      ? file
+      : new File([file], fileName, {
+          type: file.type || "image/png",
+        });
 
-    try {
-      const response = await client.uploadFile(fileObj);
-      const gatewayUrl = response.gatewayUrl || client.resolve(response.uri);
+  try {
+    const response = await raceWithAbortSignal(
+      client.uploadFile(fileObj),
+      signal,
+    );
+    const gatewayUrl = response.gatewayUrl || client.resolve(response.uri);
 
-      return {
-        uri: response.uri,
-        gatewayUrl,
-        storageKey: response.storageKey,
-      };
-    } catch (err: unknown) {
-      // If the storage propagation timed out, the file was already uploaded and has a key
-      const msg = err instanceof Error ? err.message : String(err);
-      const timeoutMatch =
-        /resource\s+([a-zA-Z0-9_\-:]+)\s+to reach status/i.exec(msg);
-      if (timeoutMatch && timeoutMatch[1]) {
-        const storageKey = timeoutMatch[1].replace(/^lens:\/\//, "");
-        const gatewayUrl = `https://api.grove.storage/${storageKey}`;
-        return {
-          uri: `lens://${storageKey}`,
-          gatewayUrl,
-          storageKey,
-        };
-      }
-
-      // Direct upload fallback
-      try {
-        const directRes = await fetch(
-          "https://api.grove.storage?chain_id=232",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": fileObj.type || "image/png",
-              "Content-Length": fileObj.size.toString(),
-            },
-            body: fileObj,
-            signal,
-          },
-        );
-        if (directRes.ok) {
-          const list = (await directRes.json()) as Array<{
-            storage_key?: string;
-            uri?: string;
-          }>;
-          if (list && list[0]?.storage_key) {
-            const storageKey = list[0].storage_key;
-            return {
-              uri: list[0].uri || `lens://${storageKey}`,
-              gatewayUrl: `https://api.grove.storage/${storageKey}`,
-              storageKey,
-            };
-          }
-        }
-      } catch {
-        // Fall through to re-throwing original error
-      }
-
+    return {
+      uri: response.uri,
+      gatewayUrl,
+      storageKey: response.storageKey,
+    };
+  } catch (err: unknown) {
+    if (err instanceof DOMException && err.name === "AbortError") {
       throw err;
     }
-  });
-}
+    if (err instanceof Error && err.name === "AbortError") {
+      throw err;
+    }
 
+    // If the storage propagation timed out, the file was already uploaded and has a key
+    const msg = err instanceof Error ? err.message : String(err);
+    const timeoutMatch =
+      /resource\s+([a-zA-Z0-9_\-:]+)\s+to reach status/i.exec(msg);
+    if (timeoutMatch && timeoutMatch[1]) {
+      const storageKey = timeoutMatch[1].replace(/^lens:\/\//, "");
+      const gatewayUrl = `https://api.grove.storage/${storageKey}`;
+      return {
+        uri: `lens://${storageKey}`,
+        gatewayUrl,
+        storageKey,
+      };
+    }
+
+    // Direct upload fallback (signal can cancel this fetch)
+    try {
+      const directRes = await fetch("https://api.grove.storage?chain_id=232", {
+        method: "POST",
+        headers: {
+          "Content-Type": fileObj.type || "image/png",
+          "Content-Length": fileObj.size.toString(),
+        },
+        body: fileObj,
+        signal,
+      });
+      if (directRes.ok) {
+        const list = (await directRes.json()) as Array<{
+          storage_key?: string;
+          uri?: string;
+        }>;
+        if (list && list[0]?.storage_key) {
+          const storageKey = list[0].storage_key;
+          return {
+            uri: list[0].uri || `lens://${storageKey}`,
+            gatewayUrl: `https://api.grove.storage/${storageKey}`,
+            storageKey,
+          };
+        }
+      }
+    } catch (fallbackErr) {
+      if (
+        fallbackErr instanceof DOMException &&
+        fallbackErr.name === "AbortError"
+      ) {
+        throw fallbackErr;
+      }
+      if (fallbackErr instanceof Error && fallbackErr.name === "AbortError") {
+        throw fallbackErr;
+      }
+      // Fall through to re-throwing original error
+    }
+
+    throw err;
+  }
+}
