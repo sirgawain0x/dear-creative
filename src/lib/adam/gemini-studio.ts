@@ -1710,7 +1710,7 @@ export async function generateVideoWithVeo(input: {
     videoProvider = "veo";
     const startUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
       videoModel,
-    )}:predictLongRunning?key=${encodeURIComponent(apiKey)}`;
+    )}:predictLongRunning`;
 
     const instancePayload: Record<string, unknown> = { prompt: promptText };
     if (input.imageBase64) {
@@ -1720,23 +1720,24 @@ export async function generateVideoWithVeo(input: {
       };
     }
 
-    const startRes = await fetchImpl(startUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        instances: [instancePayload],
-        parameters: {
-          aspectRatio,
-          sampleCount: 1,
-        },
-      }),
-    });
-
-    if (!startRes.ok) {
-      throw new Error(
-        `Veo video generation request failed (${startRes.status})`,
-      );
-    }
+    const startRes = await fetchWithAdamVideoDeadline(
+      fetchImpl,
+      startUrl,
+      {
+        method: "POST",
+        headers: geminiApiKeyHeaders(apiKey),
+        body: JSON.stringify({
+          instances: [instancePayload],
+          parameters: {
+            aspectRatio,
+            sampleCount: 1,
+          },
+        }),
+      },
+      deadlineAtMs,
+      fetchTimeoutMs,
+      nowFn(),
+    );
 
     type VeoOperationPayload = {
       name?: string;
@@ -1759,7 +1760,10 @@ export async function generateVideoWithVeo(input: {
       };
     };
 
-    let opData = (await startRes.json()) as VeoOperationPayload;
+    let opData = (await readGeminiResponseOrThrow(
+      startRes,
+      "Veo video generation request failed",
+    )) as VeoOperationPayload;
     let veoPolledBefore = false;
     while (!opData.done && opData.name) {
       throwIfAdamVideoDeadlineExceeded(deadlineAtMs, nowFn());
@@ -1782,11 +1786,14 @@ export async function generateVideoWithVeo(input: {
       const pollUrl = `https://generativelanguage.googleapis.com/v1beta/${opData.name.replace(
         /^\//,
         "",
-      )}?key=${encodeURIComponent(apiKey)}`;
+      )}`;
       const pollRes = await fetchWithAdamVideoDeadline(
         fetchImpl,
         pollUrl,
-        { method: "GET" },
+        {
+          method: "GET",
+          headers: { "x-goog-api-key": apiKey },
+        },
         deadlineAtMs,
         fetchTimeoutMs,
         nowFn(),
@@ -1809,13 +1816,23 @@ export async function generateVideoWithVeo(input: {
     if (sample && "bytesBase64Encoded" in sample && sample.bytesBase64Encoded) {
       videoBytes = Buffer.from(sample.bytesBase64Encoded, "base64");
     } else if (sample && "uri" in sample && sample.uri) {
-      const dlUrl = sample.uri.includes("?")
-        ? `${sample.uri}&key=${encodeURIComponent(apiKey)}`
-        : `${sample.uri}?key=${encodeURIComponent(apiKey)}`;
-      const dlRes = await fetchImpl(dlUrl);
+      const dlRes = await fetchWithAdamVideoDeadline(
+        fetchImpl,
+        sample.uri,
+        {
+          method: "GET",
+          headers: { "x-goog-api-key": apiKey },
+        },
+        deadlineAtMs,
+        fetchTimeoutMs,
+        nowFn(),
+      );
       if (dlRes.ok) {
         const ab = await dlRes.arrayBuffer();
         videoBytes = Buffer.from(ab);
+      } else {
+        logGeminiHttpFailure(dlRes.status);
+        throw new Error(`Veo video download failed (${dlRes.status})`);
       }
     }
   } else {

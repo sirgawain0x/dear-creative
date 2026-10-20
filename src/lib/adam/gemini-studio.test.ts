@@ -338,6 +338,8 @@ describe("generateVideoWithVeo (Gemini Omni default)", () => {
     const fakeMp4 = Buffer.from("legacy").toString("base64");
 
     const mockFetch = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(String(url)).not.toContain("key=");
+      expect(geminiHeaders(init).get("x-goog-api-key")).toBe("test-key");
       if (url.includes("predictLongRunning")) {
         const body = JSON.parse(String(init?.body));
         expect(body.instances[0].prompt).toBe("Legacy veo path");
@@ -375,6 +377,46 @@ describe("generateVideoWithVeo (Gemini Omni default)", () => {
 
     expect(result.provider).toBe("veo");
     expect(String(mockFetch.mock.calls[0][0])).toContain("predictLongRunning");
+  });
+
+  it("legacy Veo stops within the 290s wall-clock budget when create never completes", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    vi.stubEnv("ADAM_GEMINI_VIDEO_MODEL", "veo-3.0-generate-001");
+    const startedAt = Date.now();
+
+    const mockFetch = vi.fn((url: string, init?: RequestInit) => {
+      expect(String(url)).not.toContain("key=");
+      expect(geminiHeaders(init).get("x-goog-api-key")).toBe("test-key");
+      if (url.includes("predictLongRunning")) {
+        if (init?.signal?.aborted) {
+          return Promise.reject(new DOMException("Aborted", "AbortError"));
+        }
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("Aborted", "AbortError")),
+            { once: true },
+          );
+        });
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+    });
+
+    await expect(
+      generateVideoWithVeo({
+        prompt: "Legacy create hang",
+        fetchFn: mockFetch as unknown as typeof fetch,
+        uploadFn: mockUpload,
+        wallBudgetMs: 290_000,
+        fetchTimeoutMs: 50,
+        pollIntervalMs: 0,
+      }),
+    ).rejects.toThrow(ADAM_VIDEO_WALL_TIMEOUT_MESSAGE);
+
+    expect(Date.now() - startedAt).toBeLessThan(290_000);
+    for (const call of mockFetch.mock.calls) {
+      expect(String(call[0])).not.toContain("key=");
+    }
   });
 });
 
