@@ -4,6 +4,7 @@ import {
   resetXClientForTests,
   setXFetchForTests,
 } from "./client";
+import type { FetchLike } from "./oauth2";
 import { resetXCredentialsLogForTests } from "./credentials";
 import { setXLiveEnabledForTests } from "./feature-flag";
 
@@ -46,7 +47,7 @@ describe("getXClient / OAuth2UserContextXClient", () => {
     process.env.X_REFRESH_TOKEN = "refresh-token";
 
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
-    const fetchMock = vi.fn();
+    const fetchMock = vi.fn() as unknown as FetchLike;
     setXFetchForTests(fetchMock);
 
     const client = getXClient();
@@ -68,7 +69,13 @@ describe("getXClient / OAuth2UserContextXClient", () => {
     setXLiveEnabledForTests(true);
 
     let tweetPostCount = 0;
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
       if (url === "https://api.x.com/2/oauth2/token") {
         expect(init?.method).toBe("POST");
         const headers = init?.headers as Record<string, string>;
@@ -106,7 +113,7 @@ describe("getXClient / OAuth2UserContextXClient", () => {
       }
       throw new Error(`Unexpected fetch: ${url}`);
     });
-    setXFetchForTests(fetchMock);
+    setXFetchForTests(fetchMock as FetchLike);
 
     const client = getXClient();
     const result = await client!.postTweet({ text: "Read now" });
@@ -125,7 +132,13 @@ describe("getXClient / OAuth2UserContextXClient", () => {
     process.env.X_REFRESH_TOKEN = "refresh";
     setXLiveEnabledForTests(true);
 
-    const fetchMock = vi.fn(async (url: string) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
       if (url.includes("oauth2/token")) {
         return new Response(
           JSON.stringify({ access_token: "tok", expires_in: 7200 }),
@@ -139,7 +152,7 @@ describe("getXClient / OAuth2UserContextXClient", () => {
         { status: 401 },
       );
     });
-    setXFetchForTests(fetchMock);
+    setXFetchForTests(fetchMock as FetchLike);
 
     await expect(
       getXClient()!.postTweet({ text: "x" }),
@@ -152,7 +165,13 @@ describe("getXClient / OAuth2UserContextXClient", () => {
     process.env.X_REFRESH_TOKEN = "refresh";
     setXLiveEnabledForTests(true);
 
-    const fetchMock = vi.fn(async (url: string) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
       if (url.includes("oauth2/token")) {
         return new Response(
           JSON.stringify({ access_token: "tok", expires_in: 7200 }),
@@ -168,7 +187,7 @@ describe("getXClient / OAuth2UserContextXClient", () => {
         { status: 403 },
       );
     });
-    setXFetchForTests(fetchMock);
+    setXFetchForTests(fetchMock as FetchLike);
 
     await expect(getXClient()!.postTweet({ text: "dup" })).rejects.toThrow(
       "Forbidden: You are not allowed to create a Tweet with duplicate content.",
@@ -181,7 +200,13 @@ describe("getXClient / OAuth2UserContextXClient", () => {
     process.env.X_REFRESH_TOKEN = "refresh";
     setXLiveEnabledForTests(true);
 
-    const fetchMock = vi.fn(async (url: string) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
       if (url.includes("oauth2/token")) {
         return new Response(
           JSON.stringify({ access_token: "tok", expires_in: 7200 }),
@@ -198,7 +223,7 @@ describe("getXClient / OAuth2UserContextXClient", () => {
         },
       );
     });
-    setXFetchForTests(fetchMock);
+    setXFetchForTests(fetchMock as FetchLike);
 
     await expect(getXClient()!.postTweet({ text: "busy" })).rejects.toThrow(
       "Rate limit exceeded; x-rate-limit-reset=1705420800",

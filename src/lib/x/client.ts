@@ -3,9 +3,9 @@ import { isXLiveEnabled } from "./feature-flag";
 import { OAuth2UserContextXClient } from "./live-client";
 import { loggingMockXClient } from "./mock-client";
 import type { FetchLike } from "./oauth2";
+import type { XClient } from "./types";
 
 export type { XClient, XPostPayload, XPostResult } from "./types";
-import type { XClient } from "./types";
 
 let clientOverride: XClient | null | undefined;
 let liveClientSingleton: XClient | null | undefined;
