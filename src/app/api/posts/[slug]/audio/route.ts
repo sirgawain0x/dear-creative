@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/db/client";
-import { getPostAudioColumns } from "@/db/ensure-schema";
 import { getPublishedPostBySlug } from "@/lib/posts/published-posts";
 
 export async function GET(
@@ -16,14 +15,13 @@ export async function GET(
     return NextResponse.json({ error: "Post not found" }, { status: 404 });
   }
 
-  const audio = await getPostAudioColumns(db, slug);
-  const audioUrl = audio.audioUrl?.trim();
+  const audioUrl = post.audioUrl?.trim();
 
   if (audioUrl) {
     return NextResponse.json({
       ok: true,
       audioUrl,
-      voice: audio.audioVoice?.trim() || "Puck",
+      voice: post.audioVoice?.trim() || "Puck",
       preGenerated: true,
       mimeType: "audio/mpeg",
     });

@@ -340,10 +340,8 @@ export async function updateAdminPost(
     (publishedTransition ||
       postNarrationContentChanged(existing, input, {
         title: nextTitle,
-        slug: nextSlug,
         teaserText: nextTeaserText,
         bodyHtml: nextBodyHtml,
-        emailHtml: nextEmailHtml,
       }))
   ) {
     await clearStoredPostAudio(db, existing.id);

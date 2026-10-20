@@ -9,16 +9,11 @@ export function postNarrationContentChanged(
   input: UpdateAdminPostInput,
   resolved: {
     title: string;
-    slug: string;
     teaserText: string | null;
     bodyHtml: string | null;
-    emailHtml: string | null;
   },
 ): boolean {
   if (input.title !== undefined && resolved.title !== existing.title) {
-    return true;
-  }
-  if (input.slug !== undefined && resolved.slug !== existing.slug) {
     return true;
   }
   if (
@@ -28,14 +23,14 @@ export function postNarrationContentChanged(
     return true;
   }
   const prevBody = existing.bodyHtml ?? null;
-  if (resolved.bodyHtml !== prevBody) {
+  if (
+    input.markdown !== undefined &&
+    input.markdown !== null &&
+    resolved.bodyHtml !== prevBody
+  ) {
     return true;
   }
-  const prevEmail = existing.emailHtml ?? null;
-  if (
-    input.emailHtml !== undefined &&
-    resolved.emailHtml !== prevEmail
-  ) {
+  if (input.bodyHtml !== undefined && resolved.bodyHtml !== prevBody) {
     return true;
   }
   return false;

@@ -1,12 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { GET } from "./route";
 
-const { getDbMock, getPublishedPostBySlugMock, getPostAudioColumnsMock } =
-  vi.hoisted(() => ({
-    getDbMock: vi.fn(),
-    getPublishedPostBySlugMock: vi.fn(),
-    getPostAudioColumnsMock: vi.fn(),
-  }));
+const { getDbMock, getPublishedPostBySlugMock } = vi.hoisted(() => ({
+  getDbMock: vi.fn(),
+  getPublishedPostBySlugMock: vi.fn(),
+}));
 
 const synthesizeSpeechWithGoogleMock = vi.hoisted(() => vi.fn());
 
@@ -16,10 +14,6 @@ vi.mock("@/db/client", () => ({
 
 vi.mock("@/lib/posts/published-posts", () => ({
   getPublishedPostBySlug: getPublishedPostBySlugMock,
-}));
-
-vi.mock("@/db/ensure-schema", () => ({
-  getPostAudioColumns: getPostAudioColumnsMock,
 }));
 
 vi.mock("@/lib/adam/gemini-studio", () => ({
@@ -33,8 +27,6 @@ describe("GET /api/posts/[slug]/audio", () => {
     getPublishedPostBySlugMock.mockResolvedValue({
       slug: "hello",
       title: "Hello",
-    });
-    getPostAudioColumnsMock.mockResolvedValue({
       audioUrl: "https://cdn.example/narration.mp3",
       audioVoice: "Puck",
     });
@@ -55,7 +47,6 @@ describe("GET /api/posts/[slug]/audio", () => {
       voice: "Puck",
       preGenerated: true,
     });
-    expect(getPostAudioColumnsMock).toHaveBeenCalledWith(db, "hello");
     expect(synthesizeSpeechWithGoogleMock).not.toHaveBeenCalled();
   });
 
@@ -65,8 +56,6 @@ describe("GET /api/posts/[slug]/audio", () => {
       slug: "no-audio",
       title: "No Audio",
       bodyHtml: "<p>Body</p>",
-    });
-    getPostAudioColumnsMock.mockResolvedValue({
       audioUrl: null,
       audioVoice: null,
     });
@@ -89,7 +78,6 @@ describe("GET /api/posts/[slug]/audio", () => {
     );
 
     expect(response.status).toBe(404);
-    expect(getPostAudioColumnsMock).not.toHaveBeenCalled();
     expect(synthesizeSpeechWithGoogleMock).not.toHaveBeenCalled();
   });
 });

@@ -12,7 +12,6 @@ import { updateAdminPost } from "./manage-posts";
 describe("manage-posts stored narration", () => {
   it("clears audio_url when narration content is edited", async () => {
     const db = await createPostsTestDb();
-    const postId = randomUUID();
     await insertPost(db, {
       slug: "draft-audio",
       title: "Original title",
@@ -58,5 +57,56 @@ describe("manage-posts stored narration", () => {
     const audio = await getPostAudioColumns(db, postId);
     expect(audio.audioUrl).toBeNull();
     expect(audio.audioVoice).toBeNull();
+  });
+
+  it("keeps stored audio when the edit does not change narration fields", async () => {
+    const db = await createPostsTestDb();
+    const postId = randomUUID();
+    await db.insert(posts).values({
+      id: postId,
+      slug: "metadata-only",
+      title: "Stable title",
+      status: "draft",
+      bodyHtml: "<p>Stable body</p>",
+      emailSubject: "Old subject",
+    });
+    await setPostAudioColumns(db, postId, {
+      audioUrl: "https://cdn.example/keep.mp3",
+      audioVoice: "Puck",
+    });
+
+    await updateAdminPost(db, postId, {
+      emailSubject: "Updated subject line",
+    });
+
+    const audio = await getPostAudioColumns(db, postId);
+    expect(audio.audioUrl).toBe("https://cdn.example/keep.mp3");
+    expect(audio.audioVoice).toBe("Puck");
+  });
+
+  it("does not clear audio when audioUrl is set explicitly on the same update", async () => {
+    const db = await createPostsTestDb();
+    const postId = randomUUID();
+    await db.insert(posts).values({
+      id: postId,
+      slug: "explicit-audio",
+      title: "Title",
+      status: "draft",
+      bodyHtml: "<p>Before</p>",
+    });
+    await setPostAudioColumns(db, postId, {
+      audioUrl: "https://cdn.example/old.mp3",
+      audioVoice: "Puck",
+    });
+
+    await updateAdminPost(db, postId, {
+      bodyHtml: "<p>After narration change</p>",
+      audioUrl: "https://cdn.example/new.mp3",
+      audioVoice: "Aoede",
+    });
+
+    const audio = await getPostAudioColumns(db, postId);
+    expect(audio.audioUrl).toBe("https://cdn.example/new.mp3");
+    expect(audio.audioVoice).toBe("Aoede");
   });
 });
