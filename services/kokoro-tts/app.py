@@ -1,6 +1,6 @@
 """
 Kokoro-82M TTS HTTP service for Dear Creative publish-time narration.
-Auth: Authorization: Bearer <KOKORO_TTS_TOKEN>
+Auth: Authorization: Bearer <KOKORO_TTS_TOKEN> (constant-time compare).
 """
 from __future__ import annotations
 
@@ -8,17 +8,19 @@ import hmac
 import io
 import os
 import threading
-from typing import Annotated
+from typing import Annotated, Literal
 
 import numpy as np
+import soundfile as sf
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from pydub import AudioSegment
 
 DEFAULT_VOICE = os.environ.get("KOKORO_DEFAULT_VOICE", "af_heart")
 LANG_CODE = os.environ.get("KOKORO_LANG_CODE", "a")
-MAX_TEXT_CHARS = int(os.environ.get("KOKORO_MAX_TEXT_CHARS", "12000"))
+MAX_TEXT_CHARS = int(os.environ.get("KOKORO_MAX_TEXT_CHARS", "4000"))
+
+ALLOWED_VOICES = frozenset({"af_heart"})
 
 app = FastAPI(title="Dear Creative Kokoro TTS", version="1.0.0")
 
@@ -56,12 +58,17 @@ def get_pipeline():
 
 
 class SynthesizeRequest(BaseModel):
-    text: str = Field(min_length=1)
+    text: str = Field(min_length=1, max_length=MAX_TEXT_CHARS)
     voice: str = DEFAULT_VOICE
-    format: str = "mp3"
+    format: Literal["wav"] = "wav"
 
 
 def _synthesize_numpy(text: str, voice: str) -> np.ndarray:
+    if voice not in ALLOWED_VOICES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported voice {voice!r}; allowed: {sorted(ALLOWED_VOICES)}",
+        )
     pipeline = get_pipeline()
     chunks: list[np.ndarray] = []
     generator = pipeline(text, voice=voice, speed=1)
@@ -74,17 +81,10 @@ def _synthesize_numpy(text: str, voice: str) -> np.ndarray:
     return np.concatenate(chunks)
 
 
-def _float32_to_mp3(audio: np.ndarray, sample_rate: int = 24000) -> bytes:
+def _float32_to_wav(audio: np.ndarray, sample_rate: int = 24000) -> bytes:
     clipped = np.clip(audio, -1.0, 1.0)
-    pcm16 = (clipped * 32767.0).astype(np.int16)
-    segment = AudioSegment(
-        pcm16.tobytes(),
-        frame_rate=sample_rate,
-        sample_width=2,
-        channels=1,
-    )
     buf = io.BytesIO()
-    segment.export(buf, format="mp3", bitrate="64k")
+    sf.write(buf, clipped, sample_rate, format="WAV", subtype="PCM_16")
     return buf.getvalue()
 
 
@@ -104,9 +104,8 @@ def synthesize(
             status_code=413,
             detail=f"Text exceeds {MAX_TEXT_CHARS} characters; split on the caller.",
         )
-    if body.format.lower() != "mp3":
-        raise HTTPException(status_code=400, detail="Only format=mp3 is supported")
 
-    audio = _synthesize_numpy(clean, body.voice.strip() or DEFAULT_VOICE)
-    mp3_bytes = _float32_to_mp3(audio)
-    return Response(content=mp3_bytes, media_type="audio/mpeg")
+    voice = body.voice.strip() or DEFAULT_VOICE
+    audio = _synthesize_numpy(clean, voice)
+    wav_bytes = _float32_to_wav(audio)
+    return Response(content=wav_bytes, media_type="audio/wav")

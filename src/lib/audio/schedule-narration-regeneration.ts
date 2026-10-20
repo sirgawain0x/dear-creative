@@ -28,9 +28,7 @@ function scheduleBackgroundNarrationTask(task: BackgroundTask): void {
     afterHookForTests(task);
     return;
   }
-  after(() => {
-    void task();
-  });
+  after(() => task());
 }
 
 export function maybeSchedulePublishedPostNarrationRegeneration(input: {

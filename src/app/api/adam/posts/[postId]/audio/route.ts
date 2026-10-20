@@ -8,6 +8,7 @@ import {
   isNarrationVoice,
   NARRATION_VOICES,
 } from "@/lib/audio/narration";
+import { defaultNarrationVoice } from "@/lib/audio/narration-provider";
 import { regenerateStoredPostNarration } from "@/lib/audio/regenerate-stored-post-narration";
 import { getAdminPostByIdOrSlug } from "@/lib/posts/manage-posts";
 import { publishedPostCacheTag } from "@/lib/posts/published-posts";
@@ -38,7 +39,7 @@ export async function POST(request: Request, context: RouteContext) {
   } catch {
     body = {};
   }
-  const voice = body.voice?.trim() || "af_heart";
+  const voice = body.voice?.trim() || defaultNarrationVoice();
   if (!isNarrationVoice(voice)) {
     return NextResponse.json(
       {

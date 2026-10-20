@@ -17,7 +17,7 @@ client = TestClient(app)
 def test_synthesize_without_token_returns_401() -> None:
     response = client.post(
         "/v1/synthesize",
-        json={"text": "Hello.", "voice": "af_heart", "format": "mp3"},
+        json={"text": "Hello.", "voice": "af_heart", "format": "wav"},
     )
     assert response.status_code == 401
 
@@ -25,7 +25,7 @@ def test_synthesize_without_token_returns_401() -> None:
 def test_synthesize_with_wrong_token_returns_401() -> None:
     response = client.post(
         "/v1/synthesize",
-        json={"text": "Hello.", "voice": "af_heart", "format": "mp3"},
+        json={"text": "Hello.", "voice": "af_heart", "format": "wav"},
         headers={"Authorization": "Bearer wrong-token"},
     )
     assert response.status_code == 401
@@ -34,7 +34,7 @@ def test_synthesize_with_wrong_token_returns_401() -> None:
 def test_synthesize_with_missing_bearer_prefix_returns_401() -> None:
     response = client.post(
         "/v1/synthesize",
-        json={"text": "Hello.", "voice": "af_heart", "format": "mp3"},
+        json={"text": "Hello.", "voice": "af_heart", "format": "wav"},
         headers={"Authorization": "test-secret-token-for-unit-tests"},
     )
     assert response.status_code == 401

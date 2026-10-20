@@ -1,26 +1,26 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  KokoroTtsTimeoutError,
-  synthesizeSpeechWithKokoroServer,
-} from "./kokoro-server-tts";
+  createNarrationDeadline,
+  NARRATION_WALL_TIMEOUT_MESSAGE,
+} from "./narration-deadline";
+import { synthesizeSpeechWithKokoroServer } from "./kokoro-server-tts";
 import { NEXT_ROUTE_MAX_DURATION_SEC } from "./narration-provider";
 
 describe("synthesizeSpeechWithKokoroServer", () => {
   afterEach(() => {
-    vi.useRealTimers();
     vi.unstubAllEnvs();
   });
 
-  it("sends Bearer auth and returns MP3 base64", async () => {
+  it("sends Bearer auth and returns WAV base64", async () => {
     vi.stubEnv("KOKORO_TTS_BASE_URL", "https://kokoro.example");
     vi.stubEnv("KOKORO_TTS_TOKEN", "secret-token");
 
     const fetchFn = vi.fn(async () =>
-      new Response(new Uint8Array([0xff, 0xfb]), {
+      new Response(new Uint8Array([0x52, 0x49, 0x46, 0x46]), {
         status: 200,
-        headers: { "Content-Type": "audio/mpeg" },
+        headers: { "Content-Type": "audio/wav" },
       }),
-    );
+    ) as typeof fetch;
 
     const result = await synthesizeSpeechWithKokoroServer({
       text: "Hello.",
@@ -33,14 +33,15 @@ describe("synthesizeSpeechWithKokoroServer", () => {
         method: "POST",
         headers: expect.objectContaining({
           Authorization: "Bearer secret-token",
+          Accept: "audio/wav",
         }),
       }),
     );
-    expect(result.mimeType).toBe("audio/mpeg");
+    expect(result.mimeType).toBe("audio/wav");
     expect(result.provider).toBe("kokoro-cloud-run");
   });
 
-  it("aborts when KOKORO_TTS_TIMEOUT_MS elapses (under route maxDuration)", async () => {
+  it("aborts under the shared narration route wall-clock budget", async () => {
     expect(NEXT_ROUTE_MAX_DURATION_SEC).toBe(300);
 
     const fetchFn = vi.fn(
@@ -52,17 +53,19 @@ describe("synthesizeSpeechWithKokoroServer", () => {
         }),
     ) as typeof fetch;
 
+    const deadlineAtMs = createNarrationDeadline(30, Date.now());
+
     await expect(
       synthesizeSpeechWithKokoroServer({
         text: "Slow synthesis.",
         fetchFn,
+        deadlineAtMs,
         env: {
           ...process.env,
           KOKORO_TTS_BASE_URL: "https://kokoro.example",
           KOKORO_TTS_TOKEN: "secret-token",
-          KOKORO_TTS_TIMEOUT_MS: "30",
         },
       }),
-    ).rejects.toBeInstanceOf(KokoroTtsTimeoutError);
+    ).rejects.toThrow(NARRATION_WALL_TIMEOUT_MESSAGE);
   });
 });

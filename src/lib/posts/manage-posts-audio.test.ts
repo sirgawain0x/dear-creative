@@ -150,6 +150,8 @@ describe("manage-posts published narration regeneration", () => {
     await updateAdminPost(db, postId, {
       bodyHtml: "<p>After narration change</p>",
     });
+    const cleared = await getPostAudioColumns(db, postId);
+    expect(cleared.audioUrl).toBeNull();
     expect(pendingTasks).toHaveLength(1);
     await flushBackgroundTasks();
 
@@ -158,7 +160,7 @@ describe("manage-posts published narration regeneration", () => {
     expect(audio.audioUrl).toBe("https://cdn.example/after.mp3");
   });
 
-  it("keeps the previous audio URL when regeneration fails", async () => {
+  it("clears stale audio immediately when narration text changes and leaves null if regeneration fails", async () => {
     const db = await createPostsTestDb();
     const postId = randomUUID();
     await db.insert(posts).values({
@@ -167,7 +169,7 @@ describe("manage-posts published narration regeneration", () => {
       title: "Title",
       status: "published",
       publishedAt: new Date(),
-      bodyHtml: "<p>Body</p>",
+      bodyHtml: "<p>Before</p>",
     });
     await setPostAudioColumns(db, postId, {
       audioUrl: "https://cdn.example/safe.mp3",
@@ -175,15 +177,17 @@ describe("manage-posts published narration regeneration", () => {
     });
     generatePostNarrationMp3Mock.mockRejectedValue(new Error("tts unavailable"));
 
-    const result = await regenerateStoredPostNarration(db, postId, {
-      generateFn: generatePostNarrationMp3Mock,
-      logError: () => {},
+    await updateAdminPost(db, postId, {
+      bodyHtml: "<p>After text change</p>",
     });
+    const afterSave = await getPostAudioColumns(db, postId);
+    expect(afterSave.audioUrl).toBeNull();
 
-    expect(result.ok).toBe(false);
+    await flushBackgroundTasks();
+
     expect(generatePostNarrationMp3Mock).toHaveBeenCalledTimes(1);
     const audio = await getPostAudioColumns(db, postId);
-    expect(audio.audioUrl).toBe("https://cdn.example/safe.mp3");
+    expect(audio.audioUrl).toBeNull();
   });
 
   it("keeps audio and skips TTS on markdown resave when spoken text is unchanged", async () => {

@@ -1,10 +1,17 @@
 import { Mp3Encoder } from "@breezystack/lamejs";
-import { synthesizeNarrationSpeechChunk } from "./narration-synthesize";
 import { stripHtmlTags } from "@/lib/posts/reading-time";
 import {
   uploadToLensGrove,
   type LensGroveUploadResult,
 } from "@/lib/storage/lens-grove";
+import { NARRATION_CHUNK_MAX_CHARS } from "./narration-chunk-limits";
+import {
+  buildNarrationFetchSignal,
+  createNarrationDeadline,
+  rethrowNarrationFetchError,
+  throwIfNarrationDeadlineExceeded,
+} from "./narration-deadline";
+import { synthesizeNarrationChunks } from "./narration-synthesize";
 
 export {
   isNarrationVoice,
@@ -12,6 +19,8 @@ export {
   voiceLabel,
   type NarrationVoice,
 } from "./narration-voices";
+
+export { NARRATION_CHUNK_MAX_CHARS };
 
 /** Builds the narration script spoken for a post: title, teaser, then body. */
 export function buildNarrationScript(input: {
@@ -32,7 +41,10 @@ export function buildNarrationScript(input: {
  * Splits text into TTS-sized chunks on sentence boundaries so long articles
  * are narrated in full (the TTS call truncates around 10k characters).
  */
-export function chunkNarrationText(text: string, maxChars = 4000): string[] {
+export function chunkNarrationText(
+  text: string,
+  maxChars = NARRATION_CHUNK_MAX_CHARS,
+): string[] {
   const clean = text.replace(/\s+/g, " ").trim();
   if (!clean) return [];
   const sentences = clean.match(/[^.!?]+[.!?]+["')\]]*\s*|[^.!?]+$/g) ?? [clean];
@@ -92,7 +104,10 @@ export function parseWav(buf: Buffer): PcmInfo | null {
   return null;
 }
 
-/** Encodes mono/stereo 16-bit PCM into an MP3 buffer. */
+/**
+ * Encodes mono/stereo 16-bit PCM into one MP3 buffer (@breezystack/lamejs).
+ * Pure JS — no ffmpeg binary — safe on Vercel serverless without extra bundles.
+ */
 export function encodePcmToMp3(
   pcm: Buffer,
   sampleRate = 24000,
@@ -143,43 +158,56 @@ export type NarrationResult = {
   provider: string;
 };
 
-/**
- * Synthesizes the full narration once (chunked), merges it into a single MP3,
- * and uploads it to Lens Grove so readers stream a static file instead of
- * triggering per-visitor TTS.
- */
-export async function generatePostNarrationMp3(input: {
+export type GeneratePostNarrationMp3Options = {
   slug: string;
   title: string;
   teaserText?: string | null;
   bodyHtml?: string | null;
   voice: string;
   fetchFn?: typeof fetch;
-  synthesizeFn?: typeof synthesizeNarrationSpeechChunk;
+  synthesizeChunksFn?: typeof synthesizeNarrationChunks;
   uploadFn?: (file: File | Blob, fileName?: string) => Promise<LensGroveUploadResult>;
-}): Promise<NarrationResult> {
+  deadlineAtMs?: number;
+};
+
+/**
+ * Synthesizes the full narration once (chunked), merges PCM into a single MP3,
+ * and uploads it to Lens Grove.
+ */
+export async function generatePostNarrationMp3(
+  input: GeneratePostNarrationMp3Options,
+): Promise<NarrationResult> {
   const script = buildNarrationScript(input);
   const chunks = chunkNarrationText(script);
   if (chunks.length === 0) {
     throw new Error("Post has no text to narrate.");
   }
 
-  const synth = input.synthesizeFn ?? synthesizeNarrationSpeechChunk;
+  const deadlineAtMs = input.deadlineAtMs ?? createNarrationDeadline();
+  const synth = input.synthesizeChunksFn ?? synthesizeNarrationChunks;
   const upload = input.uploadFn ?? uploadToLensGrove;
+
+  throwIfNarrationDeadlineExceeded(deadlineAtMs);
+
+  let synthesized;
+  try {
+    synthesized = await synth({
+      chunks,
+      voiceName: input.voice,
+      fetchFn: input.fetchFn,
+      signal: buildNarrationFetchSignal(deadlineAtMs),
+    });
+  } catch (err) {
+    rethrowNarrationFetchError(err);
+  }
 
   const pcmParts: Buffer[] = [];
   const mp3Parts: Buffer[] = [];
   let sampleRate = 24000;
   let channels = 1;
-  const providers = new Set<string>();
 
-  for (const chunk of chunks) {
-    const speech = await synth({
-      text: chunk,
-      voiceName: input.voice,
-      fetchFn: input.fetchFn,
-    });
-    providers.add(speech.provider);
+  for (const speech of synthesized.parts) {
+    throwIfNarrationDeadlineExceeded(deadlineAtMs);
     const buf = Buffer.from(speech.audioBase64, "base64");
     if (speech.mimeType.includes("mp3") || speech.mimeType.includes("mpeg")) {
       mp3Parts.push(buf);
@@ -200,9 +228,11 @@ export async function generatePostNarrationMp3(input: {
     );
   }
 
+  const mergedPcm =
+    pcmParts.length > 0 ? Buffer.concat(pcmParts) : Buffer.alloc(0);
   const mp3 =
     pcmParts.length > 0
-      ? encodePcmToMp3(Buffer.concat(pcmParts), sampleRate, channels)
+      ? encodePcmToMp3(mergedPcm, sampleRate, channels)
       : Buffer.concat(mp3Parts);
 
   const fileName = `${input.slug}-${input.voice.toLowerCase()}-narration.mp3`;
@@ -219,6 +249,6 @@ export async function generatePostNarrationMp3(input: {
     mimeType: "audio/mpeg",
     bytes: mp3.length,
     chunks: chunks.length,
-    provider: [...providers].join("+"),
+    provider: synthesized.provider,
   };
 }

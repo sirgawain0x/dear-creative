@@ -123,7 +123,7 @@ Accept: audio/mpeg
 {"text":"Hello dispatch.","voice":"af_heart","format":"mp3"}
 ```
 
-Response: `audio/mpeg` body. Missing or invalid Bearer → **401 Unauthorized**.
+Response: **`audio/wav`** (24 kHz PCM). Dear Creative concatenates chunk WAVs and encodes **one MP3 per article** with `@breezystack/lamejs` on Vercel (pure JS — no ffmpeg binary). Missing or invalid Bearer → **401 Unauthorized**.
 
 ## Tests
 

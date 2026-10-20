@@ -2,7 +2,7 @@
 FROM python:3.11-slim-bookworm AS runtime
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends espeak-ng ffmpeg \
+  && apt-get install -y --no-install-recommends espeak-ng \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -10,15 +10,17 @@ WORKDIR /app
 ENV HF_HOME=/app/.cache/huggingface \
     KOKORO_DEFAULT_VOICE=af_heart \
     KOKORO_LANG_CODE=a \
+    KOKORO_MAX_TEXT_CHARS=4000 \
     PORT=8080
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Bake model + voice weights into the image (no Hub fetch on cold start).
-RUN python -c "from kokoro import KPipeline; KPipeline(lang_code='a')"
+COPY bake_kokoro_weights.py app.py ./
+RUN python bake_kokoro_weights.py \
+  && chown -R nobody:nogroup /app/.cache
 
-COPY app.py .
+ENV HF_HUB_OFFLINE=1
 
 USER nobody
 EXPOSE 8080

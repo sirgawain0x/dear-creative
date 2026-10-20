@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  estimateMp3DurationSecFromSourcePcm,
+  parseMp3DurationSec,
+} from "./mp3-duration";
+import {
   buildNarrationScript,
   chunkNarrationText,
   encodePcmToMp3,
@@ -108,6 +112,26 @@ describe("narration helper functions", () => {
       expect(parseWav(invalid)).toBeNull();
     });
 
+    it("encodes merged article PCM into MP3 with plausible duration metadata", () => {
+      const sampleRate = 24000;
+      const samples = Array.from({ length: sampleRate * 2 }, (_, i) =>
+        Math.floor(Math.sin(i / 10) * 10000),
+      );
+      const mockWav = createMockWavBuffer(samples, sampleRate);
+      const parsed = parseWav(mockWav)!;
+      const mp3 = encodePcmToMp3(parsed.pcm, parsed.sampleRate, parsed.channels);
+
+      expect(mp3.length).toBeGreaterThan(0);
+      const expectedSec = estimateMp3DurationSecFromSourcePcm(
+        parsed.pcm.length,
+        sampleRate,
+      );
+      expect(expectedSec).toBeCloseTo(2, 0.01);
+      const headerSec = parseMp3DurationSec(mp3);
+      expect(headerSec).not.toBeNull();
+      expect(Math.abs(headerSec! - expectedSec)).toBeLessThan(2.5);
+    });
+
     it("encodes mono PCM into valid MP3 buffer with frame header", () => {
       // 1152 samples minimum for an MP3 frame
       const samples = Array.from({ length: 2304 }, (_, i) =>
@@ -130,9 +154,14 @@ describe("narration helper functions", () => {
       const mockWavBase64 = mockWav.toString("base64");
 
       const mockSynth = vi.fn().mockResolvedValue({
-        audioBase64: mockWavBase64,
-        mimeType: "audio/wav",
-        provider: "google-tts-gemini",
+        parts: [
+          {
+            audioBase64: mockWavBase64,
+            mimeType: "audio/wav",
+            provider: "mock-tts",
+          },
+        ],
+        provider: "mock-tts",
       });
 
       const mockUpload = vi.fn().mockImplementation(async (file: File, fileName?: string) => {
@@ -151,7 +180,7 @@ describe("narration helper functions", () => {
         teaserText: "AI as a creative co-pilot.",
         bodyHtml: "<p>We build with code, sound, and vision.</p>",
         voice: "Puck",
-        synthesizeFn: mockSynth,
+        synthesizeChunksFn: mockSynth,
         uploadFn: mockUpload,
       });
 
@@ -164,7 +193,7 @@ describe("narration helper functions", () => {
       expect(result.mimeType).toBe("audio/mpeg");
       expect(result.bytes).toBeGreaterThan(0);
       expect(result.chunks).toBe(1);
-      expect(result.provider).toBe("google-tts-gemini");
+      expect(result.provider).toBe("mock-tts");
     });
 
     it("throws when post has no narratable text", async () => {

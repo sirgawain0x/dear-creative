@@ -1,20 +1,14 @@
 import {
-  getKokoroTtsTimeoutMs,
-  KOKORO_NARRATION_VOICE,
-} from "./narration-provider";
+  buildNarrationFetchSignal,
+  rethrowNarrationFetchError,
+} from "./narration-deadline";
+import { KOKORO_NARRATION_VOICE } from "./narration-provider";
 
 export type KokoroServerSpeechResult = {
   audioBase64: string;
-  mimeType: "audio/mpeg";
+  mimeType: "audio/wav";
   provider: "kokoro-cloud-run";
 };
-
-export class KokoroTtsTimeoutError extends Error {
-  constructor(message = "Kokoro TTS request timed out") {
-    super(message);
-    this.name = "KokoroTtsTimeoutError";
-  }
-}
 
 export class KokoroTtsHttpError extends Error {
   status: number;
@@ -42,13 +36,14 @@ export function isKokoroServerConfigured(
 }
 
 /**
- * Calls the Cloud Run Kokoro synthesize endpoint (MP3, af_heart by default).
+ * Calls the Cloud Run Kokoro synthesize endpoint (24 kHz WAV PCM).
  */
 export async function synthesizeSpeechWithKokoroServer(input: {
   text: string;
   voice?: string;
   fetchFn?: typeof fetch;
   signal?: AbortSignal;
+  deadlineAtMs?: number;
   env?: NodeJS.ProcessEnv;
 }): Promise<KokoroServerSpeechResult> {
   const env = input.env ?? process.env;
@@ -60,22 +55,11 @@ export async function synthesizeSpeechWithKokoroServer(input: {
     );
   }
 
-  const timeoutMs = getKokoroTtsTimeoutMs(env);
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-  const outerSignal = input.signal;
-  if (outerSignal) {
-    if (outerSignal.aborted) {
-      clearTimeout(timeoutId);
-      throw new KokoroTtsTimeoutError();
-    }
-    outerSignal.addEventListener(
-      "abort",
-      () => controller.abort(),
-      { once: true },
-    );
-  }
+  const fetchSignal =
+    input.signal ??
+    (input.deadlineAtMs !== undefined
+      ? buildNarrationFetchSignal(input.deadlineAtMs)
+      : undefined);
 
   const fetchImpl = input.fetchFn ?? fetch;
   const endpoint = `${baseUrl.replace(/\/$/, "")}/v1/synthesize`;
@@ -86,14 +70,14 @@ export async function synthesizeSpeechWithKokoroServer(input: {
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
-        Accept: "audio/mpeg",
+        Accept: "audio/wav",
       },
       body: JSON.stringify({
         text: input.text,
         voice: input.voice?.trim() || KOKORO_NARRATION_VOICE,
-        format: "mp3",
+        format: "wav",
       }),
-      signal: controller.signal,
+      signal: fetchSignal,
     });
 
     if (!response.ok) {
@@ -107,18 +91,13 @@ export async function synthesizeSpeechWithKokoroServer(input: {
     const buffer = Buffer.from(await response.arrayBuffer());
     return {
       audioBase64: buffer.toString("base64"),
-      mimeType: "audio/mpeg",
+      mimeType: "audio/wav",
       provider: "kokoro-cloud-run",
     };
   } catch (error) {
-    if (
-      error instanceof Error &&
-      (error.name === "AbortError" || error.name === "TimeoutError")
-    ) {
-      throw new KokoroTtsTimeoutError();
+    if (error instanceof KokoroTtsHttpError) {
+      throw error;
     }
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
+    rethrowNarrationFetchError(error);
   }
 }
