@@ -30,6 +30,9 @@ const FIXTURE_SLUGS = [
   "fixture-papyrus-prod-1",
   "fixture-papyrus-prod-2",
   "fixture-papyrus-prod-3",
+  "warner-bought-the-lie-detector",
+  "theyre-selling-your-superfans-an-ai-version-of-you",
+  "first-test-embracing-the-dip",
   "hello-dear-creative",
 ] as const;
 
@@ -66,10 +69,38 @@ function hiddenPosts(now: Date): (typeof posts.$inferInsert)[] {
   ];
 }
 
-/** Verified public prod art (read from news.creativeplatform.xyz post HTML). */
-const PAPYRUS_PROD_COVER_URLS = [
-  "https://storage.googleapis.com/papyrus_images/1561f2d41303599b84b0b17bec1b224df57d01b39a51109b25adec70bfe7896c.png",
-  "https://storage.googleapis.com/papyrus_images/a5984b0c760cd841db3c8264d1cb1fde1617ee70abf3a6783623a4711630a484.png",
+/**
+ * Prod spotlight fixtures — publishedAt/teaser/cover from news.creativeplatform.xyz
+ * (RSS pubDate + first papyrus_images URL in each post HTML). Superfans and First Test
+ * use different cover hashes in prod (verified 2026-10-20).
+ */
+const PAPYRUS_PROD_SPOTLIGHT_FIXTURES = [
+  {
+    slug: "warner-bought-the-lie-detector",
+    title: "Warner Bought the Lie Detector",
+    publishedAt: "2026-07-02T18:21:00.000Z",
+    teaserText:
+      "When the label owns the tool that proves what's yours, ownership still pays a toll",
+    coverUrl:
+      "https://storage.googleapis.com/papyrus_images/6f52948c2fb7290037aa293dfb6895bbc292048402fc581c4ed0bd9cfe993da4.png",
+  },
+  {
+    slug: "theyre-selling-your-superfans-an-ai-version-of-you",
+    title: "They're Selling Your Superfans an AI Version of You",
+    publishedAt: "2026-07-01T04:07:47.000Z",
+    teaserText:
+      "Spotify and Universal licensed fan-made AI covers and remixes — and the artist still isn't on the cap table",
+    coverUrl:
+      "https://storage.googleapis.com/papyrus_images/1561f2d41303599b84b0b17bec1b224df57d01b39a51109b25adec70bfe7896c.png",
+  },
+  {
+    slug: "first-test-embracing-the-dip",
+    title: "The First Test of the Quest: Embracing the Dip",
+    publishedAt: "2026-07-01T03:34:41.000Z",
+    teaserText: "Establishing the first defensive perimeter as BTC slips below $60k.",
+    coverUrl:
+      "https://storage.googleapis.com/papyrus_images/481239ca7e113284f075d4c8ce83524ae7c97866309e776cc240b90aad8b2790.png",
+  },
 ] as const;
 
 async function main() {
@@ -100,46 +131,19 @@ async function main() {
 
   if (papyrusProdShot) {
     rows = [
-      {
+      ...PAPYRUS_PROD_SPOTLIGHT_FIXTURES.map((fixture) => ({
         id: randomUUID(),
-        slug: "fixture-papyrus-prod-1",
-        title: "They're Selling Your Superfans an AI Version of You",
-        status: "published",
-        publishedAt: new Date("2026-10-20T12:00:00.000Z"),
-        teaserText:
-          "Spotify and Universal licensed fan-made AI covers — fixture using prod papyrus art.",
+        slug: fixture.slug,
+        title: fixture.title,
+        status: "published" as const,
+        publishedAt: new Date(fixture.publishedAt),
+        teaserText: fixture.teaserText,
         freeContent: null,
-        bodyHtml: `<p>Paid body.</p><img src="${PAPYRUS_PROD_COVER_URLS[0]}" alt="Cover" />`,
-        source: "paragraph",
+        bodyHtml: `<p>Paid body.</p><img src="${fixture.coverUrl}" alt="Cover" />`,
+        source: "paragraph" as const,
         createdAt: now,
         updatedAt: now,
-      },
-      {
-        id: randomUUID(),
-        slug: "fixture-papyrus-prod-2",
-        title: "Warner Bought the Lie Detector",
-        status: "published",
-        publishedAt: new Date("2026-10-19T12:00:00.000Z"),
-        teaserText: "When the label owns the tool that proves what's yours.",
-        freeContent: null,
-        bodyHtml: `<p>Paid body.</p><img src="${PAPYRUS_PROD_COVER_URLS[1]}" alt="Cover" />`,
-        source: "paragraph",
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        id: randomUUID(),
-        slug: "fixture-papyrus-prod-3",
-        title: "The First Test of the Quest: Embracing the Dip",
-        status: "published",
-        publishedAt: new Date("2026-10-18T12:00:00.000Z"),
-        teaserText: "Establishing the first defensive perimeter as BTC slips below $60k.",
-        freeContent: null,
-        bodyHtml: `<p>Paid body.</p><img src="${PAPYRUS_PROD_COVER_URLS[0]}" alt="Cover" />`,
-        source: "paragraph",
-        createdAt: now,
-        updatedAt: now,
-      },
+      })),
       ...hiddenPosts(now),
     ];
   } else if (noTeaserShot) {
