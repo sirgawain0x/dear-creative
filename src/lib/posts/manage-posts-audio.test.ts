@@ -1,73 +1,69 @@
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getPostAudioColumns, setPostAudioColumns } from "@/db/ensure-schema";
 import { posts } from "@/db/schema";
+import type { NarrationResult } from "@/lib/audio/narration";
+import { regenerateStoredPostNarration } from "@/lib/audio/regenerate-stored-post-narration";
 import {
-  createPostsTestDb,
-  insertPost,
-} from "@/lib/posts/test-support/posts-test-db";
+  setPostNarrationAfterHookForTests,
+  setRegenerateStoredPostNarrationForTests,
+} from "@/lib/audio/schedule-narration-regeneration";
 import { ensureArticleHtml } from "@/lib/html/markdown-to-html";
+import { createPostsTestDb } from "@/lib/posts/test-support/posts-test-db";
 import { updateAdminPost } from "./manage-posts";
 
-describe("manage-posts stored narration", () => {
-  it("clears audio_url when narration content is edited", async () => {
-    const db = await createPostsTestDb();
-    await insertPost(db, {
-      slug: "draft-audio",
-      title: "Original title",
-      status: "draft",
-      publishedAt: null,
-      bodyHtml: "<p>Original body</p>",
-    });
-    const [row] = await db.select().from(posts).where(eq(posts.slug, "draft-audio"));
-    expect(row?.id).toBeTruthy();
-    const id = row!.id;
+const generatePostNarrationMp3Mock = vi.hoisted(() => vi.fn());
 
-    await setPostAudioColumns(db, id, {
-      audioUrl: "https://cdn.example/original.mp3",
-      audioVoice: "Puck",
-    });
+function mockNarrationResult(url: string): NarrationResult {
+  return {
+    url,
+    uri: "lens://test",
+    storageKey: "key",
+    voice: "Puck",
+    mimeType: "audio/mpeg",
+    bytes: 100,
+    chunks: 1,
+    provider: "mock",
+  };
+}
 
-    await updateAdminPost(db, id, {
-      bodyHtml: "<p>Updated body for narration</p>",
-    });
+describe("manage-posts published narration regeneration", () => {
+  const pendingTasks: Array<() => void | Promise<void>> = [];
 
-    const audio = await getPostAudioColumns(db, id);
-    expect(audio.audioUrl).toBeNull();
-    expect(audio.audioVoice).toBeNull();
+  beforeEach(() => {
+    generatePostNarrationMp3Mock.mockReset();
+    pendingTasks.length = 0;
+    setPostNarrationAfterHookForTests((task) => {
+      pendingTasks.push(task);
+    });
+    setRegenerateStoredPostNarrationForTests((db, postId, options) =>
+      regenerateStoredPostNarration(db, postId, {
+        ...options,
+        generateFn: generatePostNarrationMp3Mock,
+      }),
+    );
   });
 
-  it("clears audio_url when a draft is published", async () => {
+  afterEach(() => {
+    setPostNarrationAfterHookForTests(null);
+    setRegenerateStoredPostNarrationForTests(null);
+  });
+
+  async function flushBackgroundTasks() {
+    for (const task of pendingTasks.splice(0)) {
+      await task();
+    }
+  }
+
+  it("does not call TTS when spoken text is unchanged on a published post", async () => {
     const db = await createPostsTestDb();
     const postId = randomUUID();
     await db.insert(posts).values({
       id: postId,
-      slug: "going-live",
-      title: "Going live",
-      status: "draft",
-      bodyHtml: "<p>Ready</p>",
-    });
-    await setPostAudioColumns(db, postId, {
-      audioUrl: "https://cdn.example/draft.mp3",
-      audioVoice: "Aoede",
-    });
-
-    await updateAdminPost(db, postId, { status: "published" });
-
-    const audio = await getPostAudioColumns(db, postId);
-    expect(audio.audioUrl).toBeNull();
-    expect(audio.audioVoice).toBeNull();
-  });
-
-  it("keeps stored audio when the edit does not change narration fields", async () => {
-    const db = await createPostsTestDb();
-    const postId = randomUUID();
-    await db.insert(posts).values({
-      id: postId,
-      slug: "metadata-only",
+      slug: "published-stable",
       title: "Stable title",
-      status: "draft",
+      status: "published",
+      publishedAt: new Date(),
       bodyHtml: "<p>Stable body</p>",
       emailSubject: "Old subject",
     });
@@ -77,15 +73,74 @@ describe("manage-posts stored narration", () => {
     });
 
     await updateAdminPost(db, postId, {
-      emailSubject: "Updated subject line",
+      emailSubject: "New subject only",
     });
+    await flushBackgroundTasks();
 
+    expect(generatePostNarrationMp3Mock).not.toHaveBeenCalled();
     const audio = await getPostAudioColumns(db, postId);
     expect(audio.audioUrl).toBe("https://cdn.example/keep.mp3");
-    expect(audio.audioVoice).toBe("Puck");
   });
 
-  it("keeps stored audio on markdown-mode save when spoken text is unchanged", async () => {
+  it("schedules exactly one regeneration when published post narration text changes", async () => {
+    const db = await createPostsTestDb();
+    const postId = randomUUID();
+    await db.insert(posts).values({
+      id: postId,
+      slug: "published-edit",
+      title: "Title",
+      status: "published",
+      publishedAt: new Date(),
+      bodyHtml: "<p>Before</p>",
+    });
+    await setPostAudioColumns(db, postId, {
+      audioUrl: "https://cdn.example/before.mp3",
+      audioVoice: "Puck",
+    });
+    generatePostNarrationMp3Mock.mockResolvedValue(
+      mockNarrationResult("https://cdn.example/after.mp3"),
+    );
+
+    await updateAdminPost(db, postId, {
+      bodyHtml: "<p>After narration change</p>",
+    });
+    expect(pendingTasks).toHaveLength(1);
+    await flushBackgroundTasks();
+
+    expect(generatePostNarrationMp3Mock).toHaveBeenCalledTimes(1);
+    const audio = await getPostAudioColumns(db, postId);
+    expect(audio.audioUrl).toBe("https://cdn.example/after.mp3");
+  });
+
+  it("keeps the previous audio URL when regeneration fails", async () => {
+    const db = await createPostsTestDb();
+    const postId = randomUUID();
+    await db.insert(posts).values({
+      id: postId,
+      slug: "published-fail",
+      title: "Title",
+      status: "published",
+      publishedAt: new Date(),
+      bodyHtml: "<p>Body</p>",
+    });
+    await setPostAudioColumns(db, postId, {
+      audioUrl: "https://cdn.example/safe.mp3",
+      audioVoice: "Puck",
+    });
+    generatePostNarrationMp3Mock.mockRejectedValue(new Error("tts unavailable"));
+
+    const result = await regenerateStoredPostNarration(db, postId, {
+      generateFn: generatePostNarrationMp3Mock,
+      logError: () => {},
+    });
+
+    expect(result.ok).toBe(false);
+    expect(generatePostNarrationMp3Mock).toHaveBeenCalledTimes(1);
+    const audio = await getPostAudioColumns(db, postId);
+    expect(audio.audioUrl).toBe("https://cdn.example/safe.mp3");
+  });
+
+  it("keeps audio and skips TTS on markdown resave when spoken text is unchanged", async () => {
     const db = await createPostsTestDb();
     const postId = randomUUID();
     const markdown = "Same spoken words in the article.";
@@ -95,9 +150,10 @@ describe("manage-posts stored narration", () => {
 
     await db.insert(posts).values({
       id: postId,
-      slug: "markdown-resave",
+      slug: "markdown-published",
       title: "Markdown resave",
-      status: "draft",
+      status: "published",
+      publishedAt: new Date(),
       bodyHtml: legacyHtml,
     });
     await setPostAudioColumns(db, postId, {
@@ -106,35 +162,10 @@ describe("manage-posts stored narration", () => {
     });
 
     await updateAdminPost(db, postId, { markdown });
+    await flushBackgroundTasks();
 
+    expect(generatePostNarrationMp3Mock).not.toHaveBeenCalled();
     const audio = await getPostAudioColumns(db, postId);
     expect(audio.audioUrl).toBe("https://cdn.example/markdown-keep.mp3");
-    expect(audio.audioVoice).toBe("Puck");
-  });
-
-  it("does not clear audio when audioUrl is set explicitly on the same update", async () => {
-    const db = await createPostsTestDb();
-    const postId = randomUUID();
-    await db.insert(posts).values({
-      id: postId,
-      slug: "explicit-audio",
-      title: "Title",
-      status: "draft",
-      bodyHtml: "<p>Before</p>",
-    });
-    await setPostAudioColumns(db, postId, {
-      audioUrl: "https://cdn.example/old.mp3",
-      audioVoice: "Puck",
-    });
-
-    await updateAdminPost(db, postId, {
-      bodyHtml: "<p>After narration change</p>",
-      audioUrl: "https://cdn.example/new.mp3",
-      audioVoice: "Aoede",
-    });
-
-    const audio = await getPostAudioColumns(db, postId);
-    expect(audio.audioUrl).toBe("https://cdn.example/new.mp3");
-    expect(audio.audioVoice).toBe("Aoede");
   });
 });
