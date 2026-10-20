@@ -1,11 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  ADAM_VIDEO_DEFAULT_FETCH_TIMEOUT_MS,
-  ADAM_VIDEO_DEFAULT_POLL_INTERVAL_MS,
-  ADAM_VIDEO_ROUTE_BUDGET_MS,
+  ADAM_VIDEO_WALL_TIMEOUT_MESSAGE,
   DEFAULT_ADAM_GEMINI_VIDEO_MODEL,
   DEFAULT_ADAM_IMAGEN_MODEL,
-  computeAdamVideoPollAttempts,
   generateBannerWithGemini,
   generateVideoWithVeo,
 } from "./gemini-studio";
@@ -23,17 +20,6 @@ function geminiHeaders(init?: RequestInit): Headers {
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
-});
-
-describe("computeAdamVideoPollAttempts", () => {
-  it("sizes polling to fit within the 300s route budget", () => {
-    const attempts = computeAdamVideoPollAttempts();
-    const reserve = ADAM_VIDEO_DEFAULT_FETCH_TIMEOUT_MS * 3;
-    const totalMs =
-      attempts * ADAM_VIDEO_DEFAULT_POLL_INTERVAL_MS + reserve;
-    expect(totalMs).toBeLessThanOrEqual(ADAM_VIDEO_ROUTE_BUDGET_MS);
-    expect(totalMs).toBeLessThanOrEqual(300_000);
-  });
 });
 
 describe("generateVideoWithVeo (Gemini Omni default)", () => {
@@ -72,9 +58,9 @@ describe("generateVideoWithVeo (Gemini Omni default)", () => {
       prompt: "A calm creative studio at dusk",
       fetchFn: mockFetch as unknown as typeof fetch,
       uploadFn: mockUpload,
-      maxPollAttempts: 1,
       pollIntervalMs: 0,
       fetchTimeoutMs: 5_000,
+      wallBudgetMs: 290_000,
     });
 
     expect(result.provider).toBe("gemini-omni");
@@ -154,9 +140,9 @@ describe("generateVideoWithVeo (Gemini Omni default)", () => {
       prompt: "URI delivery clip",
       fetchFn: mockFetch as unknown as typeof fetch,
       uploadFn: mockUpload,
-      maxPollAttempts: 2,
       pollIntervalMs: 0,
       fetchTimeoutMs: 5_000,
+      wallBudgetMs: 290_000,
     });
 
     expect(
@@ -236,11 +222,114 @@ describe("generateVideoWithVeo (Gemini Omni default)", () => {
         prompt: "File fail",
         fetchFn: mockFetch as unknown as typeof fetch,
         uploadFn: mockUpload,
-        maxPollAttempts: 1,
         pollIntervalMs: 0,
         fetchTimeoutMs: 5_000,
+        wallBudgetMs: 290_000,
       }),
     ).rejects.toThrow(/file processing failed/i);
+  });
+
+  it("stops within the 290s wall-clock budget when file status stays processing", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    let now = 0;
+    const fileId = "processing-file";
+    const mockFetch = vi.fn(async (url: string) => {
+      if (url.includes("/interactions")) {
+        return new Response(
+          JSON.stringify({
+            status: "completed",
+            steps: [
+              {
+                type: "model_output",
+                content: [
+                  {
+                    type: "video",
+                    uri: `https://generativelanguage.googleapis.com/v1beta/files/${fileId}:download?alt=media`,
+                  },
+                ],
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.endsWith(`/files/${fileId}`)) {
+        return new Response(JSON.stringify({ state: "PROCESSING" }), {
+          status: 200,
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await expect(
+      generateVideoWithVeo({
+        prompt: "Poll until wall budget",
+        fetchFn: mockFetch as unknown as typeof fetch,
+        uploadFn: mockUpload,
+        wallBudgetMs: 290_000,
+        pollIntervalMs: 5_000,
+        fetchTimeoutMs: 45_000,
+        nowFn: () => now,
+        sleepFn: async (ms) => {
+          now += ms;
+        },
+      }),
+    ).rejects.toThrow(ADAM_VIDEO_WALL_TIMEOUT_MESSAGE);
+
+    expect(now).toBeLessThanOrEqual(290_000);
+  });
+
+  it("aborts Lens Grove upload when the wall-clock budget expires", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(0);
+    const fakeMp4 = Buffer.from("upload-timeout").toString("base64");
+    const mockFetch = vi.fn(async (url: string) => {
+      if (url.includes("/interactions")) {
+        return new Response(
+          JSON.stringify({
+            status: "completed",
+            steps: [
+              {
+                type: "model_output",
+                content: [{ type: "video", data: fakeMp4 }],
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    const hangingUpload = vi.fn(
+      (_blob: Blob, _name?: string, signal?: AbortSignal) =>
+        new Promise<never>((_resolve, reject) => {
+          signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("Aborted", "AbortError")),
+            { once: true },
+          );
+        }),
+    );
+
+    const promise = generateVideoWithVeo({
+      prompt: "Upload timeout",
+      fetchFn: mockFetch as unknown as typeof fetch,
+      uploadFn: hangingUpload,
+      wallBudgetMs: 2_000,
+      fetchTimeoutMs: 500,
+      pollIntervalMs: 0,
+      nowFn: () => Date.now(),
+      sleepFn: async (ms) => {
+        await vi.advanceTimersByTimeAsync(ms);
+      },
+    });
+
+    await vi.advanceTimersByTimeAsync(500);
+    await expect(promise).rejects.toThrow(ADAM_VIDEO_WALL_TIMEOUT_MESSAGE);
+    expect(hangingUpload).toHaveBeenCalled();
+    expect(hangingUpload.mock.calls[0][2]).toBeInstanceOf(AbortSignal);
+    vi.useRealTimers();
   });
 
   it("uses legacy Veo predictLongRunning when ADAM_GEMINI_VIDEO_MODEL is veo-*", async () => {

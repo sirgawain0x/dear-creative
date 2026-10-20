@@ -99,22 +99,112 @@ function usesLegacyVeoPredictApi(model: string): boolean {
   return model.startsWith("veo-");
 }
 
-/** Wall-clock budget for Adam video route polling (ms), below Vercel 300s limit. */
+/** Wall-clock budget for Adam video generation (ms), below Vercel 300s limit. */
 export const ADAM_VIDEO_ROUTE_BUDGET_MS = 290_000;
 export const ADAM_VIDEO_DEFAULT_POLL_INTERVAL_MS = 5_000;
 export const ADAM_VIDEO_DEFAULT_FETCH_TIMEOUT_MS = 45_000;
 
-/** Poll attempts so interval × attempts + fetch reserve fits inside route budget. */
-export function computeAdamVideoPollAttempts(
+export const ADAM_VIDEO_WALL_TIMEOUT_MESSAGE =
+  "Adam video generation exceeded the 290s wall-clock budget";
+
+export function createAdamVideoDeadline(
   budgetMs: number = ADAM_VIDEO_ROUTE_BUDGET_MS,
-  pollIntervalMs: number = ADAM_VIDEO_DEFAULT_POLL_INTERVAL_MS,
-  fetchTimeoutMs: number = ADAM_VIDEO_DEFAULT_FETCH_TIMEOUT_MS,
+  nowMs: number = Date.now(),
 ): number {
-  const fetchReserveMs = fetchTimeoutMs * 3;
-  return Math.max(
-    1,
-    Math.floor((budgetMs - fetchReserveMs) / pollIntervalMs),
-  );
+  return nowMs + budgetMs;
+}
+
+function remainingAdamVideoBudgetMs(
+  deadlineAtMs: number,
+  nowMs: number = Date.now(),
+): number {
+  return deadlineAtMs - nowMs;
+}
+
+function throwIfAdamVideoDeadlineExceeded(
+  deadlineAtMs: number,
+  nowMs: number = Date.now(),
+): void {
+  if (remainingAdamVideoBudgetMs(deadlineAtMs, nowMs) <= 0) {
+    throw new Error(ADAM_VIDEO_WALL_TIMEOUT_MESSAGE);
+  }
+}
+
+export function buildAdamVideoFetchSignal(
+  deadlineAtMs: number,
+  perFetchCapMs: number,
+  nowMs: number = Date.now(),
+): AbortSignal {
+  const remaining = remainingAdamVideoBudgetMs(deadlineAtMs, nowMs);
+  if (remaining <= 0) {
+    return AbortSignal.timeout(0);
+  }
+  const perFetchMs = Math.min(perFetchCapMs, remaining);
+  if (perFetchMs >= remaining) {
+    return AbortSignal.timeout(perFetchMs);
+  }
+  return AbortSignal.any([
+    AbortSignal.timeout(perFetchMs),
+    AbortSignal.timeout(remaining),
+  ]);
+}
+
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === "AbortError";
+}
+
+function rethrowAdamVideoFetchError(err: unknown): never {
+  if (isAbortError(err)) {
+    throw new Error(ADAM_VIDEO_WALL_TIMEOUT_MESSAGE);
+  }
+  throw err;
+}
+
+async function fetchWithAdamVideoDeadline(
+  fetchFn: typeof fetch,
+  url: string,
+  init: RequestInit | undefined,
+  deadlineAtMs: number,
+  perFetchCapMs: number,
+  nowMs: number = Date.now(),
+): Promise<Response> {
+  throwIfAdamVideoDeadlineExceeded(deadlineAtMs, nowMs);
+  const signal = buildAdamVideoFetchSignal(deadlineAtMs, perFetchCapMs, nowMs);
+  try {
+    return await fetchFn(url, { ...init, signal });
+  } catch (err) {
+    rethrowAdamVideoFetchError(err);
+  }
+}
+
+async function uploadVideoWithAdamDeadline(
+  uploadFn: (
+    file: File | Blob,
+    fileName?: string,
+    signal?: AbortSignal,
+  ) => Promise<LensGroveUploadResult>,
+  file: Blob,
+  fileName: string,
+  deadlineAtMs: number,
+  perFetchCapMs: number,
+  nowMs: number = Date.now(),
+): Promise<LensGroveUploadResult> {
+  throwIfAdamVideoDeadlineExceeded(deadlineAtMs, nowMs);
+  const signal = buildAdamVideoFetchSignal(deadlineAtMs, perFetchCapMs, nowMs);
+  const uploadPromise = uploadFn(file, fileName, signal);
+  const abortPromise = new Promise<never>((_, reject) => {
+    const fail = () => reject(new Error(ADAM_VIDEO_WALL_TIMEOUT_MESSAGE));
+    if (signal.aborted) {
+      fail();
+      return;
+    }
+    signal.addEventListener("abort", fail, { once: true });
+  });
+  try {
+    return await Promise.race([uploadPromise, abortPromise]);
+  } catch (err) {
+    rethrowAdamVideoFetchError(err);
+  }
 }
 
 function geminiInteractionsUrl(): string {
@@ -132,7 +222,7 @@ function logGeminiHttpFailure(status: number): void {
   console.error(`Gemini HTTP ${status}`);
 }
 
-async function fetchGeminiWithTimeout(
+async function fetchWithPerRequestTimeout(
   fetchFn: typeof fetch,
   url: string,
   init: RequestInit | undefined,
@@ -176,24 +266,47 @@ async function pollGeminiFileUntilActive(input: {
   fetchFn: typeof fetch;
   apiKey: string;
   filesResource: string;
-  maxPollAttempts: number;
   pollIntervalMs: number;
   fetchTimeoutMs: number;
+  deadlineAtMs: number;
+  nowFn?: () => number;
+  sleepFn?: (ms: number) => Promise<void>;
 }): Promise<void> {
   const resource = input.filesResource.replace(/^\//, "");
-  for (let attempt = 0; attempt < input.maxPollAttempts; attempt++) {
-    if (attempt > 0 && input.pollIntervalMs > 0) {
-      await new Promise((r) => setTimeout(r, input.pollIntervalMs));
+  const nowFn = input.nowFn ?? Date.now;
+  const sleepFn =
+    input.sleepFn ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+  let polledBefore = false;
+
+  while (true) {
+    throwIfAdamVideoDeadlineExceeded(input.deadlineAtMs, nowFn());
+    if (polledBefore && input.pollIntervalMs > 0) {
+      const nowBeforeSleep = nowFn();
+      const fetchTimeoutBeforePoll = Math.min(
+        input.fetchTimeoutMs,
+        remainingAdamVideoBudgetMs(input.deadlineAtMs, nowBeforeSleep),
+      );
+      if (
+        nowBeforeSleep + input.pollIntervalMs + fetchTimeoutBeforePoll >
+        input.deadlineAtMs
+      ) {
+        throw new Error(ADAM_VIDEO_WALL_TIMEOUT_MESSAGE);
+      }
+      await sleepFn(input.pollIntervalMs);
     }
+    polledBefore = true;
+
     const statusUrl = `https://generativelanguage.googleapis.com/v1beta/${resource}`;
-    const statusRes = await fetchGeminiWithTimeout(
+    const statusRes = await fetchWithAdamVideoDeadline(
       input.fetchFn,
       statusUrl,
       {
         method: "GET",
         headers: { "x-goog-api-key": input.apiKey },
       },
+      input.deadlineAtMs,
       input.fetchTimeoutMs,
+      nowFn(),
     );
     const statusJson = (await readGeminiResponseOrThrow(
       statusRes,
@@ -206,9 +319,6 @@ async function pollGeminiFileUntilActive(input: {
       throw new Error("Gemini file processing failed");
     }
   }
-  throw new Error(
-    "Gemini file did not become ACTIVE in time; try again or use the Colab notebook for longer renders.",
-  );
 }
 
 async function downloadGeminiFileMedia(input: {
@@ -216,20 +326,25 @@ async function downloadGeminiFileMedia(input: {
   apiKey: string;
   filesResource: string;
   fetchTimeoutMs: number;
+  deadlineAtMs: number;
+  nowFn?: () => number;
 }): Promise<Buffer> {
   const resource = input.filesResource.replace(/^\//, "");
   const fileId = resource.replace(/^files\//, "");
   const downloadUrl = `https://generativelanguage.googleapis.com/v1beta/files/${encodeURIComponent(
     fileId,
   )}:download?alt=media`;
-  const dlRes = await fetchGeminiWithTimeout(
+  const nowFn = input.nowFn ?? Date.now;
+  const dlRes = await fetchWithAdamVideoDeadline(
     input.fetchFn,
     downloadUrl,
     {
       method: "GET",
       headers: { "x-goog-api-key": input.apiKey },
     },
+    input.deadlineAtMs,
     input.fetchTimeoutMs,
+    nowFn(),
   );
   if (!dlRes.ok) {
     logGeminiHttpFailure(dlRes.status);
@@ -1454,7 +1569,7 @@ export async function generateBannerWithGemini(input: {
         input.fetchTimeoutMs ?? ADAM_VIDEO_DEFAULT_FETCH_TIMEOUT_MS;
 
       try {
-        const imageRes = await fetchGeminiWithTimeout(
+        const imageRes = await fetchWithPerRequestTimeout(
           fetchImpl,
           interactionsUrl,
           {
@@ -1546,13 +1661,16 @@ export async function generateVideoWithVeo(input: {
   aspectRatio?: "16:9" | "9:16";
   imageBase64?: string | null;
   imageMimeType?: string | null;
-  maxPollAttempts?: number;
   pollIntervalMs?: number;
   fetchTimeoutMs?: number;
+  wallBudgetMs?: number;
+  nowFn?: () => number;
+  sleepFn?: (ms: number) => Promise<void>;
   fetchFn?: typeof fetch;
   uploadFn?: (
     file: File | Blob,
     fileName?: string,
+    signal?: AbortSignal,
   ) => Promise<LensGroveUploadResult>;
 }): Promise<GeneratedVideoResult> {
   const apiKey = getGeminiApiKey();
@@ -1577,8 +1695,13 @@ export async function generateVideoWithVeo(input: {
     input.fetchTimeoutMs ?? ADAM_VIDEO_DEFAULT_FETCH_TIMEOUT_MS;
   const pollInterval =
     input.pollIntervalMs ?? ADAM_VIDEO_DEFAULT_POLL_INTERVAL_MS;
-  const maxPolls =
-    input.maxPollAttempts ?? computeAdamVideoPollAttempts();
+  const nowFn = input.nowFn ?? Date.now;
+  const sleepFn =
+    input.sleepFn ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+  const deadlineAtMs = createAdamVideoDeadline(
+    input.wallBudgetMs ?? ADAM_VIDEO_ROUTE_BUDGET_MS,
+    nowFn(),
+  );
 
   let videoBytes: Buffer | null = null;
   let videoProvider: GeneratedVideoResult["provider"] = "gemini-omni";
@@ -1637,17 +1760,37 @@ export async function generateVideoWithVeo(input: {
     };
 
     let opData = (await startRes.json()) as VeoOperationPayload;
-    let attempts = 0;
-    while (!opData.done && opData.name && attempts < maxPolls) {
-      attempts++;
-      if (pollInterval > 0) {
-        await new Promise((r) => setTimeout(r, pollInterval));
+    let veoPolledBefore = false;
+    while (!opData.done && opData.name) {
+      throwIfAdamVideoDeadlineExceeded(deadlineAtMs, nowFn());
+      if (veoPolledBefore && pollInterval > 0) {
+        const nowBeforeSleep = nowFn();
+        const fetchTimeoutBeforePoll = Math.min(
+          fetchTimeoutMs,
+          remainingAdamVideoBudgetMs(deadlineAtMs, nowBeforeSleep),
+        );
+        if (
+          nowBeforeSleep + pollInterval + fetchTimeoutBeforePoll >
+          deadlineAtMs
+        ) {
+          throw new Error(ADAM_VIDEO_WALL_TIMEOUT_MESSAGE);
+        }
+        await sleepFn(pollInterval);
       }
+      veoPolledBefore = true;
+
       const pollUrl = `https://generativelanguage.googleapis.com/v1beta/${opData.name.replace(
         /^\//,
         "",
       )}?key=${encodeURIComponent(apiKey)}`;
-      const pollRes = await fetchImpl(pollUrl, { method: "GET" });
+      const pollRes = await fetchWithAdamVideoDeadline(
+        fetchImpl,
+        pollUrl,
+        { method: "GET" },
+        deadlineAtMs,
+        fetchTimeoutMs,
+        nowFn(),
+      );
       if (!pollRes.ok) {
         throw new Error(`Veo operation polling failed (${pollRes.status})`);
       }
@@ -1688,7 +1831,7 @@ export async function generateVideoWithVeo(input: {
         ]
       : [{ type: "text", text: promptText }];
 
-    const startRes = await fetchGeminiWithTimeout(
+    const startRes = await fetchWithAdamVideoDeadline(
       fetchImpl,
       interactionsUrl,
       {
@@ -1704,7 +1847,9 @@ export async function generateVideoWithVeo(input: {
           },
         }),
       },
+      deadlineAtMs,
       fetchTimeoutMs,
+      nowFn(),
     );
 
     const interactionJson = await readGeminiResponseOrThrow(
@@ -1729,25 +1874,31 @@ export async function generateVideoWithVeo(input: {
           fetchFn: fetchImpl,
           apiKey,
           filesResource,
-          maxPollAttempts: maxPolls,
           pollIntervalMs: pollInterval,
           fetchTimeoutMs,
+          deadlineAtMs,
+          nowFn,
+          sleepFn,
         });
         videoBytes = await downloadGeminiFileMedia({
           fetchFn: fetchImpl,
           apiKey,
           filesResource,
           fetchTimeoutMs,
+          deadlineAtMs,
+          nowFn,
         });
       } else {
-        const dlRes = await fetchGeminiWithTimeout(
+        const dlRes = await fetchWithAdamVideoDeadline(
           fetchImpl,
           extracted.videoUri,
           {
             method: "GET",
             headers: { "x-goog-api-key": apiKey },
           },
+          deadlineAtMs,
           fetchTimeoutMs,
+          nowFn(),
         );
         if (!dlRes.ok) {
           logGeminiHttpFailure(dlRes.status);
@@ -1768,7 +1919,14 @@ export async function generateVideoWithVeo(input: {
   const videoBlob = new Blob([new Uint8Array(videoBytes)], {
     type: "video/mp4",
   });
-  const uploaded = await uploadImpl(videoBlob, fileName);
+  const uploaded = await uploadVideoWithAdamDeadline(
+    uploadImpl,
+    videoBlob,
+    fileName,
+    deadlineAtMs,
+    fetchTimeoutMs,
+    nowFn(),
+  );
   const gatewayUrlWithExt = uploaded.gatewayUrl.includes("?")
     ? `${uploaded.gatewayUrl}&ext=mp4`
     : `${uploaded.gatewayUrl}?ext=mp4`;
