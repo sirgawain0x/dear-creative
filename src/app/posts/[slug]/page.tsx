@@ -6,10 +6,13 @@ import { MicroTippingWidget } from "@/components/monetization/micro-tipping-widg
 import { PredictionCard } from "@/components/predictions/prediction-card";
 import { PostFeedbackWidget } from "@/components/posts/post-feedback-widget";
 import { PostKeyTakeaways } from "@/components/posts/post-key-takeaways";
+import { PostShareButton } from "@/components/posts/post-share-button";
 import { splitArticleAtParagraph } from "@/lib/posts/post-takeaway-inline";
 import { publishedPostBodyForDisplay } from "@/lib/posts/published-post-render";
 import type { PublishedPostDetail } from "@/lib/posts/published-posts";
 import { calculateReadingTime } from "@/lib/posts/reading-time";
+import { buildPostPageMetadata } from "@/lib/posts/post-page-metadata";
+import { resolvePostPublicUrl } from "@/lib/posts/post-public-url";
 import { requirePublishedPostBySlug } from "@/lib/posts/require-published-post";
 import {
   classifyArticleTopic,
@@ -72,9 +75,18 @@ function PostArticle({ post }: { post: PublishedPostDetail }) {
           </span>
         </div>
 
-        <h1 className="mt-3 text-4xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
-          {post.title}
-        </h1>
+        <div className="mt-3 flex items-start justify-between gap-4">
+          <h1 className="text-4xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+            {post.title}
+          </h1>
+          <PostShareButton
+            title={post.title}
+            url={resolvePostPublicUrl({
+              slug: post.slug,
+              canonicalUrl: post.canonicalUrl,
+            })}
+          />
+        </div>
         {post.excerpt ? (
           <p className="mt-4 text-lg text-zinc-600 dark:text-zinc-400">
             {post.excerpt}
@@ -148,50 +160,7 @@ function PostArticle({ post }: { post: PublishedPostDetail }) {
 export async function generateMetadata({ params }: PageProps) {
   const { slug } = await params;
   const post = await requirePublishedPostBySlug(slug);
-  const metrics = calculateReadingTime(post.bodyHtml ?? post.excerpt);
-  const topic = classifyArticleTopic({
-    title: post.title,
-    excerpt: post.excerpt,
-    bodyHtml: post.bodyHtml,
-  });
-  const dateStr = new Date(post.publishedAt).toLocaleDateString("en-US", {
-    dateStyle: "medium",
-  });
-
-  const ogImageUrl = `/api/og?title=${encodeURIComponent(
-    post.title,
-  )}&date=${encodeURIComponent(dateStr)}&readTime=${encodeURIComponent(
-    metrics.label,
-  )}&topic=${encodeURIComponent(getTopicLabel(topic))}`;
-
-  return {
-    title: `${post.title} — Dear Creative`,
-    description: post.excerpt,
-    openGraph: {
-      title: post.title,
-      description: post.excerpt,
-      type: "article",
-      publishedTime: post.publishedAt,
-      images: [
-        {
-          url: ogImageUrl,
-          width: 1200,
-          height: 630,
-          alt: post.title,
-        },
-      ],
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: post.title,
-      description: post.excerpt,
-      images: [ogImageUrl],
-    },
-    other: {
-      "fc:frame": "vNext",
-      "fc:frame:image": ogImageUrl,
-    },
-  };
+  return buildPostPageMetadata(post);
 }
 
 export default async function PostPage(props: PageProps) {
