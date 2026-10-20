@@ -7,6 +7,7 @@ import {
   createPostsTestDb,
   insertPost,
 } from "@/lib/posts/test-support/posts-test-db";
+import { ensureArticleHtml } from "@/lib/html/markdown-to-html";
 import { updateAdminPost } from "./manage-posts";
 
 describe("manage-posts stored narration", () => {
@@ -81,6 +82,33 @@ describe("manage-posts stored narration", () => {
 
     const audio = await getPostAudioColumns(db, postId);
     expect(audio.audioUrl).toBe("https://cdn.example/keep.mp3");
+    expect(audio.audioVoice).toBe("Puck");
+  });
+
+  it("keeps stored audio on markdown-mode save when spoken text is unchanged", async () => {
+    const db = await createPostsTestDb();
+    const postId = randomUUID();
+    const markdown = "Same spoken words in the article.";
+    const legacyHtml =
+      "<div><p>Same spoken words in the article.</p></div>";
+    expect(ensureArticleHtml(markdown)).not.toBe(legacyHtml);
+
+    await db.insert(posts).values({
+      id: postId,
+      slug: "markdown-resave",
+      title: "Markdown resave",
+      status: "draft",
+      bodyHtml: legacyHtml,
+    });
+    await setPostAudioColumns(db, postId, {
+      audioUrl: "https://cdn.example/markdown-keep.mp3",
+      audioVoice: "Puck",
+    });
+
+    await updateAdminPost(db, postId, { markdown });
+
+    const audio = await getPostAudioColumns(db, postId);
+    expect(audio.audioUrl).toBe("https://cdn.example/markdown-keep.mp3");
     expect(audio.audioVoice).toBe("Puck");
   });
 

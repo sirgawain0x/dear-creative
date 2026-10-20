@@ -338,7 +338,7 @@ export async function updateAdminPost(
   if (
     !explicitAudioUpdate &&
     (publishedTransition ||
-      postNarrationContentChanged(existing, input, {
+      postNarrationContentChanged(existing, {
         title: nextTitle,
         teaserText: nextTeaserText,
         bodyHtml: nextBodyHtml,

@@ -1,39 +1,28 @@
 import type { DearCreativeDb } from "@/db/client";
 import { setPostAudioColumns } from "@/db/ensure-schema";
 import type { CorePostRow } from "@/db/ensure-schema";
-import type { UpdateAdminPostInput } from "@/lib/posts/manage-posts";
+import { buildNarrationScript } from "@/lib/audio/narration";
 
-/** Fields that change the spoken narration script for a post. */
+/** True when the spoken narration script (title, teaser, body) would change. */
 export function postNarrationContentChanged(
   existing: CorePostRow,
-  input: UpdateAdminPostInput,
   resolved: {
     title: string;
     teaserText: string | null;
     bodyHtml: string | null;
   },
 ): boolean {
-  if (input.title !== undefined && resolved.title !== existing.title) {
-    return true;
-  }
-  if (
-    input.teaserText !== undefined &&
-    resolved.teaserText !== (existing.teaserText ?? null)
-  ) {
-    return true;
-  }
-  const prevBody = existing.bodyHtml ?? null;
-  if (
-    input.markdown !== undefined &&
-    input.markdown !== null &&
-    resolved.bodyHtml !== prevBody
-  ) {
-    return true;
-  }
-  if (input.bodyHtml !== undefined && resolved.bodyHtml !== prevBody) {
-    return true;
-  }
-  return false;
+  const before = buildNarrationScript({
+    title: existing.title,
+    teaserText: existing.teaserText,
+    bodyHtml: existing.bodyHtml,
+  });
+  const after = buildNarrationScript({
+    title: resolved.title,
+    teaserText: resolved.teaserText,
+    bodyHtml: resolved.bodyHtml,
+  });
+  return before !== after;
 }
 
 export async function clearStoredPostAudio(
