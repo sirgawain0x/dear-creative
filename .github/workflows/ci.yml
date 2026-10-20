@@ -53,6 +53,6 @@ jobs:
         run: ./scripts/gcp/adam-docker-boot-proof.sh
       - name: Kokoro TTS Bearer auth
         run: |
-          pip install --quiet fastapi pytest httpx numpy pydub
+          pip install --quiet fastapi pytest httpx numpy soundfile
           cd services/kokoro-tts
           pytest test_auth.py -q
