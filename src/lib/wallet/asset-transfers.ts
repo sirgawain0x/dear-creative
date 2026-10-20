@@ -4,6 +4,11 @@ import {
   USDC_DECIMALS,
 } from "@/lib/payments/subscription-config";
 import { alchemyBaseMainnetRpcUrl, WALLET_RPC_TIMEOUT_MS } from "./alchemy-base-rpc";
+import { buildAlchemyGetAssetTransfersRpcParams } from "./alchemy-get-asset-transfers-params";
+import {
+  AlchemyTransfersError,
+  logAlchemyTransfersFailure,
+} from "./alchemy-transfers-error";
 
 const BASE_USDC_LOWER = BASE_USDC_ADDRESS.toLowerCase();
 
@@ -65,17 +70,6 @@ export function resetAssetTransfersFetcherForTests(): void {
   assetTransfersFetcherOverride = undefined;
 }
 
-function directionFilter(
-  wallet: Address,
-  direction: WalletHistoryDirection,
-): { fromAddress?: string; toAddress?: string } {
-  const addr = getAddress(wallet);
-  if (direction === "out") {
-    return { fromAddress: addr };
-  }
-  return { toAddress: addr };
-}
-
 export async function fetchAlchemyAssetTransfersPage(
   params: FetchAssetTransfersParams,
 ): Promise<AlchemyAssetTransfersResult> {
@@ -87,24 +81,18 @@ export async function fetchAlchemyAssetTransfersPage(
   }
 
   const { wallet, direction, maxCount = 25, pageKey } = params;
-  const filter = directionFilter(wallet, direction);
 
   const body = {
     jsonrpc: "2.0",
     id: 1,
     method: "alchemy_getAssetTransfers",
     params: [
-      {
-        fromBlock: "0x0",
-        toBlock: "latest",
-        category: ["external", "erc20"],
-        excludeZeroValue: true,
-        withMetadata: true,
-        order: "desc",
-        maxCount: `0x${maxCount.toString(16)}`,
-        ...filter,
-        ...(pageKey ? { pageKey } : {}),
-      },
+      buildAlchemyGetAssetTransfersRpcParams({
+        wallet,
+        direction,
+        maxCount,
+        pageKey,
+      }),
     ],
   };
 
@@ -119,20 +107,70 @@ export async function fetchAlchemyAssetTransfersPage(
       signal: controller.signal,
     });
     if (!response.ok) {
-      throw new Error("alchemy_transfers_http_error");
+      const alchemyMessage = await readAlchemyErrorMessage(response);
+      logAlchemyTransfersFailure({
+        code: "http_error",
+        httpStatus: response.status,
+        message: alchemyMessage,
+      });
+      throw new AlchemyTransfersError("http_error", {
+        httpStatus: response.status,
+        alchemyMessage,
+      });
     }
     const json = (await response.json()) as {
       result?: AlchemyAssetTransfersResult;
       error?: { message?: string };
     };
     if (json.error || !json.result) {
-      throw new Error(json.error?.message ?? "alchemy_transfers_error");
+      const alchemyMessage = json.error?.message ?? null;
+      logAlchemyTransfersFailure({
+        code: "rpc_error",
+        httpStatus: response.status,
+        message: alchemyMessage,
+      });
+      throw new AlchemyTransfersError("rpc_error", {
+        httpStatus: response.status,
+        alchemyMessage,
+      });
     }
     return json.result;
+  } catch (error) {
+    if (error instanceof AlchemyTransfersError) {
+      throw error;
+    }
+    logAlchemyTransfersFailure({
+      code: "network_error",
+      httpStatus: null,
+      message: error instanceof Error ? error.message : "unknown",
+    });
+    throw new AlchemyTransfersError("network_error", { cause: error });
   } finally {
     clearTimeout(timer);
   }
 }
+
+async function readAlchemyErrorMessage(response: Response): Promise<string | null> {
+  try {
+    const text = await response.text();
+    if (!text.trim()) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(text) as {
+        error?: { message?: string };
+        message?: string;
+      };
+      return parsed.error?.message ?? parsed.message ?? text.slice(0, 200);
+    } catch {
+      return text.slice(0, 200);
+    }
+  } catch {
+    return null;
+  }
+}
+
+export { AlchemyTransfersError } from "./alchemy-transfers-error";
 
 function formatTokenAmount(
   asset: "ETH" | "USDC",
