@@ -2,7 +2,23 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { buildNarratedSlidesMp4, probeAudioDurationSeconds } from "./ffmpeg";
+import {
+  buildNarratedSlidesMp4,
+  probeAudioDurationSeconds,
+  tailFfmpegStderrForLog,
+} from "./ffmpeg";
+
+describe("tailFfmpegStderrForLog", () => {
+  it("keeps the last 2KB of stderr for error messages", () => {
+    const headMarker = "HEAD_SHOULD_BE_TRUNCATED";
+    const tailMarker = "ERROR_MARKER_AT_END";
+    const stderr = `${headMarker}${"x".repeat(3000)}${tailMarker}`;
+    const tailed = tailFfmpegStderrForLog(stderr);
+    expect(tailed.length).toBeLessThanOrEqual(2048);
+    expect(tailed).toContain(tailMarker);
+    expect(tailed).not.toContain(headMarker);
+  });
+});
 
 describe("probeAudioDurationSeconds", () => {
   it("throws when probe output has no duration", async () => {
