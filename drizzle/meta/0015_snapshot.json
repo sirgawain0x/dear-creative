@@ -1159,10 +1159,10 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "post_writers_writer_id_writers_id_fk": {
-          "name": "post_writers_writer_id_writers_id_fk",
+        "post_writers_writer_id_authors_id_fk": {
+          "name": "post_writers_writer_id_authors_id_fk",
           "tableFrom": "post_writers",
-          "tableTo": "writers",
+          "tableTo": "authors",
           "columnsFrom": [
             "writer_id"
           ],
@@ -2216,10 +2216,10 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "writer_invites_accepted_writer_id_writers_id_fk": {
-          "name": "writer_invites_accepted_writer_id_writers_id_fk",
+        "writer_invites_accepted_writer_id_authors_id_fk": {
+          "name": "writer_invites_accepted_writer_id_authors_id_fk",
           "tableFrom": "writer_invites",
-          "tableTo": "writers",
+          "tableTo": "authors",
           "columnsFrom": [
             "accepted_writer_id"
           ],

@@ -625,7 +625,7 @@ export const writerInvites = sqliteTable(
     wallet: text("wallet"),
     tokenHash: text("token_hash").notNull(),
     expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
-    acceptedWriterId: text("accepted_writer_id").references(() => writers.id),
+    acceptedWriterId: text("accepted_writer_id").references(() => authors.id),
     status: text("status", { enum: writerInviteStatusEnum })
       .notNull()
       .default("pending"),
@@ -646,7 +646,7 @@ export const postWriters = sqliteTable(
     postId: text("post_id")
       .notNull()
       .references(() => posts.id),
-    writerId: text("writer_id").references(() => writers.id),
+    writerId: text("writer_id").references(() => authors.id),
     inviteId: text("invite_id").references(() => writerInvites.id),
     role: text("role", { enum: postWriterRoleEnum }).notNull(),
     shareBps: integer("share_bps").notNull(),
