@@ -47,18 +47,26 @@ const flashcardsSchema = z.object({
     .min(1),
 });
 
+const quizQuestionSchema = z
+  .object({
+    prompt: z.string().min(1),
+    choices: z.array(z.string().min(1)).min(2),
+    correctIndex: z.number().int().nonnegative(),
+    explanation: z.string().min(1),
+  })
+  .superRefine((question, ctx) => {
+    if (question.correctIndex >= question.choices.length) {
+      ctx.addIssue({
+        code: "custom",
+        message: "correctIndex must be within choices",
+        path: ["correctIndex"],
+      });
+    }
+  });
+
 const quizSchema = z.object({
   title: z.string().min(1),
-  questions: z
-    .array(
-      z.object({
-        prompt: z.string().min(1),
-        choices: z.array(z.string().min(1)).min(2),
-        correctIndex: z.number().int().nonnegative(),
-        explanation: z.string().min(1),
-      }),
-    )
-    .min(1),
+  questions: z.array(quizQuestionSchema).min(1),
 });
 
 const dataTableSchema = z.object({

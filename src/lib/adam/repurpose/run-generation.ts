@@ -14,6 +14,7 @@ import { loadRepurposePostSource, RepurposePostError } from "./post-source";
 import {
   claimRepurposeGenerationLock,
   getRepurposeOutput,
+  RepurposeStaleClaimError,
   saveRepurposeFailed,
   saveRepurposeReady,
 } from "./storage";
@@ -84,7 +85,7 @@ export async function runRepurposeGeneration(input: {
     );
   }
 
-  const lockClaimed = claim.outcome === "claimed";
+  const claimedRowId = claim.outcome === "claimed" ? claim.rowId : null;
   try {
     const generated = isTextRepurposeType(input.outputType)
       ? await generateTextRepurposeOutput({
@@ -109,8 +110,16 @@ export async function runRepurposeGeneration(input: {
             );
           })();
 
+    if (!claimedRowId) {
+      throw new RepurposeGenerationError(
+        409,
+        "A generation for this output type is already in progress.",
+      );
+    }
+
     return await saveRepurposeReady({
       db: input.db,
+      rowId: claimedRowId,
       postId: source.id,
       outputType: input.outputType,
       payload: generated.payload,
@@ -125,13 +134,21 @@ export async function runRepurposeGeneration(input: {
       outputType: input.outputType,
       detail: logDetail,
     });
-    if (lockClaimed) {
+    if (claimedRowId) {
       await saveRepurposeFailed({
         db: input.db,
+        rowId: claimedRowId,
         postId: source.id,
         outputType: input.outputType,
         errorMessage: logDetail,
       });
+    }
+    if (error instanceof RepurposeStaleClaimError) {
+      throw new RepurposeGenerationError(
+        409,
+        "A generation for this output type is already in progress.",
+        logDetail,
+      );
     }
     if (error instanceof RepurposePostError) {
       throw new RepurposeGenerationError(

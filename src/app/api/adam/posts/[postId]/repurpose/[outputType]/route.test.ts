@@ -13,6 +13,65 @@ vi.mock("@/db/client", () => ({
   getDb: getDbMock,
 }));
 
+describe("GET /api/adam/posts/[postId]/repurpose/[outputType]", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    getDbMock.mockReset();
+    setRepurposeEnabledForTests(undefined);
+  });
+
+  it("does not expose raw errorMessage for failed outputs", async () => {
+    vi.stubEnv("ADAM_API_TOKEN", "secret-token");
+    setRepurposeEnabledForTests(true);
+    const db = await createPostsTestDb();
+    getDbMock.mockReturnValue(db);
+    await insertPost(db, {
+      slug: "failed-out",
+      title: "Failed",
+      status: "published",
+      publishedAt: new Date(),
+      bodyHtml: "<p>x</p>",
+    });
+    const post = await db.query.posts.findFirst({
+      where: (p, { eq }) => eq(p.slug, "failed-out"),
+    });
+    if (!post) throw new Error("missing post");
+    const now = new Date();
+    await db.insert(
+      (await import("@/db/schema")).postRepurposeOutputs,
+    ).values({
+      id: "out-1",
+      postId: post.id,
+      outputType: "mind_map",
+      status: "failed",
+      payloadJson: null,
+      mediaUrl: null,
+      mediaMimeType: null,
+      errorMessage: "Gemini returned invalid JSON",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const { GET } = await import("./route");
+    const response = await GET(
+      new Request("http://localhost/api/adam/posts/failed-out/repurpose/mind_map", {
+        headers: { Authorization: "Bearer secret-token" },
+      }),
+      {
+        params: Promise.resolve({
+          postId: "failed-out",
+          outputType: "mind_map",
+        }),
+      },
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      output?: { errorMessage?: string | null };
+    };
+    expect(body.output?.errorMessage).toBe("Generation failed.");
+  });
+});
+
 describe("POST /api/adam/posts/[postId]/repurpose/[outputType]", () => {
   afterEach(() => {
     vi.unstubAllEnvs();

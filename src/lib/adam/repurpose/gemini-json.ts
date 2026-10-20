@@ -37,9 +37,19 @@ export async function generateRepurposeStructuredJson(input: {
     model,
   )}:generateContent`;
 
-  const responseSchema = getRepurposeResponseSchema(input.outputType);
+  const schema = getRepurposeResponseSchema(input.outputType);
   const prompt = getRepurposeGenerationPrompt(input.outputType, input.source);
   const timeoutMs = input.timeoutMs ?? REPURPOSE_GEMINI_FETCH_TIMEOUT_MS;
+
+  const generationConfig: Record<string, unknown> = {
+    responseMimeType: "application/json",
+    temperature: 0.4,
+  };
+  if (input.outputType === "mind_map") {
+    generationConfig.responseJsonSchema = schema;
+  } else {
+    generationConfig.responseSchema = schema;
+  }
 
   const response = await fetchImpl(url, {
     method: "POST",
@@ -49,11 +59,7 @@ export async function generateRepurposeStructuredJson(input: {
     },
     body: JSON.stringify({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema,
-        temperature: 0.4,
-      },
+      generationConfig,
     }),
     signal: AbortSignal.timeout(timeoutMs),
   });

@@ -7,6 +7,8 @@ import {
 } from "@/lib/adam/publish-draft";
 import { requireAdamAuth } from "@/lib/adam/require-auth";
 
+export const maxDuration = 300;
+
 type PublishBody = {
   slug?: string;
   title?: string;
