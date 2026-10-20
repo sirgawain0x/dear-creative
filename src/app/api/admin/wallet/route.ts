@@ -38,12 +38,22 @@ export async function GET(request: Request) {
     });
   }
 
-  const balances = await fetchWalletBalances(config.address);
-  return NextResponse.json({
-    configured: true,
-    address: config.address,
-    network: "base",
-    chainId: 8453,
-    balances,
-  });
+  try {
+    const balances = await fetchWalletBalances(config.address);
+    return NextResponse.json({
+      configured: true,
+      address: config.address,
+      network: "base",
+      chainId: 8453,
+      balances,
+    });
+  } catch {
+    console.error("[admin-wallet] wallet_balances_fetch_failed", {
+      code: "wallet_balances_fetch_failed",
+    });
+    return NextResponse.json(
+      { error: "balances_unavailable" },
+      { status: 502 },
+    );
+  }
 }
