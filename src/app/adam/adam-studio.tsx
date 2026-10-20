@@ -425,7 +425,6 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
   >("16:9");
   const [isGeneratingBanner, setIsGeneratingBanner] = useState(false);
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
-  const [isExportingNotebook, setIsExportingNotebook] = useState(false);
   // Pre-generated narration (static MP3 on Lens Grove)
   const [editPostAudioUrl, setEditPostAudioUrl] = useState("");
   const [editPostAudioVoice, setEditPostAudioVoice] = useState("");
@@ -1812,73 +1811,6 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
     setStatusBanner,
   ]);
 
-  // --- Export Google Colab (.ipynb) Asset Generator Notebook ---
-  const handleExportColabNotebook = useCallback(async () => {
-    setIsExportingNotebook(true);
-    setStatusBanner(null);
-    try {
-      const res = await authFetch("/api/adam/notebook", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          postId: selectedEditPostId || null,
-          title:
-            editPostTitle.trim() ||
-            ideaTitle.trim() ||
-            "Dear Creative Dispatch",
-          slug: editPostSlug.trim() || null,
-          teaserText: editPostTeaser.trim() || null,
-          markdown:
-            editPostMarkdown.trim() ||
-            ideaContent.trim() ||
-            chatInput.trim() ||
-            null,
-          voiceName: googleVoiceName || "Puck",
-          bannerPrompt: aiBannerPrompt.trim() || null,
-        }),
-      });
-      if (!res.ok) {
-        throw new Error(`Notebook export failed (${res.status})`);
-      }
-      const blob = await res.blob();
-      const fileSlug = (editPostSlug.trim() || "dear-creative")
-        .toLowerCase()
-        .replace(/[^a-z0-9-]+/g, "-");
-      const downloadUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = downloadUrl;
-      a.download = `dear-creative-${fileSlug}-assets.ipynb`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(downloadUrl);
-
-      setStatusBanner({
-        kind: "success",
-        text: `Downloaded Google Colab notebook (dear-creative-${fileSlug}-assets.ipynb) with Banner, TTS Audio, Veo Video & Lens Grove cells!`,
-      });
-    } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : "Failed to export Colab notebook";
-      setStatusBanner({ kind: "error", text: msg });
-    } finally {
-      setIsExportingNotebook(false);
-    }
-  }, [
-    aiBannerPrompt,
-    authFetch,
-    chatInput,
-    editPostMarkdown,
-    editPostSlug,
-    editPostTeaser,
-    editPostTitle,
-    googleVoiceName,
-    ideaContent,
-    ideaTitle,
-    selectedEditPostId,
-    setStatusBanner,
-  ]);
-
   // --- Generate / Remove Pre-Generated Narration MP3 (Lens Grove) ---
   const handleGenerateNarration = useCallback(async () => {
     if (!selectedEditPostId) return;
@@ -3112,27 +3044,6 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
               Images (PNG, JPG, WebP) · Docs (PDF) · Text &amp; Markdown
             </div>
 
-            <div className="border-t border-zinc-200 pt-3 space-y-2 dark:border-zinc-800">
-              <h3 className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                Google Colab Asset Notebook
-              </h3>
-              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                Export a ready-to-run <code>.ipynb</code> notebook for Imagen 3 banners, static MP3 TTS audio (&lt; $0.01/issue), Veo video clips, and Lens Grove uploads.
-              </p>
-              <button
-                type="button"
-                disabled={isExportingNotebook}
-                onClick={() => void handleExportColabNotebook()}
-                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-800"
-              >
-                <span aria-hidden="true">📓</span>
-                <span>
-                  {isExportingNotebook
-                    ? "Building Notebook…"
-                    : "Export Colab Notebook (.ipynb)"}
-                </span>
-              </button>
-            </div>
           </aside>
         </section>
       ) : null}
@@ -3892,20 +3803,6 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                     >
                       <span>🎬</span>
                       <span>Veo AI Video</span>
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isExportingNotebook}
-                      onClick={() => void handleExportColabNotebook()}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-2xs hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                      title="Export a Google Colab (.ipynb) notebook pre-populated with this post's content for generating banners, static MP3 audio, Veo videos, and Lens Grove uploads"
-                    >
-                      <span>📓</span>
-                      <span>
-                        {isExportingNotebook
-                          ? "Exporting…"
-                          : "Colab Asset Notebook (.ipynb)"}
-                      </span>
                     </button>
                   </div>
                 </div>
