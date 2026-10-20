@@ -354,7 +354,7 @@ audio:
   narration:
     usePostAudioUrl: true
     fallbackTts:
-      enabled: true
+      enabled: false
       voice: "Puck"
       speed: 1.0
   backgroundMusic:
