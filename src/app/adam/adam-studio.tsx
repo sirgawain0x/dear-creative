@@ -2178,7 +2178,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
               onClick={login}
               className="w-full sm:w-auto rounded-full bg-zinc-900 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
             >
-              Sign in with Privy
+              Sign In
             </button>
           ) : null}
 
@@ -2302,7 +2302,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                   onClick={login}
                   className="rounded-full bg-zinc-900 px-5 py-2 text-xs font-semibold text-white shadow-2xs transition hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
                 >
-                  Sign in with Privy
+                  Sign In
                 </button>
               ) : null}
 
@@ -2340,7 +2340,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                 onClick={handleSignOut}
                 className="rounded-full px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
               >
-                Sign out
+                Sign Out
               </button>
             </>
           )}
@@ -3630,7 +3630,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
               <p className="mt-6 text-xs text-zinc-500">
                 {authenticated
                   ? "No posts loaded yet."
-                  : "Sign in with Privy to load and edit posts."}
+                  : "Sign In to load and edit posts."}
               </p>
             ) : (
               <ul className="mt-4 max-h-[600px] space-y-2 overflow-y-auto pr-1">
