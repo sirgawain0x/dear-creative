@@ -1,5 +1,12 @@
 import type { DearCreativeDb } from "@/db/client";
+import { synthesizeSpeechWithGoogle } from "@/lib/adam/gemini-studio";
+import { uploadToLensGrove } from "@/lib/storage/lens-grove";
+import type { FfmpegRunner } from "./ffmpeg";
 import { isRepurposeEnabled } from "./feature-flag";
+import {
+  generateMediaRepurposeOutput,
+  isMediaRepurposeType,
+} from "./generators/media";
 import { generateTextRepurposeOutput, isTextRepurposeType } from "./generators/text";
 import {
   tryAcquireRepurposeLock,
@@ -27,6 +34,9 @@ export class RepurposeGenerationError extends Error {
 
 export type RunRepurposeGenerationDeps = {
   fetchFn?: typeof fetch;
+  synthesizeFn?: typeof synthesizeSpeechWithGoogle;
+  ffmpeg?: FfmpegRunner;
+  uploadFn?: typeof uploadToLensGrove;
 };
 
 export async function runRepurposeGeneration(input: {
@@ -63,18 +73,27 @@ export async function runRepurposeGeneration(input: {
   try {
     await markRepurposeGenerating(input.db, source.id, input.outputType);
 
-    if (!isTextRepurposeType(input.outputType)) {
-      throw new RepurposeGenerationError(
-        501,
-        `${input.outputType} generation is not available in this release.`,
-      );
-    }
-
-    const generated = await generateTextRepurposeOutput({
-      outputType: input.outputType,
-      source,
-      fetchFn: input.deps?.fetchFn,
-    });
+    const generated = isTextRepurposeType(input.outputType)
+      ? await generateTextRepurposeOutput({
+          outputType: input.outputType,
+          source,
+          fetchFn: input.deps?.fetchFn,
+        })
+      : isMediaRepurposeType(input.outputType)
+        ? await generateMediaRepurposeOutput({
+            outputType: input.outputType,
+            source,
+            fetchFn: input.deps?.fetchFn,
+            synthesizeFn: input.deps?.synthesizeFn,
+            ffmpeg: input.deps?.ffmpeg,
+            uploadFn: input.deps?.uploadFn,
+          })
+        : (() => {
+            throw new RepurposeGenerationError(
+              400,
+              `Unsupported repurpose output type: ${input.outputType}`,
+            );
+          })();
 
     return await saveRepurposeReady({
       db: input.db,
