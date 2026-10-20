@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { getAddress } from "viem";
 import {
   mergeWalletHistoryPages,
@@ -7,9 +7,37 @@ import {
   resetAssetTransfersFetcherForTests,
   setAssetTransfersFetcherForTests,
   fetchAlchemyAssetTransfersPage,
+  isWalletReadFixtureEnabled,
 } from "./asset-transfers";
 
 const WALLET = getAddress("0xAE48B6dB64772b9CC24e33A79c809896776a20f6");
+
+describe("isWalletReadFixtureEnabled", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("returns false in NODE_ENV production even when WALLET_READ_FIXTURE=true", () => {
+    vi.stubEnv("WALLET_READ_FIXTURE", "true");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VERCEL_ENV", "preview");
+    expect(isWalletReadFixtureEnabled()).toBe(false);
+  });
+
+  it("returns false when VERCEL_ENV is production even when WALLET_READ_FIXTURE=true", () => {
+    vi.stubEnv("WALLET_READ_FIXTURE", "true");
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("VERCEL_ENV", "production");
+    expect(isWalletReadFixtureEnabled()).toBe(false);
+  });
+
+  it("returns true when fixture env is true and not production", () => {
+    vi.stubEnv("WALLET_READ_FIXTURE", "true");
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("VERCEL_ENV", "preview");
+    expect(isWalletReadFixtureEnabled()).toBe(true);
+  });
+});
 
 describe("asset transfer normalizer", () => {
   afterEach(() => {

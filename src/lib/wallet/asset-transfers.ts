@@ -283,5 +283,11 @@ export function walletReadFixtureResponse(): WalletReadFixture {
 }
 
 export function isWalletReadFixtureEnabled(): boolean {
+  if (process.env.NODE_ENV === "production") {
+    return false;
+  }
+  if (process.env.VERCEL_ENV === "production") {
+    return false;
+  }
   return process.env.WALLET_READ_FIXTURE?.trim().toLowerCase() === "true";
 }

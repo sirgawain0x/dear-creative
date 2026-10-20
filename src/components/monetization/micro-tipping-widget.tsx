@@ -5,7 +5,7 @@ import { BASE_CHAIN_ID, BASE_USDC_ADDRESS } from "@/lib/payments/subscription-co
 
 type MicroTippingWidgetProps = {
   slug: string;
-  payToAddress?: string | null;
+  payToAddress: string;
   postTitle?: string;
 };
 
@@ -25,11 +25,11 @@ export function MicroTippingWidget({
   const [hasTipped, setHasTipped] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // Fallback creator wallet on Base
-  const recipient =
-    payToAddress ||
-    process.env.NEXT_PUBLIC_TIP_ADDRESS ||
-    "0x6B37a1F2a2d48074d2A6b40F001391515B70868a";
+  if (!payToAddress) {
+    return null;
+  }
+
+  const recipient = payToAddress;
 
   const handleCopy = () => {
     if (typeof navigator !== "undefined" && navigator.clipboard) {

@@ -49,6 +49,12 @@ const RECONCILE_0016 = {
   hash: "800c8fa9e28740b64dae4b7cd549b086b310a97f032135c32e759df768989d8b",
 } as const;
 
+const RECONCILE_0017 = {
+  tag: "0017_backfill_null_post_author_g2",
+  when: 1792522000000,
+  hash: "4a75cd5194d7d0746bf52e9f0f56edb2430700044f545f793f148f0a6bbe886f",
+} as const;
+
 describe("drizzle journal reconciliation hashes (0009–0014)", () => {
   it("matches drizzle-orm readMigrationFiles hash algorithm", () => {
     const migrations = readMigrationFiles({ migrationsFolder: "./drizzle" });
@@ -83,5 +89,26 @@ describe("drizzle journal reconciliation hashes (0016 repurpose)", () => {
     expect(migrations.some((m) => m.folderMillis === RECONCILE_0016.when)).toBe(
       true,
     );
+  });
+});
+
+describe("drizzle journal reconciliation hashes (0017 null author backfill)", () => {
+  it("matches drizzle-orm readMigrationFiles hash algorithm", () => {
+    const migrations = readMigrationFiles({ migrationsFolder: "./drizzle" });
+    const fromLib = migrations.find((m) => m.folderMillis === RECONCILE_0017.when);
+    expect(fromLib?.hash).toBe(RECONCILE_0017.hash);
+    expect(hashMigrationSqlFile(RECONCILE_0017.tag)).toBe(RECONCILE_0017.hash);
+  });
+
+  it("registers 0017 at journal idx 16 after 0016", () => {
+    const journal = JSON.parse(
+      readFileSync(join(process.cwd(), "drizzle/meta/_journal.json"), "utf8"),
+    ) as { entries: Array<{ idx: number; tag: string; when: number }> };
+    expect(journal.entries).toHaveLength(17);
+    const backfillEntry = journal.entries.find(
+      (entry) => entry.tag === RECONCILE_0017.tag,
+    );
+    expect(backfillEntry?.idx).toBe(16);
+    expect(backfillEntry?.when).toBeGreaterThan(RECONCILE_0016.when);
   });
 });
