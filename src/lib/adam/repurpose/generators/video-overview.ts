@@ -15,6 +15,10 @@ import {
 import {
   assertRepurposePipelineBudget,
   createRepurposeVideoPipelineDeadline,
+  REPURPOSE_VIDEO_DECK_PER_FETCH_CAP_MS,
+  REPURPOSE_VIDEO_TTS_PER_FETCH_CAP_MS,
+  REPURPOSE_VIDEO_UPLOAD_PER_CALL_CAP_MS,
+  uploadWithRepurposePipelineDeadline,
   wrapFetchForRepurposePipeline,
 } from "../pipeline-deadline";
 import type { RepurposePostSource } from "../post-source";
@@ -34,7 +38,9 @@ type SlideDeck = {
 export type RepurposeVideoPipelineOptions = {
   deadlineAtMs?: number;
   nowFn?: () => number;
-  perFetchCapMs?: number;
+  deckPerFetchCapMs?: number;
+  ttsPerFetchCapMs?: number;
+  uploadPerCallCapMs?: number;
 };
 
 function narrationTextForSlide(slide: NonNullable<SlideDeck["slides"]>[number]): string {
@@ -53,6 +59,7 @@ export async function generateVideoOverview(input: {
   uploadFn?: (
     file: File | Blob,
     fileName?: string,
+    signal?: AbortSignal,
   ) => Promise<LensGroveUploadResult>;
   pipeline?: RepurposeVideoPipelineOptions;
 }): Promise<{
@@ -63,12 +70,24 @@ export async function generateVideoOverview(input: {
   const nowFn = input.pipeline?.nowFn ?? Date.now;
   const deadlineAtMs =
     input.pipeline?.deadlineAtMs ?? createRepurposeVideoPipelineDeadline(nowFn());
-  const perFetchCapMs = input.pipeline?.perFetchCapMs ?? 45_000;
+  const deckPerFetchCapMs =
+    input.pipeline?.deckPerFetchCapMs ?? REPURPOSE_VIDEO_DECK_PER_FETCH_CAP_MS;
+  const ttsPerFetchCapMs =
+    input.pipeline?.ttsPerFetchCapMs ?? REPURPOSE_VIDEO_TTS_PER_FETCH_CAP_MS;
+  const uploadPerCallCapMs =
+    input.pipeline?.uploadPerCallCapMs ?? REPURPOSE_VIDEO_UPLOAD_PER_CALL_CAP_MS;
+
   const baseFetch = input.fetchFn ?? fetch;
-  const fetchFn = wrapFetchForRepurposePipeline(
+  const deckFetch = wrapFetchForRepurposePipeline(
     baseFetch,
     deadlineAtMs,
-    perFetchCapMs,
+    deckPerFetchCapMs,
+    nowFn,
+  );
+  const ttsFetch = wrapFetchForRepurposePipeline(
+    baseFetch,
+    deadlineAtMs,
+    ttsPerFetchCapMs,
     nowFn,
   );
   const ffmpeg =
@@ -83,7 +102,7 @@ export async function generateVideoOverview(input: {
   const deckResult = await generateTextRepurposeOutput({
     outputType: "slide_deck",
     source: input.source,
-    fetchFn,
+    fetchFn: deckFetch,
   });
   const slideDeck = validateRepurposeModelOutput(
     "slide_deck",
@@ -112,7 +131,7 @@ export async function generateVideoOverview(input: {
       const narration = narrationTextForSlide(slide);
       const mp3 = await synthesizeSlideNarrationMp3({
         text: narration,
-        fetchFn,
+        fetchFn: ttsFetch,
         synthesizeFn: input.synthesizeFn,
       });
       const audioPath = join(workDir, `narration-${i}.mp3`);
@@ -138,9 +157,14 @@ export async function generateVideoOverview(input: {
     const mp4 = await readFile(outputPath);
     const upload = input.uploadFn ?? uploadToLensGrove;
     const fileName = `${input.source.slug}-video-overview.mp4`;
-    const uploaded = await upload(
+    const uploaded = await uploadWithRepurposePipelineDeadline(
+      upload,
       new File([new Uint8Array(mp4)], fileName, { type: "video/mp4" }),
       fileName,
+      deadlineAtMs,
+      uploadPerCallCapMs,
+      nowFn(),
+      nowFn,
     );
 
     const payload = validateRepurposeModelOutput("video_overview", {
