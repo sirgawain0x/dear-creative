@@ -78,6 +78,29 @@ describe("manage-posts published narration regeneration", () => {
     expect(audio.audioUrl).toBe("https://cdn.example/first.mp3");
   });
 
+  it("does not call TTS on metadata-only save when published post has no audio_url", async () => {
+    const db = await createPostsTestDb();
+    const postId = randomUUID();
+    await db.insert(posts).values({
+      id: postId,
+      slug: "published-no-audio",
+      title: "Already live",
+      status: "published",
+      publishedAt: new Date(),
+      bodyHtml: "<p>Stable body</p>",
+      emailSubject: "Old subject",
+    });
+
+    await updateAdminPost(db, postId, {
+      emailSubject: "New subject only",
+    });
+    await flushBackgroundTasks();
+
+    expect(generatePostNarrationMp3Mock).not.toHaveBeenCalled();
+    const audio = await getPostAudioColumns(db, postId);
+    expect(audio.audioUrl).toBeNull();
+  });
+
   it("does not call TTS when spoken text is unchanged on a published post", async () => {
     const db = await createPostsTestDb();
     const postId = randomUUID();

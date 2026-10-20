@@ -41,7 +41,6 @@ export function maybeSchedulePublishedPostNarrationRegeneration(input: {
   nextTitle: string;
   nextTeaserText: string | null;
   nextBodyHtml: string | null;
-  hasStoredAudioUrl: boolean;
   explicitAudioUpdate: boolean;
   actor?: string;
 }): void {
@@ -58,7 +57,10 @@ export function maybeSchedulePublishedPostNarrationRegeneration(input: {
     bodyHtml: input.nextBodyHtml,
   });
 
-  if (input.hasStoredAudioUrl && !narrationChanged) {
+  const becamePublished =
+    input.existing.status !== "published" && input.nextStatus === "published";
+
+  if (!narrationChanged && !becamePublished) {
     return;
   }
 

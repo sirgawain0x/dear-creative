@@ -120,12 +120,11 @@ export async function publishDraftToTurso(
       maybeSchedulePublishedPostNarrationRegeneration({
         db,
         postId,
-        existing: inserted,
+        existing: { ...inserted, status: "draft" },
         nextStatus: status,
         nextTitle: inserted.title,
         nextTeaserText: inserted.teaserText,
         nextBodyHtml: inserted.bodyHtml,
-        hasStoredAudioUrl: false,
         explicitAudioUpdate: false,
         actor: "adam",
       });

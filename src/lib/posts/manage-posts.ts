@@ -342,9 +342,6 @@ export async function updateAdminPost(
     });
   }
 
-  const storedAudioAfterUpdate = await getPostAudioColumns(db, existing.id);
-  const hasStoredAudioUrl = Boolean(storedAudioAfterUpdate.audioUrl?.trim());
-
   maybeSchedulePublishedPostNarrationRegeneration({
     db,
     postId: existing.id,
@@ -353,7 +350,6 @@ export async function updateAdminPost(
     nextTitle,
     nextTeaserText,
     nextBodyHtml,
-    hasStoredAudioUrl,
     explicitAudioUpdate,
     actor,
   });
