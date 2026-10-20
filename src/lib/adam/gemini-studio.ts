@@ -66,7 +66,7 @@ export type GeneratedBannerResult = {
   storageKey: string;
   mimeType: string;
   promptUsed: string;
-  provider: "gemini-image" | "imagen" | "deterministic-svg";
+  provider: "gemini-image" | "nano-banana" | "deterministic-svg";
 };
 
 export type GeneratedVideoResult = {
@@ -75,8 +75,144 @@ export type GeneratedVideoResult = {
   storageKey: string;
   mimeType: string;
   promptUsed: string;
-  provider: "veo";
+  provider: "gemini-omni" | "veo";
 };
+
+/** Default generative media models (override via ADAM_* env vars). */
+export const DEFAULT_ADAM_GEMINI_VIDEO_MODEL = "gemini-omni-1.1-flash";
+export const DEFAULT_ADAM_IMAGEN_MODEL = "gemini-nano-banana-2.1";
+
+function resolveAdamGeminiVideoModel(): string {
+  return (
+    process.env.ADAM_GEMINI_VIDEO_MODEL?.trim() ||
+    DEFAULT_ADAM_GEMINI_VIDEO_MODEL
+  );
+}
+
+function resolveAdamImageFallbackModel(): string {
+  return (
+    process.env.ADAM_IMAGEN_MODEL?.trim() || DEFAULT_ADAM_IMAGEN_MODEL
+  );
+}
+
+function usesLegacyVeoPredictApi(model: string): boolean {
+  return model.startsWith("veo-");
+}
+
+function geminiInteractionsUrl(apiKey: string): string {
+  return `https://generativelanguage.googleapis.com/v1beta/interactions?key=${encodeURIComponent(
+    apiKey,
+  )}`;
+}
+
+function parseGeminiFilesResourceFromUri(uri: string): string | null {
+  const match = uri.match(/\/files\/([^/:?]+)/);
+  return match ? `files/${match[1]}` : null;
+}
+
+async function pollGeminiFileUntilActive(input: {
+  fetchFn: typeof fetch;
+  apiKey: string;
+  filesResource: string;
+  maxPollAttempts: number;
+  pollIntervalMs: number;
+}): Promise<void> {
+  const resource = input.filesResource.replace(/^\//, "");
+  for (let attempt = 0; attempt < input.maxPollAttempts; attempt++) {
+    if (attempt > 0 && input.pollIntervalMs > 0) {
+      await new Promise((r) => setTimeout(r, input.pollIntervalMs));
+    }
+    const statusUrl = `https://generativelanguage.googleapis.com/v1beta/${resource}?key=${encodeURIComponent(
+      input.apiKey,
+    )}`;
+    const statusRes = await input.fetchFn(statusUrl, { method: "GET" });
+    if (!statusRes.ok) {
+      throw new Error(`Gemini file status check failed (${statusRes.status})`);
+    }
+    const statusJson = (await statusRes.json()) as { state?: string };
+    if (statusJson.state === "ACTIVE") {
+      return;
+    }
+    if (statusJson.state === "FAILED") {
+      throw new Error("Gemini file processing failed");
+    }
+  }
+  throw new Error(
+    "Gemini file did not become ACTIVE in time; try again or use the Colab notebook for longer renders.",
+  );
+}
+
+async function downloadGeminiFileMedia(input: {
+  fetchFn: typeof fetch;
+  apiKey: string;
+  filesResource: string;
+}): Promise<Buffer> {
+  const resource = input.filesResource.replace(/^\//, "");
+  const fileId = resource.replace(/^files\//, "");
+  const downloadUrl = `https://generativelanguage.googleapis.com/v1beta/files/${encodeURIComponent(
+    fileId,
+  )}:download?alt=media&key=${encodeURIComponent(input.apiKey)}`;
+  const dlRes = await input.fetchFn(downloadUrl);
+  if (!dlRes.ok) {
+    throw new Error(`Gemini file download failed (${dlRes.status})`);
+  }
+  const ab = await dlRes.arrayBuffer();
+  return Buffer.from(ab);
+}
+
+type InteractionMediaPart = {
+  type?: string;
+  mime_type?: string;
+  mimeType?: string;
+  data?: string;
+  uri?: string;
+};
+
+function extractVideoFromGeminiInteraction(data: unknown): {
+  videoBase64?: string;
+  videoUri?: string;
+  mimeType: string;
+} | null {
+  if (!data || typeof data !== "object") return null;
+  const payload = data as {
+    output_video?: { data?: string; uri?: string; mime_type?: string };
+    steps?: Array<{ type?: string; content?: InteractionMediaPart[] }>;
+  };
+
+  const sdkVideo = payload.output_video;
+  if (sdkVideo?.data) {
+    return {
+      videoBase64: sdkVideo.data,
+      mimeType: sdkVideo.mime_type || "video/mp4",
+    };
+  }
+  if (sdkVideo?.uri) {
+    return {
+      videoUri: sdkVideo.uri,
+      mimeType: sdkVideo.mime_type || "video/mp4",
+    };
+  }
+
+  if (Array.isArray(payload.steps)) {
+    for (const step of payload.steps) {
+      if (step.type !== "model_output" || !Array.isArray(step.content)) {
+        continue;
+      }
+      for (const item of step.content) {
+        if (item.type !== "video") continue;
+        const mimeType = item.mime_type || item.mimeType || "video/mp4";
+        if (item.data) {
+          return { videoBase64: item.data, mimeType };
+        }
+        if (item.uri) {
+          return { videoUri: item.uri, mimeType };
+        }
+      }
+    }
+  }
+
+  return null;
+}
 
 export type StudioChatResponse = {
   reply: string;
@@ -1095,10 +1231,12 @@ function extractImageFromGeminiResponse(data: unknown): {
 } | null {
   if (!data || typeof data !== "object") return null;
   const payload = data as {
+    output_image?: { data?: string; mime_type?: string };
     predictions?: Array<{
       bytesBase64Encoded?: string;
       mimeType?: string;
     }>;
+    steps?: Array<{ type?: string; content?: InteractionMediaPart[] }>;
     candidates?: Array<{
       content?: {
         parts?: Array<{
@@ -1107,6 +1245,29 @@ function extractImageFromGeminiResponse(data: unknown): {
       };
     }>;
   };
+
+  if (payload.output_image?.data) {
+    return {
+      imageBase64: payload.output_image.data,
+      mimeType: payload.output_image.mime_type || "image/png",
+    };
+  }
+
+  if (Array.isArray(payload.steps)) {
+    for (const step of payload.steps) {
+      if (step.type !== "model_output" || !Array.isArray(step.content)) {
+        continue;
+      }
+      for (const item of step.content) {
+        if (item.type === "image" && item.data) {
+          return {
+            imageBase64: item.data,
+            mimeType: item.mime_type || item.mimeType || "image/png",
+          };
+        }
+      }
+    }
+  }
 
   const pred = payload.predictions?.[0];
   if (pred?.bytesBase64Encoded) {
@@ -1162,7 +1323,7 @@ export async function generateBannerWithGemini(input: {
 
   let imageBytes: Buffer | null = null;
   let mimeType = "image/png";
-  let provider: "gemini-image" | "imagen" | "deterministic-svg" =
+  let provider: "gemini-image" | "nano-banana" | "deterministic-svg" =
     "deterministic-svg";
 
   if (apiKey) {
@@ -1200,37 +1361,38 @@ export async function generateBannerWithGemini(input: {
         }
       }
     } catch {
-      // Fall through to Imagen 3
+      // Fall through to Nano Banana fallback
     }
 
-    // 2. Fallback to Imagen 3 (:predict endpoint)
+    // 2. Fallback to Nano Banana 2.1 (Interactions API)
     if (!imageBytes) {
-      const imagenModel =
-        process.env.ADAM_IMAGEN_MODEL?.trim() || "imagen-3.0-generate-002";
-      const imagenUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-        imagenModel,
-      )}:predict?key=${encodeURIComponent(apiKey)}`;
+      const imageModel = resolveAdamImageFallbackModel();
+      const interactionsUrl = geminiInteractionsUrl(apiKey);
+      const bannerAspect =
+        aspectRatio === "21:9" ? "16:9" : aspectRatio;
 
       try {
-        const imagenRes = await fetchImpl(imagenUrl, {
+        const imageRes = await fetchImpl(interactionsUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            instances: [{ prompt: effectivePrompt }],
-            parameters: {
-              sampleCount: 1,
-              aspectRatio: aspectRatio === "21:9" ? "16:9" : aspectRatio,
+            model: imageModel,
+            input: [{ type: "text", text: effectivePrompt }],
+            response_format: {
+              type: "image",
+              mime_type: "image/png",
+              aspect_ratio: bannerAspect,
             },
           }),
         });
 
-        if (imagenRes.ok) {
-          const json = await imagenRes.json();
+        if (imageRes.ok) {
+          const json = await imageRes.json();
           const extracted = extractImageFromGeminiResponse(json);
           if (extracted) {
             imageBytes = Buffer.from(extracted.imageBase64, "base64");
             mimeType = extracted.mimeType;
-            provider = "imagen";
+            provider = "nano-banana";
           }
         }
       } catch {
@@ -1321,100 +1483,178 @@ export async function generateVideoWithVeo(input: {
     throw new Error("A video prompt is required for Veo generation.");
   }
 
-  const videoModel =
-    process.env.ADAM_GEMINI_VIDEO_MODEL?.trim() || "veo-2.0-generate-001";
-  const startUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-    videoModel,
-  )}:predictLongRunning?key=${encodeURIComponent(apiKey)}`;
-
-  const instancePayload: Record<string, unknown> = { prompt: promptText };
-  if (input.imageBase64) {
-    instancePayload.image = {
-      bytesBase64Encoded: input.imageBase64,
-      mimeType: input.imageMimeType || "image/png",
-    };
-  }
-
-  const startRes = await fetchImpl(startUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      instances: [instancePayload],
-      parameters: {
-        aspectRatio,
-        sampleCount: 1,
-      },
-    }),
-  });
-
-  if (!startRes.ok) {
-    throw new Error(`Veo video generation request failed (${startRes.status})`);
-  }
-
-  type VeoOperationPayload = {
-    name?: string;
-    done?: boolean;
-    error?: { message?: string };
-    response?: {
-      generateVideoResponse?: {
-        generatedSamples?: Array<{
-          video?: { uri?: string; bytesBase64Encoded?: string; mimeType?: string };
-        }>;
-      };
-      predictions?: Array<{
-        bytesBase64Encoded?: string;
-        video?: { uri?: string; bytesBase64Encoded?: string };
-      }>;
-    };
-  };
-
-  let opData = (await startRes.json()) as VeoOperationPayload;
+  const videoModel = resolveAdamGeminiVideoModel();
   const maxPolls = input.maxPollAttempts ?? 12;
   const pollInterval = input.pollIntervalMs ?? 2500;
 
-  let attempts = 0;
-  while (!opData.done && opData.name && attempts < maxPolls) {
-    attempts++;
-    if (pollInterval > 0) {
-      await new Promise((r) => setTimeout(r, pollInterval));
-    }
-    const pollUrl = `https://generativelanguage.googleapis.com/v1beta/${opData.name.replace(
-      /^\//,
-      "",
-    )}?key=${encodeURIComponent(apiKey)}`;
-    const pollRes = await fetchImpl(pollUrl, { method: "GET" });
-    if (!pollRes.ok) {
-      throw new Error(`Veo operation polling failed (${pollRes.status})`);
-    }
-    opData = (await pollRes.json()) as VeoOperationPayload;
-  }
-
-  if (opData.error?.message) {
-    throw new Error(`Veo error: ${opData.error.message}`);
-  }
-
-  const sample =
-    opData.response?.generateVideoResponse?.generatedSamples?.[0]?.video ??
-    opData.response?.predictions?.[0]?.video ??
-    opData.response?.predictions?.[0];
-
   let videoBytes: Buffer | null = null;
-  if (sample && "bytesBase64Encoded" in sample && sample.bytesBase64Encoded) {
-    videoBytes = Buffer.from(sample.bytesBase64Encoded, "base64");
-  } else if (sample && "uri" in sample && sample.uri) {
-    const dlUrl = sample.uri.includes("?")
-      ? `${sample.uri}&key=${encodeURIComponent(apiKey)}`
-      : `${sample.uri}?key=${encodeURIComponent(apiKey)}`;
-    const dlRes = await fetchImpl(dlUrl);
-    if (dlRes.ok) {
-      const ab = await dlRes.arrayBuffer();
-      videoBytes = Buffer.from(ab);
+  let videoProvider: GeneratedVideoResult["provider"] = "gemini-omni";
+
+  if (usesLegacyVeoPredictApi(videoModel)) {
+    videoProvider = "veo";
+    const startUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+      videoModel,
+    )}:predictLongRunning?key=${encodeURIComponent(apiKey)}`;
+
+    const instancePayload: Record<string, unknown> = { prompt: promptText };
+    if (input.imageBase64) {
+      instancePayload.image = {
+        bytesBase64Encoded: input.imageBase64,
+        mimeType: input.imageMimeType || "image/png",
+      };
+    }
+
+    const startRes = await fetchImpl(startUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        instances: [instancePayload],
+        parameters: {
+          aspectRatio,
+          sampleCount: 1,
+        },
+      }),
+    });
+
+    if (!startRes.ok) {
+      throw new Error(
+        `Veo video generation request failed (${startRes.status})`,
+      );
+    }
+
+    type VeoOperationPayload = {
+      name?: string;
+      done?: boolean;
+      error?: { message?: string };
+      response?: {
+        generateVideoResponse?: {
+          generatedSamples?: Array<{
+            video?: {
+              uri?: string;
+              bytesBase64Encoded?: string;
+              mimeType?: string;
+            };
+          }>;
+        };
+        predictions?: Array<{
+          bytesBase64Encoded?: string;
+          video?: { uri?: string; bytesBase64Encoded?: string };
+        }>;
+      };
+    };
+
+    let opData = (await startRes.json()) as VeoOperationPayload;
+    let attempts = 0;
+    while (!opData.done && opData.name && attempts < maxPolls) {
+      attempts++;
+      if (pollInterval > 0) {
+        await new Promise((r) => setTimeout(r, pollInterval));
+      }
+      const pollUrl = `https://generativelanguage.googleapis.com/v1beta/${opData.name.replace(
+        /^\//,
+        "",
+      )}?key=${encodeURIComponent(apiKey)}`;
+      const pollRes = await fetchImpl(pollUrl, { method: "GET" });
+      if (!pollRes.ok) {
+        throw new Error(`Veo operation polling failed (${pollRes.status})`);
+      }
+      opData = (await pollRes.json()) as VeoOperationPayload;
+    }
+
+    if (opData.error?.message) {
+      throw new Error(`Veo error: ${opData.error.message}`);
+    }
+
+    const sample =
+      opData.response?.generateVideoResponse?.generatedSamples?.[0]?.video ??
+      opData.response?.predictions?.[0]?.video ??
+      opData.response?.predictions?.[0];
+
+    if (sample && "bytesBase64Encoded" in sample && sample.bytesBase64Encoded) {
+      videoBytes = Buffer.from(sample.bytesBase64Encoded, "base64");
+    } else if (sample && "uri" in sample && sample.uri) {
+      const dlUrl = sample.uri.includes("?")
+        ? `${sample.uri}&key=${encodeURIComponent(apiKey)}`
+        : `${sample.uri}?key=${encodeURIComponent(apiKey)}`;
+      const dlRes = await fetchImpl(dlUrl);
+      if (dlRes.ok) {
+        const ab = await dlRes.arrayBuffer();
+        videoBytes = Buffer.from(ab);
+      }
+    }
+  } else {
+    const interactionsUrl = geminiInteractionsUrl(apiKey);
+    const interactionInput: Array<Record<string, string>> = input.imageBase64
+      ? [
+          {
+            type: "image",
+            data: input.imageBase64,
+            mime_type: input.imageMimeType || "image/png",
+          },
+          { type: "text", text: promptText },
+        ]
+      : [{ type: "text", text: promptText }];
+
+    const startRes = await fetchImpl(interactionsUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: videoModel,
+        input: interactionInput,
+        response_format: {
+          type: "video",
+          aspect_ratio: aspectRatio,
+        },
+      }),
+    });
+
+    if (!startRes.ok) {
+      throw new Error(
+        `Gemini Omni video generation request failed (${startRes.status})`,
+      );
+    }
+
+    const interactionJson: unknown = await startRes.json();
+    const extracted = extractVideoFromGeminiInteraction(interactionJson);
+
+    if (!extracted?.videoBase64 && !extracted?.videoUri) {
+      throw new Error(
+        "Gemini Omni interaction did not return video output; try again or use the Colab notebook.",
+      );
+    }
+
+    if (extracted.videoBase64) {
+      videoBytes = Buffer.from(extracted.videoBase64, "base64");
+    } else if (extracted.videoUri) {
+      const filesResource = parseGeminiFilesResourceFromUri(extracted.videoUri);
+      if (filesResource) {
+        await pollGeminiFileUntilActive({
+          fetchFn: fetchImpl,
+          apiKey,
+          filesResource,
+          maxPollAttempts: maxPolls,
+          pollIntervalMs: pollInterval,
+        });
+        videoBytes = await downloadGeminiFileMedia({
+          fetchFn: fetchImpl,
+          apiKey,
+          filesResource,
+        });
+      } else {
+        const dlUrl = extracted.videoUri.includes("?")
+          ? `${extracted.videoUri}&key=${encodeURIComponent(apiKey)}`
+          : `${extracted.videoUri}?key=${encodeURIComponent(apiKey)}`;
+        const dlRes = await fetchImpl(dlUrl);
+        if (dlRes.ok) {
+          videoBytes = Buffer.from(await dlRes.arrayBuffer());
+        }
+      }
     }
   }
 
   if (!videoBytes) {
     throw new Error(
-      "Veo operation did not return video bytes yet; try running in the Google Colab Asset Notebook for longer renders.",
+      "Video generation did not return bytes yet; try running in the Google Colab Asset Notebook for longer renders.",
     );
   }
 
@@ -1433,6 +1673,6 @@ export async function generateVideoWithVeo(input: {
     storageKey: uploaded.storageKey,
     mimeType: "video/mp4",
     promptUsed: promptText,
-    provider: "veo",
+    provider: videoProvider,
   };
 }
