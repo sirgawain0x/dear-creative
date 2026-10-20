@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   spotlightCoverDisplaySrc,
   spotlightCoverFallbackDataUrl,
@@ -25,11 +25,8 @@ export function PostSpotlightCoverImage({
     () => spotlightCoverFallbackDataUrl({ slug, title }),
     [slug, title],
   );
-  const [loadFailed, setLoadFailed] = useState(false);
-
-  useEffect(() => {
-    setLoadFailed(false);
-  }, [src]);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const loadFailed = failedSrc === src;
 
   const displaySrc = spotlightCoverDisplaySrc({
     requestedSrc: src,
@@ -46,7 +43,7 @@ export function PostSpotlightCoverImage({
       sizes="(max-width: 768px) 100vw, 320px"
       className="object-cover transition-transform duration-300 group-hover:scale-105"
       unoptimized={shouldBypassImageOptimizer(displaySrc)}
-      onError={() => setLoadFailed(true)}
+      onError={() => setFailedSrc(src)}
     />
   );
 }
