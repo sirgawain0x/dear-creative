@@ -10,6 +10,21 @@ import {
 
 const DEFAULT_OG_WIDTH = 1200;
 const DEFAULT_OG_HEIGHT = 630;
+/** Keeps /api/og query strings within practical limits. */
+export const MAX_OG_TITLE_QUERY_LENGTH = 120;
+
+export function truncateOgTitle(title: string): string {
+  const trimmed = title.trim();
+  if (trimmed.length <= MAX_OG_TITLE_QUERY_LENGTH) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, MAX_OG_TITLE_QUERY_LENGTH - 1)}…`;
+}
+
+export function isGeneratedOgImageUrl(imageUrl: string, siteOrigin: string): boolean {
+  const prefix = `${siteOrigin.replace(/\/$/, "")}/api/og`;
+  return imageUrl.startsWith(`${prefix}?`) || imageUrl.startsWith(`${prefix}/`);
+}
 
 /** Absolute URL for Open Graph / Twitter cards (post image or 1200×630 OG route). */
 export function resolvePostOgImageAbsolute(
@@ -36,8 +51,9 @@ export function resolvePostOgImageAbsolute(
     dateStyle: "medium",
   });
 
+  const ogTitle = truncateOgTitle(post.title);
   const ogPath = `/api/og?title=${encodeURIComponent(
-    post.title,
+    ogTitle,
   )}&date=${encodeURIComponent(dateStr)}&readTime=${encodeURIComponent(
     metrics.label,
   )}&topic=${encodeURIComponent(getTopicLabel(topic))}`;
@@ -55,6 +71,19 @@ export function buildPostPageMetadata(
   });
   const description = post.excerpt ?? undefined;
   const ogImageUrl = resolvePostOgImageAbsolute(post, siteOrigin);
+  const generatedOg = isGeneratedOgImageUrl(ogImageUrl, siteOrigin);
+
+  const openGraphImage = generatedOg
+    ? {
+        url: ogImageUrl,
+        width: DEFAULT_OG_WIDTH,
+        height: DEFAULT_OG_HEIGHT,
+        alt: post.title,
+      }
+    : {
+        url: ogImageUrl,
+        alt: post.title,
+      };
 
   return {
     title: `${post.title} — Dear Creative`,
@@ -68,14 +97,7 @@ export function buildPostPageMetadata(
       type: "article",
       url: canonical,
       publishedTime: post.publishedAt,
-      images: [
-        {
-          url: ogImageUrl,
-          width: DEFAULT_OG_WIDTH,
-          height: DEFAULT_OG_HEIGHT,
-          alt: post.title,
-        },
-      ],
+      images: [openGraphImage],
     },
     twitter: {
       card: "summary_large_image",

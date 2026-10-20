@@ -4,6 +4,8 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   buildPostShareMenuItems,
   triggerPostShare,
+  wrapMenuFocusIndex,
+  type ShareEnvironment,
   type ShareMenuItem,
 } from "@/lib/posts/post-share-urls";
 import { useToast } from "@/components/ui/toast";
@@ -19,7 +21,7 @@ function focusMenuItem(
   items: ShareMenuItem[],
 ) {
   if (!container || items.length === 0) return;
-  const clamped = ((index % items.length) + items.length) % items.length;
+  const clamped = wrapMenuFocusIndex(index, items.length);
   const buttons = container.querySelectorAll<HTMLElement>(
     '[role="menuitem"]',
   );
@@ -34,6 +36,7 @@ export function PostShareButton({ title, url }: PostShareButtonProps) {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const items = buildPostShareMenuItems({ title, url });
+  const activeIndex = wrapMenuFocusIndex(focusedIndex, items.length);
 
   const closeMenu = useCallback(() => {
     setMenuOpen(false);
@@ -72,18 +75,16 @@ export function PostShareButton({ title, url }: PostShareButtonProps) {
       return;
     }
 
-    try {
-      await triggerPostShare(
-        {
-          title,
-          url,
-          onFallback: openMenu,
-        },
-        typeof navigator !== "undefined" ? navigator : undefined,
-      );
-    } catch {
-      openMenu();
-    }
+    await triggerPostShare(
+      {
+        title,
+        url,
+        onFallback: openMenu,
+      },
+      typeof navigator !== "undefined"
+        ? (navigator as ShareEnvironment)
+        : undefined,
+    );
   };
 
   const handleCopy = async (linkUrl: string) => {
@@ -109,10 +110,13 @@ export function PostShareButton({ title, url }: PostShareButtonProps) {
         event.preventDefault();
         closeMenu();
         break;
+      case "Tab":
+        closeMenu();
+        break;
       case "ArrowDown":
         event.preventDefault();
         setFocusedIndex((prev) => {
-          const next = prev + 1;
+          const next = wrapMenuFocusIndex(prev + 1, items.length);
           focusMenuItem(menuRef.current, next, items);
           return next;
         });
@@ -120,7 +124,7 @@ export function PostShareButton({ title, url }: PostShareButtonProps) {
       case "ArrowUp":
         event.preventDefault();
         setFocusedIndex((prev) => {
-          const next = prev - 1;
+          const next = wrapMenuFocusIndex(prev - 1, items.length);
           focusMenuItem(menuRef.current, next, items);
           return next;
         });
@@ -138,6 +142,18 @@ export function PostShareButton({ title, url }: PostShareButtonProps) {
       default:
         break;
     }
+  };
+
+  const onMenuBlur = (event: React.FocusEvent<HTMLDivElement>) => {
+    const related = event.relatedTarget as Node | null;
+    if (
+      related &&
+      (menuRef.current?.contains(related) ||
+        buttonRef.current?.contains(related))
+    ) {
+      return;
+    }
+    closeMenu();
   };
 
   return (
@@ -180,6 +196,7 @@ export function PostShareButton({ title, url }: PostShareButtonProps) {
           role="menu"
           aria-label="Share post"
           onKeyDown={onMenuKeyDown}
+          onBlur={onMenuBlur}
           className="absolute right-0 top-full z-40 mt-2 min-w-[11rem] rounded-xl border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
         >
           {items.map((item, index) =>
@@ -188,7 +205,7 @@ export function PostShareButton({ title, url }: PostShareButtonProps) {
                 key={item.id}
                 type="button"
                 role="menuitem"
-                tabIndex={index === focusedIndex ? 0 : -1}
+                tabIndex={index === activeIndex ? 0 : -1}
                 className="flex w-full px-3 py-2 text-left text-sm text-zinc-800 hover:bg-zinc-100 focus:bg-zinc-100 focus:outline-none dark:text-zinc-100 dark:hover:bg-zinc-800 dark:focus:bg-zinc-800"
                 onClick={() => {
                   void handleCopy(item.url);
@@ -200,7 +217,7 @@ export function PostShareButton({ title, url }: PostShareButtonProps) {
               <a
                 key={item.id}
                 role="menuitem"
-                tabIndex={index === focusedIndex ? 0 : -1}
+                tabIndex={index === activeIndex ? 0 : -1}
                 href={item.href}
                 target="_blank"
                 rel="noopener noreferrer"

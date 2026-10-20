@@ -47,7 +47,7 @@ export function buildPostShareMenuItems(input: {
       id: "x",
       label: "X",
       kind: "link",
-      href: `https://x.com/intent/post?text=${encodedText}&url=${encodedUrl}`,
+      href: `https://x.com/intent/post?text=${encodedTitle}&url=${encodedUrl}`,
     },
     {
       id: "linkedin",
@@ -112,35 +112,63 @@ export function buildPostShareMenuItems(input: {
   ];
 }
 
-export type ShareTriggerResult = "native" | "fallback";
+export type ShareTriggerResult = "native" | "fallback" | "cancelled";
 
-export type NavigatorShareLike = {
+export type ShareEnvironment = {
   share?: (data: ShareData) => Promise<void>;
+  canShare?: (data?: ShareData) => boolean;
+  matchMedia?: (query: string) => { matches: boolean };
 };
 
-/** Uses Web Share API when available; otherwise invokes the fallback opener. */
+export function wrapMenuFocusIndex(index: number, length: number): number {
+  if (length <= 0) return 0;
+  return ((index % length) + length) % length;
+}
+
+export function isShareAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+/** Native share only on coarse pointers when canShare accepts the payload. */
+export function shouldUseNativeWebShare(
+  data: ShareData,
+  env: ShareEnvironment | undefined = globalThis.navigator as ShareEnvironment,
+): boolean {
+  if (typeof env?.share !== "function") {
+    return false;
+  }
+  const coarsePointer =
+    env.matchMedia?.("(pointer: coarse)")?.matches ?? false;
+  if (!coarsePointer) {
+    return false;
+  }
+  return env.canShare?.(data) === true;
+}
+
+/** Uses Web Share on supported touch devices; otherwise invokes the fallback opener. */
 export async function triggerPostShare(
   input: {
     title: string;
     url: string;
     onFallback: () => void;
   },
-  navigatorRef: NavigatorShareLike | undefined = globalThis.navigator,
+  env: ShareEnvironment | undefined = globalThis.navigator as ShareEnvironment,
 ): Promise<ShareTriggerResult> {
-  const shareFn = navigatorRef?.share;
-  if (typeof shareFn === "function") {
-    await shareFn.call(navigatorRef, {
-      title: input.title,
-      url: input.url,
-    });
-    return "native";
-  }
-  input.onFallback();
-  return "fallback";
-}
+  const data: ShareData = { title: input.title, url: input.url };
 
-export function isNativeShareAvailable(
-  navigatorRef: NavigatorShareLike | undefined = globalThis.navigator,
-): boolean {
-  return typeof navigatorRef?.share === "function";
+  if (!shouldUseNativeWebShare(data, env)) {
+    input.onFallback();
+    return "fallback";
+  }
+
+  try {
+    await env!.share!(data);
+    return "native";
+  } catch (error) {
+    if (isShareAbortError(error)) {
+      return "cancelled";
+    }
+    input.onFallback();
+    return "fallback";
+  }
 }

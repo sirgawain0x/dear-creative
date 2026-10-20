@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   buildPostPageMetadata,
+  isGeneratedOgImageUrl,
   resolvePostOgImageAbsolute,
+  truncateOgTitle,
 } from "./post-page-metadata";
 import type { PublishedPostDetail } from "./published-posts";
 
@@ -26,12 +28,22 @@ function samplePost(
   };
 }
 
+describe("truncateOgTitle", () => {
+  it("caps long titles for the OG route query string", () => {
+    const long = "A".repeat(200);
+    const truncated = truncateOgTitle(long);
+    expect(truncated.length).toBeLessThanOrEqual(120);
+    expect(truncated.endsWith("…")).toBe(true);
+  });
+});
+
 describe("resolvePostOgImageAbsolute", () => {
   it("uses absolute cover path on the site origin", () => {
     const url = resolvePostOgImageAbsolute(samplePost(), SITE);
     expect(url).toBe(
       `${SITE}/images/hello-dear-creative-banner.jpg`,
     );
+    expect(isGeneratedOgImageUrl(url, SITE)).toBe(false);
   });
 
   it("falls back to the 1200×630 OG route when cover is a data URL", () => {
@@ -43,11 +55,12 @@ describe("resolvePostOgImageAbsolute", () => {
       new RegExp(`^${SITE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/api/og\\?`),
     );
     expect(url).toContain("title=");
+    expect(isGeneratedOgImageUrl(url, SITE)).toBe(true);
   });
 });
 
 describe("buildPostPageMetadata", () => {
-  it("sets canonical, open graph, and twitter fields", () => {
+  it("sets canonical, open graph, and twitter fields for cover images without OG dimensions", () => {
     const post = samplePost({
       canonicalUrl: "https://custom.example/posts/hello-dear-creative/",
     });
@@ -72,11 +85,11 @@ describe("buildPostPageMetadata", () => {
     expect(openGraph.title).toBe(post.title);
     expect(openGraph.description).toBe(post.excerpt);
     expect(openGraph.type).toBe("article");
-    expect(openGraph.images?.[0]).toMatchObject({
+    expect(openGraph.images?.[0]).toEqual({
       url: `${SITE}/images/hello-dear-creative-banner.jpg`,
-      width: 1200,
-      height: 630,
+      alt: post.title,
     });
+    expect(openGraph.images?.[0]?.width).toBeUndefined();
     expect(twitter.card).toBe("summary_large_image");
     expect(twitter.title).toBe(post.title);
     expect(twitter.description).toBe(post.excerpt);
@@ -88,5 +101,20 @@ describe("buildPostPageMetadata", () => {
     expect(twitterImages[0]).toBe(
       `${SITE}/images/hello-dear-creative-banner.jpg`,
     );
+  });
+
+  it("includes width and height only for generated /api/og images", () => {
+    const metadata = buildPostPageMetadata(
+      samplePost({ coverImage: "data:image/svg+xml;utf8,abc" }),
+      SITE,
+    );
+    const openGraph = metadata.openGraph as {
+      images?: Array<{ url: string; width?: number; height?: number }>;
+    };
+    expect(openGraph.images?.[0]).toMatchObject({
+      width: 1200,
+      height: 630,
+    });
+    expect(openGraph.images?.[0]?.url).toContain("/api/og?");
   });
 });

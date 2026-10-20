@@ -2,19 +2,43 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildPostShareMenuItems,
   formatShareText,
-  isNativeShareAvailable,
+  isShareAbortError,
+  shouldUseNativeWebShare,
   triggerPostShare,
+  wrapMenuFocusIndex,
 } from "./post-share-urls";
 
 const SPECIAL_TITLE = 'Creators & "Web3" — 100% onchain';
 const SPECIAL_URL =
   "https://news.creativeplatform.xyz/posts/hello?ref=share&tag=a+b";
 
+function mobileShareEnv(overrides: {
+  share?: (data: ShareData) => Promise<void>;
+  canShare?: (data?: ShareData) => boolean;
+} = {}) {
+  return {
+    share: overrides.share ?? vi.fn().mockResolvedValue(undefined),
+    canShare: overrides.canShare ?? vi.fn().mockReturnValue(true),
+    matchMedia: (query: string) => ({
+      matches: query === "(pointer: coarse)",
+    }),
+  };
+}
+
 describe("formatShareText", () => {
   it("joins title and url with a space", () => {
     expect(formatShareText("Hello", "https://example.com/p")).toBe(
       "Hello https://example.com/p",
     );
+  });
+});
+
+describe("wrapMenuFocusIndex", () => {
+  it("wraps indices so one menu item stays focusable", () => {
+    expect(wrapMenuFocusIndex(0, 11)).toBe(0);
+    expect(wrapMenuFocusIndex(10, 11)).toBe(10);
+    expect(wrapMenuFocusIndex(11, 11)).toBe(0);
+    expect(wrapMenuFocusIndex(-1, 11)).toBe(10);
   });
 });
 
@@ -35,7 +59,7 @@ describe("buildPostShareMenuItems", () => {
 
     expect(byId.x).toMatchObject({
       kind: "link",
-      href: `https://x.com/intent/post?text=${encodedText}&url=${encodedUrl}`,
+      href: `https://x.com/intent/post?text=${encodedTitle}&url=${encodedUrl}`,
     });
     expect(byId.linkedin).toMatchObject({
       kind: "link",
@@ -79,6 +103,16 @@ describe("buildPostShareMenuItems", () => {
     });
   });
 
+  it("does not duplicate the URL in the X intent text param", () => {
+    const xItem = items.find((item) => item.id === "x");
+    expect(xItem?.kind).toBe("link");
+    if (xItem?.kind !== "link") return;
+    const params = new URL(xItem.href).searchParams;
+    expect(params.get("text")).toBe(SPECIAL_TITLE);
+    expect(params.get("url")).toBe(SPECIAL_URL);
+    expect(params.get("text")).not.toContain(SPECIAL_URL);
+  });
+
   it("does not leave raw ampersands or spaces in query values", () => {
     for (const item of items) {
       if (item.kind !== "link") continue;
@@ -89,19 +123,43 @@ describe("buildPostShareMenuItems", () => {
   });
 });
 
+describe("shouldUseNativeWebShare", () => {
+  const data = { title: "Title", url: "https://example.com/post" };
+
+  it("requires coarse pointer and canShare", () => {
+    expect(
+      shouldUseNativeWebShare(data, mobileShareEnv()),
+    ).toBe(true);
+    expect(
+      shouldUseNativeWebShare(data, {
+        share: vi.fn(),
+        canShare: vi.fn().mockReturnValue(true),
+        matchMedia: () => ({ matches: false }),
+      }),
+    ).toBe(false);
+    expect(
+      shouldUseNativeWebShare(data, {
+        share: vi.fn(),
+        canShare: vi.fn().mockReturnValue(false),
+        matchMedia: (query) => ({ matches: query === "(pointer: coarse)" }),
+      }),
+    ).toBe(false);
+  });
+});
+
 describe("triggerPostShare", () => {
-  it("calls navigator.share when supported", async () => {
+  const payload = {
+    title: "Title",
+    url: "https://example.com/post",
+    onFallback: vi.fn(),
+  };
+
+  it("calls navigator.share on coarse pointer when canShare passes", async () => {
     const share = vi.fn().mockResolvedValue(undefined);
     const onFallback = vi.fn();
+    const env = mobileShareEnv({ share });
 
-    const result = await triggerPostShare(
-      {
-        title: "Title",
-        url: "https://example.com/post",
-        onFallback,
-      },
-      { share },
-    );
+    const result = await triggerPostShare({ ...payload, onFallback }, env);
 
     expect(result).toBe("native");
     expect(share).toHaveBeenCalledWith({
@@ -111,27 +169,64 @@ describe("triggerPostShare", () => {
     expect(onFallback).not.toHaveBeenCalled();
   });
 
+  it("opens fallback menu on desktop (fine pointer) even when share exists", async () => {
+    const onFallback = vi.fn();
+    const result = await triggerPostShare(
+      { ...payload, onFallback },
+      {
+        share: vi.fn(),
+        canShare: vi.fn().mockReturnValue(true),
+        matchMedia: () => ({ matches: false }),
+      },
+    );
+
+    expect(result).toBe("fallback");
+    expect(onFallback).toHaveBeenCalledTimes(1);
+  });
+
   it("opens fallback menu when navigator.share is missing", async () => {
     const onFallback = vi.fn();
 
     const result = await triggerPostShare(
-      {
-        title: "Title",
-        url: "https://example.com/post",
-        onFallback,
-      },
+      { ...payload, onFallback },
       {},
     );
 
     expect(result).toBe("fallback");
     expect(onFallback).toHaveBeenCalledTimes(1);
   });
+
+  it("does not open fallback when the user cancels native share (AbortError)", async () => {
+    const onFallback = vi.fn();
+    const abort = new DOMException("Share canceled", "AbortError");
+    const env = mobileShareEnv({
+      share: vi.fn().mockRejectedValue(abort),
+    });
+
+    const result = await triggerPostShare({ ...payload, onFallback }, env);
+
+    expect(result).toBe("cancelled");
+    expect(onFallback).not.toHaveBeenCalled();
+  });
+
+  it("opens fallback on non-abort share errors", async () => {
+    const onFallback = vi.fn();
+    const env = mobileShareEnv({
+      share: vi.fn().mockRejectedValue(new Error("Share failed")),
+    });
+
+    const result = await triggerPostShare({ ...payload, onFallback }, env);
+
+    expect(result).toBe("fallback");
+    expect(onFallback).toHaveBeenCalledTimes(1);
+  });
 });
 
-describe("isNativeShareAvailable", () => {
-  it("reflects navigator.share presence", () => {
-    expect(isNativeShareAvailable({ share: vi.fn() })).toBe(true);
-    expect(isNativeShareAvailable({})).toBe(false);
-    expect(isNativeShareAvailable(undefined)).toBe(false);
+describe("isShareAbortError", () => {
+  it("detects AbortError from the Web Share API", () => {
+    expect(isShareAbortError(new DOMException("nope", "AbortError"))).toBe(
+      true,
+    );
+    expect(isShareAbortError(new Error("AbortError"))).toBe(false);
   });
 });
