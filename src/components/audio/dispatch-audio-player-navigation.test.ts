@@ -83,7 +83,7 @@ describe("handleDispatchAudioDocumentClick", () => {
         altKey: false,
         target: {
           closest: () => anchor,
-        },
+        } as unknown as EventTarget,
       },
       "https://dear.example/posts/live",
       onLeave,
@@ -101,7 +101,13 @@ describe("handleDispatchAudioDocumentClick", () => {
         ctrlKey: false,
         shiftKey: false,
         altKey: false,
-        target: { closest: () => ({ href: "https://dear.example/x" }) },
+        target: {
+          closest: () => ({
+            href: "https://dear.example/x",
+            target: "",
+            hasAttribute: () => false,
+          }),
+        } as unknown as EventTarget,
       },
       "https://dear.example/posts/live",
       onLeave,
