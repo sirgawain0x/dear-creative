@@ -37,8 +37,36 @@ describe("published posts queries", () => {
       publishedAt: null,
     });
 
-    const recent = await listRecentPublishedPosts(db, 10);
+    const asOf = new Date("2026-01-01T00:00:00.000Z");
+    const recent = await listRecentPublishedPosts(db, 10, { asOf });
     expect(recent.map((p) => p.slug)).toEqual(["newer", "older"]);
+  });
+
+  it("excludes drafts and future-dated scheduled publishes", async () => {
+    const db = await createPostsTestDb();
+    const asOf = new Date("2024-06-15T00:00:00.000Z");
+
+    await insertPost(db, {
+      slug: "live-now",
+      title: "Live",
+      status: "published",
+      publishedAt: new Date("2024-06-01T00:00:00.000Z"),
+    });
+    await insertPost(db, {
+      slug: "scheduled-future",
+      title: "Scheduled",
+      status: "published",
+      publishedAt: new Date("2024-07-01T00:00:00.000Z"),
+    });
+    await insertPost(db, {
+      slug: "draft-only",
+      title: "Draft",
+      status: "draft",
+      publishedAt: null,
+    });
+
+    const recent = await listRecentPublishedPosts(db, 10, { asOf });
+    expect(recent.map((p) => p.slug)).toEqual(["live-now"]);
   });
 
   it("paginates published posts", async () => {

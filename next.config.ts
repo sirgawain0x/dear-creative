@@ -6,6 +6,25 @@ const nextConfig: NextConfig = {
   pageExtensions: ["js", "jsx", "md", "mdx", "ts", "tsx"],
   cacheComponents: true,
   partialPrefetching: true,
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "api.grove.storage",
+        pathname: "/**",
+      },
+      {
+        protocol: "https",
+        hostname: "**.paragraph.xyz",
+        pathname: "/**",
+      },
+      {
+        protocol: "https",
+        hostname: "paragraph.xyz",
+        pathname: "/**",
+      },
+    ],
+  },
   turbopack: {
     rules: {
       "*.css": {
