@@ -1,7 +1,6 @@
-import { execSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { getAddress } from "viem";
 import { authors, writers } from "@/db/schema";
@@ -11,10 +10,13 @@ import {
   resolvePostTipPayToAddress,
   shouldRenderPostTipCard,
 } from "@/lib/posts/post-tip-payee";
+import { scanSrcForLegacyTipPlaceholder } from "@/lib/posts/legacy-tip-placeholder-scan";
 import {
   createPostsTestDb,
   insertPost,
 } from "@/lib/posts/test-support/posts-test-db";
+
+const POST_PAGE_REL = join("src", "app", "posts", "[slug]", "page.tsx");
 
 const G2_SPLIT = "0xfc1577e86d0bc18c562a92e7e3a748e7177902af";
 /** Legacy fallback (assembled so this file does not trip the src/ grep guard). */
@@ -139,15 +141,19 @@ describe("post tip card visibility", () => {
 
 describe("tip placeholder guard", () => {
   it("fails if the legacy placeholder tip address appears anywhere under src/", () => {
-    let hits: string;
-    try {
-      hits = execSync(
-        `rg -l ${JSON.stringify(LEGACY_PLACEHOLDER_TIP)} src -g '!**/*.test.ts' || true`,
-        { encoding: "utf8", cwd: process.cwd() },
-      ).trim();
-    } catch {
-      hits = "";
-    }
-    expect(hits).toBe("");
+    const projectRoot = process.cwd();
+    const { scannedFiles, matchingFiles } = scanSrcForLegacyTipPlaceholder(
+      projectRoot,
+      LEGACY_PLACEHOLDER_TIP,
+    );
+
+    expect(scannedFiles.length).toBeGreaterThan(0);
+
+    const scannedRelative = scannedFiles.map((file) =>
+      relative(projectRoot, file),
+    );
+    expect(scannedRelative).toContain(POST_PAGE_REL);
+
+    expect(matchingFiles).toEqual([]);
   });
 });
