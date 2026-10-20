@@ -14,6 +14,10 @@ import { computeApprovalContentHash } from "@/lib/approval/content-hash";
 import { writeAuditEvent } from "@/lib/audit/write-audit-event";
 import { htmlToMarkdown } from "@/lib/html/html-to-markdown";
 import { ensureArticleHtml } from "@/lib/html/markdown-to-html";
+import {
+  clearStoredPostAudio,
+  postNarrationContentChanged,
+} from "@/lib/audio/invalidate-post-audio";
 import { loadFullPostContent } from "@/lib/paywall/full-post-content";
 
 export type AdminPostRecord = {
@@ -326,6 +330,24 @@ export async function updateAdminPost(
       updatedAt: now,
     })
     .where(eq(posts.id, existing.id));
+
+  const explicitAudioUpdate =
+    input.audioUrl !== undefined || input.audioVoice !== undefined;
+  const publishedTransition =
+    existing.status !== "published" && nextStatus === "published";
+  if (
+    !explicitAudioUpdate &&
+    (publishedTransition ||
+      postNarrationContentChanged(existing, input, {
+        title: nextTitle,
+        slug: nextSlug,
+        teaserText: nextTeaserText,
+        bodyHtml: nextBodyHtml,
+        emailHtml: nextEmailHtml,
+      }))
+  ) {
+    await clearStoredPostAudio(db, existing.id);
+  }
 
   if (input.audioUrl !== undefined || input.audioVoice !== undefined) {
     await setPostAudioColumns(db, existing.id, {

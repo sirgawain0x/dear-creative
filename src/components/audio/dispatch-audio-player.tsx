@@ -315,94 +315,10 @@ export function DispatchAudioPlayer({
         return;
       }
 
-      // 2. Fetch synthesized narration from Google Voice Engine
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-      const controller = new AbortController();
-      abortControllerRef.current = controller;
-
-      setIsLoading(true);
-      setStatusMessage(
-        `Synthesizing narration with ${targetVoice === "Puck" ? "Adam (Puck)" : "Aoede"}...`,
-      );
-
-      try {
-        const res = await fetch(
-          `/api/posts/${encodeURIComponent(slug)}/audio?voice=${encodeURIComponent(targetVoice)}`,
-          { signal: controller.signal },
-        );
-
-        if (!isActiveRef.current || controller.signal.aborted) {
-          return;
-        }
-
-        if (!res.ok) {
-          throw new Error(`Audio route returned HTTP ${res.status}`);
-        }
-
-        const data = (await res.json()) as {
-          audioBase64?: string;
-          audioUrl?: string;
-          mimeType?: string;
-          provider?: string;
-          fallbackToLocalWebSpeech?: boolean;
-          error?: string;
-        };
-
-        if (!isActiveRef.current || controller.signal.aborted) {
-          return;
-        }
-
-        const audioSrc =
-          data.audioUrl ||
-          (data.audioBase64
-            ? `data:${data.mimeType || "audio/mp3"};base64,${data.audioBase64}`
-            : null);
-
-        if (audioSrc) {
-          audioCacheRef.current[targetVoice] = audioSrc;
-
-          // Only proceed if user hasn't switched away while fetching
-          if (currentVoiceRef.current === targetVoice && isActiveRef.current) {
-            if (!audioRef.current) {
-              audioRef.current = new Audio(audioSrc);
-            } else {
-              audioRef.current.onerror = null;
-              audioRef.current.src = audioSrc;
-            }
-
-            setupAudioElement(audioRef.current);
-            audioRef.current.playbackRate = playbackRate;
-            if (startOffsetSec > 0) {
-              audioRef.current.currentTime = startOffsetSec;
-            } else {
-              audioRef.current.currentTime = 0;
-            }
-            await audioRef.current.play();
-            if (!isActiveRef.current || controller.signal.aborted) {
-              stopAllPlayback();
-              return;
-            }
-            setIsPlaying(true);
-            setStatusMessage(null);
-          }
-        } else {
-          fallbackToBrowserSpeech(targetVoice);
-        }
-      } catch (err) {
-        if (!isActiveRef.current || controller.signal.aborted) {
-          return;
-        }
-        console.warn("Google Voice synthesis unavailable, falling back to Web Speech:", err);
-        fallbackToBrowserSpeech(targetVoice);
-      } finally {
-        if (isActiveRef.current && !controller.signal.aborted) {
-          setIsLoading(false);
-        }
-      }
+      // 2. No stored MP3 — use browser speech (public route never runs live TTS).
+      fallbackToBrowserSpeech(targetVoice);
     },
-    [slug, playbackRate, fallbackToBrowserSpeech, setupAudioElement, stopAllPlayback, staticAudioSrc],
+    [playbackRate, fallbackToBrowserSpeech, setupAudioElement, staticAudioSrc],
   );
 
   // Toggle play/pause
@@ -476,51 +392,6 @@ export function DispatchAudioPlayer({
     }
   };
 
-  // Switch voice between Puck (Adam) and Aoede
-  const handleVoiceToggle = useCallback(async () => {
-    const nextVoice: GoogleVoice = voice === "Puck" ? "Aoede" : "Puck";
-    setVoice(nextVoice);
-    currentVoiceRef.current = nextVoice;
-
-    if (useBrowserSpeech) {
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-        if (isPlaying) {
-          fallbackToBrowserSpeech(nextVoice);
-        }
-      }
-      return;
-    }
-
-    // If currently playing, seamlessly switch to next voice and resume at same position
-    if (isPlaying) {
-      const resumeTime = audioRef.current?.currentTime || currentTime || 0;
-      if (audioRef.current) {
-        audioRef.current.pause();
-      }
-      await playVoice(nextVoice, resumeTime);
-    } else {
-      // If paused or idle, cue the next voice so pressing play starts the new voice
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-        const cached = audioCacheRef.current[nextVoice];
-        if (cached) {
-          audioRef.current.src = cached;
-          audioRef.current.load();
-        }
-      }
-      setCurrentTime(0);
-    }
-  }, [
-    voice,
-    useBrowserSpeech,
-    isPlaying,
-    currentTime,
-    fallbackToBrowserSpeech,
-    playVoice,
-  ]);
-
   // Scrubbable timeline seek handler
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!progressBarRef.current || duration <= 0) return;
@@ -558,7 +429,9 @@ export function DispatchAudioPlayer({
                 ? "Synthesizing audio narration"
                 : isPlaying
                   ? "Pause audio narration"
-                  : "Play audio narration with Google Voice"
+                  : staticAudioSrc
+                    ? "Play audio narration"
+                    : "Play audio narration with browser speech"
             }
           >
             {isLoading ? (
@@ -594,25 +467,13 @@ export function DispatchAudioPlayer({
               ) : staticAudioSrc ? (
                 `Narrated by ${narratorName} • ~${listenMinutes} min listen`
               ) : (
-                `Google Voice (${voice === "Puck" ? "Adam" : "Aoede"}) • ~${listenMinutes} min listen`
+                `Browser speech • ~${listenMinutes} min listen`
               )}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Voice selector toggle (only for live synthesis; pre-generated audio uses the author's voice) */}
-          {staticAudioSrc ? null : (
-            <button
-              type="button"
-              onClick={handleVoiceToggle}
-              className="rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-800 transition"
-              title="Switch Voice (Google Voice Engine)"
-            >
-              Voice: {voice === "Puck" ? "Adam" : "Aoede"}
-            </button>
-          )}
-
           <span className="font-mono text-xs text-zinc-500">
             {formatSeconds(currentTime)} / {formatSeconds(duration)}
           </span>
