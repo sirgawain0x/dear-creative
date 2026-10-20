@@ -46,7 +46,7 @@ const RECONCILE_0009_TO_0014 = [
 const RECONCILE_0016 = {
   tag: "0016_post_repurpose_outputs",
   when: 1792521000000,
-  hash: "42acf1cb8c641a91f05948cb26b9b63f268e262d5346e801bd6fca801b89efc7",
+  hash: "800c8fa9e28740b64dae4b7cd549b086b310a97f032135c32e759df768989d8b",
 } as const;
 
 describe("drizzle journal reconciliation hashes (0009–0014)", () => {

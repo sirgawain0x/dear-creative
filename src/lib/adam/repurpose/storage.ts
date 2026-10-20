@@ -81,7 +81,7 @@ export async function getRepurposeOutput(
 
 export type ClaimRepurposeLockResult =
   | { outcome: "ready"; output: RepurposeStoredOutput }
-  | { outcome: "claimed"; rowId: string }
+  | { outcome: "claimed"; rowId: string; claimToken: string }
   | { outcome: "conflict" };
 
 async function tryReclaimGeneratingLock(input: {
@@ -90,10 +90,14 @@ async function tryReclaimGeneratingLock(input: {
   outputType: RepurposeOutputType;
   nowMs: number;
   staleBeforeMs: number;
+  claimToken: string;
 }): Promise<string | null> {
   const reclaimed = await input.db.all<{ id: string }>(sql`
     UPDATE post_repurpose_outputs
-    SET status = 'generating', error_message = NULL, updated_at = ${input.nowMs}
+    SET status = 'generating',
+        error_message = NULL,
+        updated_at = ${input.nowMs},
+        claim_token = ${input.claimToken}
     WHERE post_id = ${input.postId}
       AND output_type = ${input.outputType}
       AND (
@@ -121,6 +125,8 @@ export async function claimRepurposeGenerationLock(input: {
     return { outcome: "ready", output: existing };
   }
 
+  const claimToken = randomUUID();
+
   if (existing) {
     const reclaimedId = await tryReclaimGeneratingLock({
       db: input.db,
@@ -128,9 +134,10 @@ export async function claimRepurposeGenerationLock(input: {
       outputType: input.outputType,
       nowMs,
       staleBeforeMs,
+      claimToken,
     });
     if (reclaimedId) {
-      return { outcome: "claimed", rowId: reclaimedId };
+      return { outcome: "claimed", rowId: reclaimedId, claimToken };
     }
     return { outcome: "conflict" };
   }
@@ -146,10 +153,11 @@ export async function claimRepurposeGenerationLock(input: {
       mediaUrl: null,
       mediaMimeType: null,
       errorMessage: null,
+      claimToken,
       createdAt: now,
       updatedAt: now,
     });
-    return { outcome: "claimed", rowId: id };
+    return { outcome: "claimed", rowId: id, claimToken };
   } catch (error) {
     if (!isSqliteUniqueConstraintError(error)) {
       throw error;
@@ -162,15 +170,17 @@ export async function claimRepurposeGenerationLock(input: {
     if (racedExisting?.status === "ready") {
       return { outcome: "ready", output: racedExisting };
     }
+    const racedClaimToken = randomUUID();
     const reclaimedId = await tryReclaimGeneratingLock({
       db: input.db,
       postId: input.postId,
       outputType: input.outputType,
       nowMs,
       staleBeforeMs,
+      claimToken: racedClaimToken,
     });
     if (reclaimedId) {
-      return { outcome: "claimed", rowId: reclaimedId };
+      return { outcome: "claimed", rowId: reclaimedId, claimToken: racedClaimToken };
     }
     return { outcome: "conflict" };
   }
@@ -186,6 +196,7 @@ export class RepurposeStaleClaimError extends Error {
 export async function saveRepurposeReady(input: {
   db: DearCreativeDb;
   rowId: string;
+  claimToken: string;
   postId: string;
   outputType: RepurposeOutputType;
   payload: unknown;
@@ -201,6 +212,7 @@ export async function saveRepurposeReady(input: {
       mediaUrl: input.mediaUrl ?? null,
       mediaMimeType: input.mediaMimeType ?? null,
       errorMessage: null,
+      claimToken: null,
       updatedAt: now,
     })
     .where(
@@ -209,6 +221,7 @@ export async function saveRepurposeReady(input: {
         eq(postRepurposeOutputs.postId, input.postId),
         eq(postRepurposeOutputs.outputType, input.outputType),
         eq(postRepurposeOutputs.status, "generating"),
+        eq(postRepurposeOutputs.claimToken, input.claimToken),
       ),
     )
     .returning();
@@ -222,6 +235,7 @@ export async function saveRepurposeReady(input: {
 export async function saveRepurposeFailed(input: {
   db: DearCreativeDb;
   rowId: string;
+  claimToken: string;
   postId: string;
   outputType: RepurposeOutputType;
   errorMessage: string;
@@ -232,6 +246,7 @@ export async function saveRepurposeFailed(input: {
     .set({
       status: "failed",
       errorMessage: input.errorMessage.slice(0, 2000),
+      claimToken: null,
       updatedAt: now,
     })
     .where(
@@ -240,6 +255,7 @@ export async function saveRepurposeFailed(input: {
         eq(postRepurposeOutputs.postId, input.postId),
         eq(postRepurposeOutputs.outputType, input.outputType),
         eq(postRepurposeOutputs.status, "generating"),
+        eq(postRepurposeOutputs.claimToken, input.claimToken),
       ),
     );
 }

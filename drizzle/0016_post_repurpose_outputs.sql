@@ -7,6 +7,7 @@ CREATE TABLE `post_repurpose_outputs` (
 	`media_url` text,
 	`media_mime_type` text,
 	`error_message` text,
+	`claim_token` text,
 	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
 	`updated_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
 	FOREIGN KEY (`post_id`) REFERENCES `posts`(`id`) ON UPDATE no action ON DELETE cascade

@@ -1,14 +1,13 @@
-import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { postRepurposeOutputs } from "@/db/schema";
 import {
   createPostsTestDb,
   insertPost,
 } from "@/lib/posts/test-support/posts-test-db";
+import { REPURPOSE_GENERATING_TTL_MS } from "./constants";
 import {
   claimRepurposeGenerationLock,
   getRepurposeOutput,
-  saveRepurposeFailed,
   saveRepurposeReady,
   toClientRepurposeOutput,
 } from "./storage";
@@ -50,58 +49,89 @@ describe("claimRepurposeGenerationLock insert errors", () => {
   });
 });
 
-describe("saveRepurposeReady / saveRepurposeFailed rowId guard", () => {
-  it("does not overwrite when rowId does not match the active generating claim", async () => {
+describe("saveRepurposeReady claim_token guard", () => {
+  it("rejects stale worker after TTL reclaim gives another worker a new token", async () => {
     const db = await createPostsTestDb();
     await insertPost(db, {
-      slug: "stale",
+      slug: "reclaim",
       title: "T",
       status: "published",
       publishedAt: new Date(),
       bodyHtml: "<p>x</p>",
     });
     const post = await db.query.posts.findFirst({
-      where: (p, { eq }) => eq(p.slug, "stale"),
+      where: (p, { eq }) => eq(p.slug, "reclaim"),
     });
     if (!post) throw new Error("missing post");
 
-    const activeId = randomUUID();
-    const staleId = randomUUID();
-    const now = new Date();
-    await db.insert(postRepurposeOutputs).values({
-      id: activeId,
-      postId: post.id,
-      outputType: "quiz",
-      status: "generating",
-      payloadJson: null,
-      mediaUrl: null,
-      mediaMimeType: null,
-      errorMessage: null,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await saveRepurposeFailed({
+    const workerAStart = new Date("2026-01-01T00:00:00.000Z");
+    const claimA = await claimRepurposeGenerationLock({
       db,
-      rowId: staleId,
       postId: post.id,
       outputType: "quiz",
-      errorMessage: "stale worker failure",
+      now: workerAStart,
     });
+    expect(claimA.outcome).toBe("claimed");
+    if (claimA.outcome !== "claimed") throw new Error("expected claim");
 
-    const row = await getRepurposeOutput(db, post.id, "quiz");
-    expect(row?.status).toBe("generating");
-    expect(row?.errorMessage).toBeNull();
+    const workerBTime = new Date(
+      workerAStart.getTime() + REPURPOSE_GENERATING_TTL_MS + 1_000,
+    );
+    const claimB = await claimRepurposeGenerationLock({
+      db,
+      postId: post.id,
+      outputType: "quiz",
+      now: workerBTime,
+    });
+    expect(claimB.outcome).toBe("claimed");
+    if (claimB.outcome !== "claimed") throw new Error("expected reclaim");
+
+    expect(claimB.rowId).toBe(claimA.rowId);
+    expect(claimB.claimToken).not.toBe(claimA.claimToken);
 
     await expect(
       saveRepurposeReady({
         db,
-        rowId: staleId,
+        rowId: claimA.rowId,
+        claimToken: claimA.claimToken,
         postId: post.id,
         outputType: "quiz",
-        payload: { title: "Q", questions: [] },
+        payload: {
+          title: "Stale",
+          questions: [
+            {
+              prompt: "Q",
+              choices: ["a", "b"],
+              correctIndex: 0,
+              explanation: "e",
+            },
+          ],
+        },
       }),
     ).rejects.toThrow(/no longer active/);
+
+    const saved = await saveRepurposeReady({
+      db,
+      rowId: claimB.rowId,
+      claimToken: claimB.claimToken,
+      postId: post.id,
+      outputType: "quiz",
+      payload: {
+        title: "Fresh",
+        questions: [
+          {
+            prompt: "Q",
+            choices: ["a", "b"],
+            correctIndex: 0,
+            explanation: "e",
+          },
+        ],
+      },
+    });
+
+    expect(saved.status).toBe("ready");
+    const row = await getRepurposeOutput(db, post.id, "quiz");
+    expect(row?.status).toBe("ready");
   });
 });
 

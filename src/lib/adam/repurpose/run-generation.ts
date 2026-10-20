@@ -85,7 +85,10 @@ export async function runRepurposeGeneration(input: {
     );
   }
 
-  const claimedRowId = claim.outcome === "claimed" ? claim.rowId : null;
+  const activeClaim =
+    claim.outcome === "claimed"
+      ? { rowId: claim.rowId, claimToken: claim.claimToken }
+      : null;
   try {
     const generated = isTextRepurposeType(input.outputType)
       ? await generateTextRepurposeOutput({
@@ -110,7 +113,7 @@ export async function runRepurposeGeneration(input: {
             );
           })();
 
-    if (!claimedRowId) {
+    if (!activeClaim) {
       throw new RepurposeGenerationError(
         409,
         "A generation for this output type is already in progress.",
@@ -119,7 +122,8 @@ export async function runRepurposeGeneration(input: {
 
     return await saveRepurposeReady({
       db: input.db,
-      rowId: claimedRowId,
+      rowId: activeClaim.rowId,
+      claimToken: activeClaim.claimToken,
       postId: source.id,
       outputType: input.outputType,
       payload: generated.payload,
@@ -134,10 +138,11 @@ export async function runRepurposeGeneration(input: {
       outputType: input.outputType,
       detail: logDetail,
     });
-    if (claimedRowId) {
+    if (activeClaim) {
       await saveRepurposeFailed({
         db: input.db,
-        rowId: claimedRowId,
+        rowId: activeClaim.rowId,
+        claimToken: activeClaim.claimToken,
         postId: source.id,
         outputType: input.outputType,
         errorMessage: logDetail,
