@@ -3,6 +3,7 @@ import {
   extractFirstImageFromHtml,
   generateDeterministicBannerSvg,
   resolvePostCoverImage,
+  resolvePublicPostCoverImage,
 } from "./post-cover-image";
 
 describe("post-cover-image", () => {
@@ -32,13 +33,32 @@ describe("post-cover-image", () => {
     expect(svg).toContain("Decentralized Publishing");
   });
 
-  it("resolves coverImage when explicitly provided", () => {
+  it("falls back to SVG when cover host is not allowlisted", () => {
     const url = resolvePostCoverImage({
       title: "Custom",
       slug: "custom",
       coverImage: "https://example.com/banner.png",
     });
-    expect(url).toBe("https://example.com/banner.png");
+    expect(url.startsWith("data:image/svg+xml;utf8,")).toBe(true);
+  });
+
+  it("keeps Grove storage URLs but they bypass the optimizer at render time", () => {
+    const url = resolvePostCoverImage({
+      title: "Grove",
+      slug: "grove-post",
+      coverImage: "https://api.grove.storage/abc123",
+    });
+    expect(url).toBe("https://api.grove.storage/abc123");
+  });
+
+  it("resolvePublicPostCoverImage reads images from free preview only", () => {
+    const url = resolvePublicPostCoverImage({
+      title: "Preview image",
+      slug: "preview-image",
+      publicPreview:
+        '![cover](/images/hello-dear-creative-banner.jpg)\n\nIntro copy.',
+    });
+    expect(url).toBe("/images/hello-dear-creative-banner.jpg");
   });
 
   it("resolves hello-dear-creative to the local asset", () => {
@@ -50,10 +70,10 @@ describe("post-cover-image", () => {
   });
 
   it("falls back to deterministic data URL when no image is present", () => {
-    const url = resolvePostCoverImage({
+    const url = resolvePublicPostCoverImage({
       title: "Text Only",
       slug: "text-only",
-      bodyHtml: "<p>Just text without any images.</p>",
+      publicPreview: "Just text without any images.",
     });
     expect(url.startsWith("data:image/svg+xml;utf8,")).toBe(true);
   });

@@ -1,18 +1,22 @@
-import { and, count, desc, eq, isNotNull } from "drizzle-orm";
+import { and, count, desc, eq, isNotNull, lte } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
 import { getPostAudioColumns } from "@/db/ensure-schema";
 import { posts } from "@/db/schema";
-import { resolvePostCoverImage } from "./post-cover-image";
+import { resolvePublicPostCoverImage } from "./post-cover-image";
+import { buildPublicPostTeaser } from "./post-public-teaser";
 import { calculateReadingTime } from "./reading-time";
 import { classifyArticleTopic } from "./topic-tagging";
 import type { PostMeta } from "./types";
 
 export const DEFAULT_PUBLISHED_PAGE_SIZE = 20;
 
-const publishedFilter = and(
-  eq(posts.status, "published"),
-  isNotNull(posts.publishedAt),
-);
+export function publishedVisibilityFilter(asOf: Date = new Date()) {
+  return and(
+    eq(posts.status, "published"),
+    isNotNull(posts.publishedAt),
+    lte(posts.publishedAt, asOf),
+  );
+}
 
 export type PublishedPostListItem = PostMeta & {
   canonicalUrl: string | null;
@@ -42,12 +46,18 @@ function mapListRow(row: {
   publishedAt: Date | null;
   teaserText: string | null;
   canonicalUrl: string | null;
+  freeContent: string | null;
   bodyHtml?: string | null;
 }): PublishedPostListItem {
-  const coverImage = resolvePostCoverImage({
+  const coverImage = resolvePublicPostCoverImage({
     slug: row.slug,
     title: row.title,
-    bodyHtml: row.bodyHtml,
+    publicPreview: row.freeContent,
+  });
+
+  const teaser = buildPublicPostTeaser({
+    excerpt: row.teaserText,
+    publicPreview: row.freeContent,
   });
 
   const metrics = calculateReadingTime(row.bodyHtml ?? row.teaserText);
@@ -62,6 +72,7 @@ function mapListRow(row: {
     title: row.title,
     publishedAt: toIsoPublishedAt(row.publishedAt as Date),
     excerpt: row.teaserText ?? undefined,
+    teaser,
     canonicalUrl: row.canonicalUrl,
     coverImage,
     readMinutes: metrics.readMinutes,
@@ -77,21 +88,24 @@ export function publishedPostCacheTag(slug: string): string {
 
 export async function countPublishedPosts(
   db: DearCreativeDb,
+  options?: { asOf?: Date },
 ): Promise<number> {
+  const asOf = options?.asOf ?? new Date();
   const [row] = await db
     .select({ total: count() })
     .from(posts)
-    .where(publishedFilter);
+    .where(publishedVisibilityFilter(asOf));
   return row?.total ?? 0;
 }
 
 export async function listPublishedPosts(
   db: DearCreativeDb,
-  options?: { page?: number; pageSize?: number },
+  options?: { page?: number; pageSize?: number; asOf?: Date },
 ): Promise<PublishedPostsPage> {
+  const asOf = options?.asOf ?? new Date();
   const pageSize = options?.pageSize ?? DEFAULT_PUBLISHED_PAGE_SIZE;
   const page = Math.max(1, options?.page ?? 1);
-  const totalCount = await countPublishedPosts(db);
+  const totalCount = await countPublishedPosts(db, { asOf });
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const safePage = Math.min(page, totalPages);
   const offset = (safePage - 1) * pageSize;
@@ -103,10 +117,11 @@ export async function listPublishedPosts(
       publishedAt: posts.publishedAt,
       teaserText: posts.teaserText,
       canonicalUrl: posts.canonicalUrl,
+      freeContent: posts.freeContent,
       bodyHtml: posts.bodyHtml,
     })
     .from(posts)
-    .where(publishedFilter)
+    .where(publishedVisibilityFilter(asOf))
     .orderBy(desc(posts.publishedAt))
     .limit(pageSize)
     .offset(offset);
@@ -123,7 +138,9 @@ export async function listPublishedPosts(
 export async function listRecentPublishedPosts(
   db: DearCreativeDb,
   limit: number,
+  options?: { asOf?: Date },
 ): Promise<PublishedPostListItem[]> {
+  const asOf = options?.asOf ?? new Date();
   const safeLimit = Math.min(Math.max(limit, 1), 100);
   const rows = await db
     .select({
@@ -132,10 +149,11 @@ export async function listRecentPublishedPosts(
       publishedAt: posts.publishedAt,
       teaserText: posts.teaserText,
       canonicalUrl: posts.canonicalUrl,
+      freeContent: posts.freeContent,
       bodyHtml: posts.bodyHtml,
     })
     .from(posts)
-    .where(publishedFilter)
+    .where(publishedVisibilityFilter(asOf))
     .orderBy(desc(posts.publishedAt))
     .limit(safeLimit);
 
@@ -145,7 +163,9 @@ export async function listRecentPublishedPosts(
 export async function getPublishedPostBySlug(
   db: DearCreativeDb,
   slug: string,
+  options?: { asOf?: Date },
 ): Promise<PublishedPostDetail | null> {
+  const asOf = options?.asOf ?? new Date();
   const [row] = await db
     .select({
       slug: posts.slug,
@@ -153,10 +173,11 @@ export async function getPublishedPostBySlug(
       publishedAt: posts.publishedAt,
       teaserText: posts.teaserText,
       canonicalUrl: posts.canonicalUrl,
+      freeContent: posts.freeContent,
       bodyHtml: posts.bodyHtml,
     })
     .from(posts)
-    .where(and(publishedFilter, eq(posts.slug, slug)))
+    .where(and(publishedVisibilityFilter(asOf), eq(posts.slug, slug)))
     .limit(1);
 
   if (!row?.publishedAt) {
@@ -166,7 +187,15 @@ export async function getPublishedPostBySlug(
   const audio = await getPostAudioColumns(db, slug);
 
   return {
-    ...mapListRow(row),
+    ...mapListRow({
+      slug: row.slug,
+      title: row.title,
+      publishedAt: row.publishedAt,
+      teaserText: row.teaserText,
+      canonicalUrl: row.canonicalUrl,
+      freeContent: row.freeContent,
+      bodyHtml: row.bodyHtml,
+    }),
     bodyHtml: row.bodyHtml,
     audioUrl: audio.audioUrl,
     audioVoice: audio.audioVoice,

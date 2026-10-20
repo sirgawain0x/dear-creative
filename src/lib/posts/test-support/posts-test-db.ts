@@ -27,6 +27,7 @@ export async function insertPost(
     publishedAt: Date | null;
     teaserText?: string | null;
     bodyHtml?: string | null;
+    freeContent?: string | null;
     canonicalUrl?: string | null;
   },
 ) {
@@ -38,6 +39,7 @@ export async function insertPost(
     publishedAt: input.publishedAt,
     teaserText: input.teaserText ?? null,
     bodyHtml: input.bodyHtml ?? null,
+    freeContent: input.freeContent ?? null,
     canonicalUrl: input.canonicalUrl ?? null,
   });
 }
