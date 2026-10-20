@@ -1,4 +1,5 @@
 import type { User } from "@privy-io/server-auth";
+import { getAddress } from "viem";
 import { getPrivyServerClient } from "@/lib/privy/server-client";
 import { extractBearerToken } from "@/lib/privy/verify";
 
@@ -16,6 +17,20 @@ function isWalletLinkedAccount(
     typeof account.address === "string" &&
     account.address.startsWith("0x")
   );
+}
+
+/** All linked wallet accounts on the Privy user, checksummed (invalid entries skipped). */
+export function listChecksumLinkedWalletAddresses(user: User): string[] {
+  const linkedWallets = user.linkedAccounts.filter(isWalletLinkedAccount);
+  const out: string[] = [];
+  for (const wallet of linkedWallets) {
+    try {
+      out.push(getAddress(wallet.address));
+    } catch {
+      // skip malformed linked wallet rows
+    }
+  }
+  return out;
 }
 
 function pickLinkedWalletAddress(
@@ -73,6 +88,60 @@ export function setPaymentsLinkedWalletResolverForTests(
 
 export function resetPaymentsLinkedWalletResolverForTests(): void {
   linkedWalletResolverOverride = undefined;
+}
+
+let linkedChecksumAddressesResolverOverride:
+  | ((token: string) => Promise<string[] | null>)
+  | null
+  | undefined;
+
+export function setPrivyLinkedChecksumAddressesResolverForTests(
+  resolver: ((token: string) => Promise<string[] | null>) | null,
+): void {
+  linkedChecksumAddressesResolverOverride = resolver;
+}
+
+export function resetPrivyLinkedChecksumAddressesResolverForTests(): void {
+  linkedChecksumAddressesResolverOverride = undefined;
+}
+
+/**
+ * Privy bearer token → all linked wallet addresses (checksummed).
+ * Returns null when there is no token or Privy user; [] when the user has no linked wallets.
+ */
+export async function resolvePrivyLinkedChecksumWalletAddresses(
+  authorizationHeader: string | null,
+): Promise<string[] | null> {
+  const token = extractBearerToken(authorizationHeader);
+  if (!token) {
+    return null;
+  }
+
+  if (linkedChecksumAddressesResolverOverride !== undefined) {
+    if (linkedChecksumAddressesResolverOverride === null) {
+      return null;
+    }
+    return linkedChecksumAddressesResolverOverride(token);
+  }
+
+  const client = getPrivyServerClient();
+  if (!client) {
+    return null;
+  }
+
+  try {
+    const claims = await client.verifyAuthToken(token);
+    if (!claims.userId) {
+      return null;
+    }
+    const user = await client.getUserById(claims.userId);
+    if (!user) {
+      return null;
+    }
+    return listChecksumLinkedWalletAddresses(user);
+  } catch {
+    return null;
+  }
 }
 
 /**
