@@ -1,26 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   PixelsHttpClient,
-  createImportMediaOps,
+  generateDearCreativeClips,
   type PostData,
 } from "./pixels-template-client";
-
-const samplePost: PostData = {
-  id: "post-1",
-  slug: "demo",
-  title: "Demo",
-  teaserText: "Teaser",
-  publishedAt: Date.now(),
-  audioUrl: "https://api.grove.storage/audio.mp3",
-  bannerUrls: {
-    "16:9": "https://api.grove.storage/banner.png",
-    "1:1": "https://api.grove.storage/banner.png",
-  },
-  videoUrls: {
-    "16:9": "https://api.grove.storage/v16.mp4",
-    "9:16": "https://api.grove.storage/v9.mp4",
-  },
-};
 
 describe("PixelsHttpClient", () => {
   it("does not send X-PAYMENT headers", async () => {
@@ -44,21 +27,54 @@ describe("PixelsHttpClient", () => {
   });
 });
 
-describe("createImportMediaOps", () => {
-  it("imports banner, video, and narration for 16:9", () => {
-    const ops = createImportMediaOps(samplePost, "16:9");
-    expect(ops).toHaveLength(3);
-    expect(ops[0]).toMatchObject({
-      op: "importMedia",
-      mediaId: "banner-16:9",
+describe("generateDearCreativeClips", () => {
+  it("uploads render outputBase64 via uploadToLensGrove", async () => {
+    const post: PostData = {
+      id: "post-1",
+      slug: "demo",
+      title: "Demo",
+      teaserText: "Teaser",
+      publishedAt: Date.now(),
+      audioUrl: "https://api.grove.storage/audio.mp3",
+      bannerUrls: {
+        "16:9": "https://api.grove.storage/banner.png",
+        "1:1": "https://api.grove.storage/banner.png",
+      },
+      videoUrls: {
+        "16:9": "https://api.grove.storage/v16.mp4",
+        "9:16": "https://api.grove.storage/v9.mp4",
+      },
+    };
+
+    const renderBase64 = Buffer.from("rendered-mp4").toString("base64");
+    const pixelsClient = {
+      createProject: vi.fn(async () => ({ id: "proj-1" })),
+      editProject: vi.fn(async () => ({ id: "proj-1" })),
+      renderProject: vi.fn(async () => ({
+        ok: true,
+        outputBase64: renderBase64,
+      })),
+    } as unknown as PixelsHttpClient;
+
+    const uploadToGrove = vi.fn(async () => ({
+      uri: "lens://clip123",
+      gatewayUrl: "https://api.grove.storage/clip123",
+      storageKey: "clip123",
+    }));
+
+    const db = {} as never;
+    const result = await generateDearCreativeClips({
+      postSlug: "demo",
+      db,
+      pixelsBaseUrl: "https://pixels.example.com",
+      post,
+      outputFormats: ["1:1"],
+      pixelsClient,
+      uploadToGrove,
     });
-    expect(ops[1]).toMatchObject({
-      op: "importMedia",
-      mediaId: "video-16:9",
-    });
-    expect(ops[2]).toMatchObject({
-      op: "importMedia",
-      mediaId: "audio-narration",
-    });
+
+    expect(uploadToGrove).toHaveBeenCalledTimes(1);
+    expect(result.thumbnail1x1.url).toContain("clip123");
+    expect(result.thumbnail1x1.uri).toBe("lens://clip123");
   });
 });

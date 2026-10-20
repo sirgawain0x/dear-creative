@@ -1,15 +1,18 @@
 /**
  * Pixels template client for Dear Creative branded social clips.
- * Not wired into production routes yet — import from `@/lib/adam/pixels` when ready.
  */
 
-import { StorageClient } from "@lens-chain/storage-client";
 import { randomUUID } from "node:crypto";
 import type { DearCreativeDb } from "@/db/client";
+import {
+  uploadToLensGrove,
+  type LensGroveUploadResult,
+} from "@/lib/storage/lens-grove";
 import {
   loadPixelsPostDataFromDb,
   type PixelsPostData,
 } from "./post-data";
+import { fetchRenderArtifactBytes } from "./render-artifact";
 
 // ============================================================================
 // Types
@@ -141,22 +144,13 @@ export interface PixelsRenderRequest {
 
 export interface PixelsRenderResponse {
   ok: boolean;
-  outputPath: string;
-  fileSize: number;
+  outputPath?: string;
+  outputUrl?: string;
+  downloadUrl?: string;
+  url?: string;
+  outputBase64?: string;
+  fileSize?: number;
   warnings?: unknown[];
-  billing?: {
-    chargedUsdc6: number;
-    returnedUsdc6: number;
-    balanceUsdc6: number;
-    formattedCharged: string;
-    formattedBalance: string;
-  };
-}
-
-export interface LensGroveUploadResult {
-  uri: string;
-  gatewayUrl: string;
-  storageKey: string;
 }
 
 // ============================================================================
@@ -172,24 +166,14 @@ const DEFAULT_WIDTH_1_1 = 1080;
 const DEFAULT_HEIGHT_1_1 = 1080;
 
 const BRANDING = {
-  name: 'Dear Creative',
   colors: {
-    primary: '#1a1a2e',
-    secondary: '#16213e',
-    accent: '#e94560',
-    highlight: '#0f3460',
-    textPrimary: '#ffffff',
-    textSecondary: '#b8c5d6',
-    background: '#0a0a12',
+    background: "#0a0a12",
+    textPrimary: "#ffffff",
+    textSecondary: "#b8c5d6",
+    accent: "#e94560",
   },
+  logoText: "Dear Creative",
   typography: {
-    fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
-    fontWeights: {
-      regular: 400,
-      medium: 500,
-      semibold: 600,
-      bold: 700,
-    },
     sizes: {
       title: 72,
       teaser: 36,
@@ -198,31 +182,9 @@ const BRANDING = {
       meta: 20,
     },
   },
-  logo: {
-    text: 'Dear Creative',
-    style: {
-      fontSize: 48,
-      fontWeight: 700,
-      letterSpacing: '0.02em',
-      color: '#ffffff',
-    },
-  },
 };
 
-// ============================================================================
-// Lens Grove Client
-// ============================================================================
-
-let lensGroveClient: StorageClient | null = null;
-
-function getLensGroveClient(): StorageClient {
-  if (!lensGroveClient) {
-    lensGroveClient = StorageClient.create();
-  }
-  return lensGroveClient;
-}
-
-export function resolveGroveUrl(urlOrUri: string | null | undefined): string {
+function resolveGroveUrl(urlOrUri: string | null | undefined): string {
   if (!urlOrUri) return '';
   const trimmed = urlOrUri.trim();
   if (trimmed.startsWith('lens://')) {
@@ -420,7 +382,7 @@ interface EditOp {
   [key: string]: unknown;
 }
 
-export function createImportMediaOps(post: PostData, aspectRatio: string): EditOp[] {
+function createImportMediaOps(post: PostData, aspectRatio: string): EditOp[] {
   const ops: EditOp[] = [];
 
   // Import banner
@@ -486,7 +448,7 @@ function createTimelineOps(
     trackId: isSquare ? 'video-1' : 'video-2',
     from: 0,
     durationInFrames: introDurationFrames,
-    text: BRANDING.logo.text,
+    text: BRANDING.logoText,
     fontSize: 48,
     fontWeight: 'bold',
     color: BRANDING.colors.textPrimary,
@@ -693,7 +655,7 @@ function createTimelineOps(
     trackId: isSquare ? 'video-1' : 'video-2',
     from: currentFrame,
     durationInFrames: ctaDurationFrames,
-    text: BRANDING.logo.text,
+    text: BRANDING.logoText,
     fontSize: 24,
     fontWeight: 'bold',
     color: BRANDING.colors.textPrimary,
@@ -764,6 +726,9 @@ export interface GenerateClipsOptions {
   usePostAudio?: boolean;
   /** When set, skips DB load and uses this payload (for tests or preloaded data). */
   post?: PostData;
+  uploadToGrove?: typeof uploadToLensGrove;
+  fetchFn?: typeof fetch;
+  pixelsClient?: PixelsHttpClient;
 }
 
 export async function generateDearCreativeClips(
@@ -777,6 +742,9 @@ export async function generateDearCreativeClips(
     durationSeconds = 15.5,
     usePostAudio = true,
     post: postOverride,
+    uploadToGrove = uploadToLensGrove,
+    fetchFn = fetch,
+    pixelsClient,
   } = options;
 
   if (!pixelsBaseUrl.trim()) {
@@ -801,7 +769,7 @@ export async function generateDearCreativeClips(
     throw new Error('Post missing required video URLs (16:9, 9:16)');
   }
 
-  const pixels = new PixelsHttpClient(pixelsBaseUrl);
+  const pixels = pixelsClient ?? new PixelsHttpClient(pixelsBaseUrl);
 
   // 3. Generate clips for each format
   const results: Partial<DearCreativeClipsResult> = {};
@@ -857,30 +825,16 @@ export async function generateDearCreativeClips(
       duration: durationSeconds,
     });
 
-    // Upload to Lens Grove
-    const fs = await import('fs');
-    const videoBuffer = fs.readFileSync(renderResponse.outputPath);
-    const videoBlob = new Blob([new Uint8Array(videoBuffer)], { type: 'video/mp4' });
-    const videoFile = new File([videoBlob], `${postSlug}-${aspectRatio}.mp4`, { type: 'video/mp4' });
-
-    const lensClient = getLensGroveClient();
-    const uploadResponse = await lensClient.uploadFile(videoFile);
-    const gatewayUrl = uploadResponse.gatewayUrl || lensClient.resolve(uploadResponse.uri);
-    const gatewayUrlWithExt = gatewayUrl.includes('?')
-      ? `${gatewayUrl}&ext=mp4`
-      : `${gatewayUrl}?ext=mp4`;
-
-    const clip: GeneratedClip = {
-      url: gatewayUrlWithExt,
-      uri: uploadResponse.uri,
-      storageKey: uploadResponse.storageKey,
+    const videoBytes = await fetchRenderArtifactBytes(renderResponse, fetchFn);
+    const uploadResponse = await uploadToGrove(
+      new Blob([Buffer.from(videoBytes)], { type: "video/mp4" }),
+      `${postSlug}-${aspectRatio.replace(":", "x")}.mp4`,
+    );
+    const clip = buildGeneratedClip(uploadResponse, {
       durationSeconds,
       width,
       height,
-      fps: DEFAULT_FPS,
-      codec: 'h264',
-      container: 'mp4',
-    };
+    });
 
     // Store result
     if (aspectRatio === '9:16') {
@@ -891,21 +845,28 @@ export async function generateDearCreativeClips(
       results.thumbnail1x1 = clip;
     }
 
-    // Clean up temp file
-    try {
-      fs.unlinkSync(renderResponse.outputPath);
-    } catch {
-      // ignore
-    }
   }
 
   return results as DearCreativeClipsResult;
 }
 
-export {
-  BRANDING,
-  secondsToFrames,
-  createBaseProject,
-  createVideoTracks,
-  createTimelineOps,
-};
+function buildGeneratedClip(
+  upload: LensGroveUploadResult,
+  meta: { durationSeconds: number; width: number; height: number },
+): GeneratedClip {
+  const gatewayUrl = upload.gatewayUrl;
+  const url = gatewayUrl.includes("?")
+    ? `${gatewayUrl}&ext=mp4`
+    : `${gatewayUrl}?ext=mp4`;
+  return {
+    url,
+    uri: upload.uri,
+    storageKey: upload.storageKey,
+    durationSeconds: meta.durationSeconds,
+    width: meta.width,
+    height: meta.height,
+    fps: DEFAULT_FPS,
+    codec: "h264",
+    container: "mp4",
+  };
+}

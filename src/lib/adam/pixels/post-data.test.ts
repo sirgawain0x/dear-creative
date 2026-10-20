@@ -1,13 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { setPostAudioColumns } from "@/db/ensure-schema";
 import {
   createPostsTestDb,
   insertPost,
 } from "@/lib/posts/test-support/posts-test-db";
-import {
-  fetchPublishedPostAudioFromApi,
-  loadPixelsPostDataFromDb,
-} from "./post-data";
+import { loadPixelsPostDataFromDb } from "./post-data";
 
 describe("loadPixelsPostDataFromDb", () => {
   it("returns null when post has no embedded video assets", async () => {
@@ -21,6 +18,21 @@ describe("loadPixelsPostDataFromDb", () => {
     });
 
     const data = await loadPixelsPostDataFromDb(db, "no-video");
+    expect(data).toBeNull();
+  });
+
+  it("returns null for draft posts even when assets exist", async () => {
+    const db = await createPostsTestDb();
+    await insertPost(db, {
+      slug: "draft-with-video",
+      title: "Draft",
+      status: "draft",
+      publishedAt: null,
+      bodyHtml:
+        '<video src="https://api.grove.storage/v16.mp4"></video><video src="https://api.grove.storage/v9.mp4"></video>',
+    });
+
+    const data = await loadPixelsPostDataFromDb(db, "draft-with-video");
     expect(data).toBeNull();
   });
 
@@ -51,28 +63,5 @@ describe("loadPixelsPostDataFromDb", () => {
     expect(data?.audioUrl).toContain("narration.mp3");
     expect(data?.videoUrls["16:9"]).toContain("v16.mp4");
     expect(data?.bannerUrls["16:9"]).toBeTruthy();
-  });
-});
-
-describe("fetchPublishedPostAudioFromApi", () => {
-  it("calls the public audio route without auth headers", async () => {
-    const fetchMock = vi.fn(async () =>
-      Response.json({
-        ok: true,
-        audioUrl: "https://api.grove.storage/audio.mp3",
-        voice: "Puck",
-      }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    const result = await fetchPublishedPostAudioFromApi(
-      "https://news.example.com",
-      "demo-slug",
-    );
-    expect(result?.audioUrl).toContain("audio.mp3");
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://news.example.com/api/posts/demo-slug/audio",
-    );
-    expect(fetchMock.mock.calls[0]?.length).toBe(1);
   });
 });

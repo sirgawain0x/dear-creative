@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
 import { posts } from "@/db/schema";
 import { getPostAudioColumns } from "@/db/ensure-schema";
@@ -82,6 +82,12 @@ export async function loadPixelsPostDataFromDb(
     return null;
   }
 
+  const publishedFilter = and(
+    eq(posts.slug, trimmedSlug),
+    eq(posts.status, "published"),
+    isNotNull(posts.publishedAt),
+  );
+
   const [row] = await db
     .select({
       id: posts.id,
@@ -93,7 +99,7 @@ export async function loadPixelsPostDataFromDb(
       emailHtml: posts.emailHtml,
     })
     .from(posts)
-    .where(eq(posts.slug, trimmedSlug))
+    .where(publishedFilter)
     .limit(1);
 
   if (!row) {
@@ -113,7 +119,7 @@ export async function loadPixelsPostDataFromDb(
     return null;
   }
 
-  const publishedAtMs = row.publishedAt?.getTime() ?? Date.now();
+  const publishedAtMs = row.publishedAt!.getTime();
 
   return {
     id: row.id,
@@ -129,33 +135,5 @@ export async function loadPixelsPostDataFromDb(
     },
     videoUrls,
     keyQuote: extractKeyQuote(row.bodyHtml),
-  };
-}
-
-/**
- * Optional HTTP helper: uses public `/api/posts/[slug]/audio` for narration metadata.
- * Full clip inputs still require Drizzle (`loadPixelsPostDataFromDb`) for banners and video URLs.
- */
-export async function fetchPublishedPostAudioFromApi(
-  apiBaseUrl: string,
-  slug: string,
-): Promise<{ audioUrl?: string; voice?: string } | null> {
-  const origin = apiBaseUrl.replace(/\/$/, "");
-  const response = await fetch(
-    `${origin}/api/posts/${encodeURIComponent(slug.trim())}/audio`,
-  );
-  if (response.status === 404) {
-    return null;
-  }
-  if (!response.ok) {
-    throw new Error(`Post audio API failed (${response.status})`);
-  }
-  const body = (await response.json()) as {
-    audioUrl?: string;
-    voice?: string;
-  };
-  return {
-    audioUrl: body.audioUrl,
-    voice: body.voice,
   };
 }

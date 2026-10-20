@@ -1,7 +1,5 @@
 export {
   generateDearCreativeClips,
-  createImportMediaOps,
-  resolveGroveUrl,
   PixelsHttpClient,
   type GenerateClipsOptions,
   type DearCreativeClipsResult,
@@ -10,6 +8,11 @@ export {
 
 export {
   loadPixelsPostDataFromDb,
-  fetchPublishedPostAudioFromApi,
   type PixelsPostData,
 } from "./post-data";
+
+export {
+  runDearCreativePixelsClipGeneration,
+  type PixelsClipGenerationPreview,
+  type PixelsClipGenerationResult,
+} from "./run-clip-generation";
