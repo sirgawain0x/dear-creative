@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Script from "next/script";
+import type { Address } from "viem";
 import { DispatchAudioPlayer } from "@/components/audio/dispatch-audio-player";
 import { OwnerEditPostButton } from "@/components/auth/owner-edit-controls";
 import { MicroTippingWidget } from "@/components/monetization/micro-tipping-widget";
@@ -13,7 +14,12 @@ import type { PublishedPostDetail } from "@/lib/posts/published-posts";
 import { calculateReadingTime } from "@/lib/posts/reading-time";
 import { buildPostPageMetadata } from "@/lib/posts/post-page-metadata";
 import { resolvePostPublicUrl } from "@/lib/posts/post-public-url";
+import {
+  resolvePostTipPayToAddress,
+  shouldRenderPostTipCard,
+} from "@/lib/posts/post-tip-payee";
 import { requirePublishedPostBySlug } from "@/lib/posts/require-published-post";
+import { getDb } from "@/db/client";
 import {
   classifyArticleTopic,
   getTopicLabel,
@@ -25,7 +31,13 @@ type PageProps = {
   params: Promise<{ slug: string }>;
 };
 
-function PostArticle({ post }: { post: PublishedPostDetail }) {
+function PostArticle({
+  post,
+  payToAddress,
+}: {
+  post: PublishedPostDetail;
+  payToAddress: Address | null;
+}) {
   const bodyHtml = publishedPostBodyForDisplay(post.bodyHtml);
   const metrics = calculateReadingTime(post.bodyHtml ?? post.excerpt);
   const topic = classifyArticleTopic({
@@ -139,8 +151,13 @@ function PostArticle({ post }: { post: PublishedPostDetail }) {
         )
       ) : null}
 
-      {/* Monetization: One-Click Base USDC Micro-Tipping Widget */}
-      <MicroTippingWidget slug={post.slug} postTitle={post.title} />
+      {shouldRenderPostTipCard(payToAddress) ? (
+        <MicroTippingWidget
+          slug={post.slug}
+          postTitle={post.title}
+          payToAddress={payToAddress}
+        />
+      ) : null}
 
       {/* Oracle Verification: reality.eth Prediction Card */}
       <PredictionCard slug={post.slug} />
@@ -166,5 +183,6 @@ export async function generateMetadata({ params }: PageProps) {
 export default async function PostPage(props: PageProps) {
   const { slug } = await props.params;
   const post = await requirePublishedPostBySlug(slug);
-  return <PostArticle post={post} />;
+  const payToAddress = await resolvePostTipPayToAddress(getDb(), slug);
+  return <PostArticle post={post} payToAddress={payToAddress} />;
 }
