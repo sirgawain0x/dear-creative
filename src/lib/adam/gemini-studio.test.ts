@@ -423,7 +423,7 @@ describe("generateVideoWithVeo (Gemini Omni default)", () => {
 describe("generateBannerWithGemini (Nano Banana fallback)", () => {
   it("falls back to gemini-nano-banana-2.1 via Interactions when primary image fails", async () => {
     vi.stubEnv("GEMINI_API_KEY", "test-key");
-    const fakePng = Buffer.from("png-bytes").toString("base64");
+    const fakeJpeg = Buffer.from("jpeg-bytes").toString("base64");
 
     const mockFetch = vi.fn(async (url: string, init?: RequestInit) => {
       if (url.includes("generateContent")) {
@@ -438,6 +438,7 @@ describe("generateBannerWithGemini (Nano Banana fallback)", () => {
         expect(body.model).toBe(DEFAULT_ADAM_IMAGEN_MODEL);
         expect(body.response_format).toMatchObject({
           type: "image",
+          mime_type: "image/jpeg",
           aspect_ratio: "16:9",
         });
         return new Response(
@@ -447,7 +448,7 @@ describe("generateBannerWithGemini (Nano Banana fallback)", () => {
               {
                 type: "model_output",
                 content: [
-                  { type: "image", mime_type: "image/png", data: fakePng },
+                  { type: "image", mime_type: "image/jpeg", data: fakeJpeg },
                 ],
               },
             ],
@@ -468,12 +469,17 @@ describe("generateBannerWithGemini (Nano Banana fallback)", () => {
     });
 
     expect(result.provider).toBe("nano-banana");
+    expect(mockUpload).toHaveBeenCalledTimes(1);
+    expect(mockUpload).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "image/jpeg" }),
+      expect.stringMatching(/-banner\.jpg$/),
+    );
   });
 
   it("honors ADAM_IMAGEN_MODEL for the Nano Banana fallback", async () => {
     vi.stubEnv("GEMINI_API_KEY", "test-key");
     vi.stubEnv("ADAM_IMAGEN_MODEL", "gemini-3.1-flash-image");
-    const fakePng = Buffer.from("png").toString("base64");
+    const fakeJpeg = Buffer.from("jpeg").toString("base64");
 
     const mockFetch = vi.fn(async (url: string, init?: RequestInit) => {
       if (url.includes("generateContent")) {
@@ -482,10 +488,11 @@ describe("generateBannerWithGemini (Nano Banana fallback)", () => {
       if (url.includes("/interactions")) {
         const body = JSON.parse(String(init?.body));
         expect(body.model).toBe("gemini-3.1-flash-image");
+        expect(body.response_format.mime_type).toBe("image/jpeg");
         return new Response(
           JSON.stringify({
             status: "completed",
-            output_image: { data: fakePng, mime_type: "image/png" },
+            output_image: { data: fakeJpeg, mime_type: "image/jpeg" },
           }),
           { status: 200 },
         );
@@ -503,7 +510,7 @@ describe("generateBannerWithGemini (Nano Banana fallback)", () => {
     expect(result.provider).toBe("nano-banana");
   });
 
-  it("falls back to SVG when the image interaction HTTP response is not OK", async () => {
+  it("logs HTTP 400 from interactions and falls back to SVG", async () => {
     vi.stubEnv("GEMINI_API_KEY", "test-key");
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const mockFetch = vi.fn(async (url: string) => {
@@ -513,7 +520,15 @@ describe("generateBannerWithGemini (Nano Banana fallback)", () => {
         });
       }
       if (url.includes("/interactions")) {
-        return new Response("fail", { status: 429 });
+        return new Response(
+          JSON.stringify({
+            error: {
+              message:
+                "The value 'image/png' is not supported for 'response_format.mime_type'.",
+            },
+          }),
+          { status: 400 },
+        );
       }
       throw new Error(`Unexpected fetch: ${url}`);
     });
@@ -526,6 +541,9 @@ describe("generateBannerWithGemini (Nano Banana fallback)", () => {
     });
 
     expect(result.provider).toBe("deterministic-svg");
-    expect(errorSpy).toHaveBeenCalledWith("Gemini HTTP 429");
+    expect(errorSpy).toHaveBeenCalledWith("Gemini HTTP 400");
+    expect(errorSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining("image/png"),
+    );
   });
 });

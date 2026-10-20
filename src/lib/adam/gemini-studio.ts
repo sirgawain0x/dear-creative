@@ -1554,6 +1554,8 @@ export async function generateBannerWithGemini(input: {
           mimeType = extracted.mimeType;
           provider = "gemini-image";
         }
+      } else {
+        logGeminiHttpFailure(geminiRes.status);
       }
     } catch {
       // Fall through to Nano Banana fallback
@@ -1580,7 +1582,7 @@ export async function generateBannerWithGemini(input: {
               input: [{ type: "text", text: effectivePrompt }],
               response_format: {
                 type: "image",
-                mime_type: "image/png",
+                mime_type: "image/jpeg",
                 aspect_ratio: bannerAspect,
               },
             }),
