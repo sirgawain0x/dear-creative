@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { NextResponse } from "next/server";
 import { GET } from "./route";
 import { GET as GET_HISTORY } from "./history/route";
 
@@ -47,9 +48,7 @@ describe("GET /api/admin/wallet", () => {
   it("requires privy admin auth", async () => {
     vi.mocked(requirePrivyAuth).mockResolvedValue({
       ok: false,
-      response: new Response(JSON.stringify({ error: "Forbidden" }), {
-        status: 403,
-      }),
+      response: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
     });
     const res = await GET(
       new Request("http://localhost/api/admin/wallet", {
@@ -62,9 +61,7 @@ describe("GET /api/admin/wallet", () => {
   it("rejects adam service token (privy admin only)", async () => {
     vi.mocked(requirePrivyAuth).mockResolvedValue({
       ok: false,
-      response: new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-      }),
+      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
     });
     const res = await GET(
       new Request("http://localhost/api/admin/wallet", {

@@ -143,8 +143,9 @@ function formatTokenAmount(
     try {
       const decimals = asset === "ETH" ? 18 : USDC_DECIMALS;
       const raw = BigInt(rawHex);
-      const whole = raw / 10n ** BigInt(decimals);
-      const frac = raw % 10n ** BigInt(decimals);
+      const scale = BigInt(10) ** BigInt(decimals);
+      const whole = raw / scale;
+      const frac = raw % scale;
       const fracStr = frac.toString().padStart(decimals, "0").replace(/0+$/, "");
       const display =
         fracStr.length > 0 ? `${whole}.${fracStr}` : whole.toString();
