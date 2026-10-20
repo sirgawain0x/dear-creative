@@ -89,34 +89,20 @@ const slideDeckSchema = z.object({
     .min(1),
 });
 
-const podcastScriptSchema = z
-  .object({
-    title: z.string().min(1).optional(),
-    intro: z.string().optional(),
-    segments: z
-      .array(
-        z.object({
-          speaker: z.enum(["host_a", "host_b"]),
-          text: z.string().min(1),
-        }),
-      )
-      .optional(),
-    outro: z.string().optional(),
-  })
-  .superRefine((value, ctx) => {
-    const hasIntro = Boolean(value.intro?.trim());
-    const hasOutro = Boolean(value.outro?.trim());
-    const hasSegment = Boolean(
-      value.segments?.some((segment) => segment.text.trim().length > 0),
-    );
-    if (!hasIntro && !hasOutro && !hasSegment) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Podcast script has no speakable content",
-        path: ["segments"],
-      });
-    }
-  });
+const podcastScriptSchema = z.object({
+  title: z.string().min(1).optional(),
+  intro: z.string().optional(),
+  segments: z
+    .array(
+      z.object({
+        speaker: z.enum(["host_a", "host_b"]),
+        text: z.string().min(1),
+      }),
+    )
+    .min(1)
+    .optional(),
+  outro: z.string().optional(),
+});
 
 const videoPayloadSchema = z.object({
   slideDeck: slideDeckSchema,
