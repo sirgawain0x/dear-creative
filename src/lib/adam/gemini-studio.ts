@@ -1307,7 +1307,7 @@ export async function generateVideoWithVeo(input: {
   const apiKey = getGeminiApiKey();
   if (!apiKey) {
     throw new Error(
-      "GEMINI_API_KEY is not configured on the server; use the Google Colab Asset Notebook or upload an MP4 directly.",
+      "GEMINI_API_KEY is not configured on the server; configure the key for Veo generation or upload an MP4 directly.",
     );
   }
 
@@ -1414,7 +1414,7 @@ export async function generateVideoWithVeo(input: {
 
   if (!videoBytes) {
     throw new Error(
-      "Veo operation did not return video bytes yet; try running in the Google Colab Asset Notebook for longer renders.",
+      "Veo operation did not return video bytes yet; the render may still be in progress—retry in a moment or upload an MP4 directly.",
     );
   }
 
