@@ -161,7 +161,7 @@ HTTP_CODE="$(
   curl -sS -o /dev/null -w "%{http_code}" \
     -X POST "${SERVICE_URL}/v1/synthesize" \
     -H "Content-Type: application/json" \
-    -d '{"text":"auth probe","voice":"af_heart","format":"mp3"}'
+    -d '{"text":"auth probe","voice":"af_heart","format":"wav"}'
 )"
 if [[ "${HTTP_CODE}" != "401" ]]; then
   echo "Error: expected 401 from unauthenticated synthesize, got ${HTTP_CODE}" >&2
