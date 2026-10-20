@@ -1,3 +1,4 @@
+import { NextResponse } from "next/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { requirePrivyAuth } from "@/lib/privy/require-auth";
 import { stubLinkedInOAuthEnv } from "@/lib/linkedin/test-helpers";
@@ -25,9 +26,7 @@ describe("GET /api/admin/linkedin/auth", () => {
   it("requires Privy admin auth", async () => {
     vi.mocked(requirePrivyAuth).mockResolvedValue({
       ok: false,
-      response: new Response(JSON.stringify({ error: "Forbidden" }), {
-        status: 403,
-      }),
+      response: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
     });
     const res = await GET(new Request("http://localhost/api/admin/linkedin/auth"));
     expect(res.status).toBe(403);
