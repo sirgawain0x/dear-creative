@@ -23,7 +23,7 @@ type WritersResponse = {
 
 type EditorWritersPanelProps = {
   postId: string | null;
-  authFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+  authFetch: (url: string, init?: RequestInit) => Promise<Response>;
   enabled: boolean;
   isPublishedTarget: boolean;
 };

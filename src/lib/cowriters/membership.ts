@@ -25,11 +25,15 @@ export async function listActivePostWriters(
   return rows;
 }
 
-export function countActiveCowriters(rows: ActivePostWriterRow[]): number {
+export function countActiveCowriters(
+  rows: Pick<ActivePostWriterRow, "role">[],
+): number {
   return rows.filter((row) => row.role === "cowriter").length;
 }
 
-export function assertCanAddCowriter(rows: ActivePostWriterRow[]): void {
+export function assertCanAddCowriter(
+  rows: Pick<ActivePostWriterRow, "role">[],
+): void {
   if (countActiveCowriters(rows) >= MAX_COWRITERS_PER_POST) {
     throw new Error(
       `At most ${MAX_COWRITERS_PER_POST} co-writers allowed per post`,
