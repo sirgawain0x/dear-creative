@@ -1443,7 +1443,7 @@ function extractImageFromGeminiResponse(data: unknown): {
   if (payload.output_image?.data) {
     return {
       imageBase64: payload.output_image.data,
-      mimeType: payload.output_image.mime_type || "image/png",
+      mimeType: payload.output_image.mime_type || "image/jpeg",
     };
   }
 
@@ -1456,7 +1456,7 @@ function extractImageFromGeminiResponse(data: unknown): {
         if (item.type === "image" && item.data) {
           return {
             imageBase64: item.data,
-            mimeType: item.mime_type || item.mimeType || "image/png",
+            mimeType: item.mime_type || item.mimeType || "image/jpeg",
           };
         }
       }
@@ -1554,6 +1554,8 @@ export async function generateBannerWithGemini(input: {
           mimeType = extracted.mimeType;
           provider = "gemini-image";
         }
+      } else {
+        logGeminiHttpFailure(geminiRes.status);
       }
     } catch {
       // Fall through to Nano Banana fallback
@@ -1580,7 +1582,7 @@ export async function generateBannerWithGemini(input: {
               input: [{ type: "text", text: effectivePrompt }],
               response_format: {
                 type: "image",
-                mime_type: "image/png",
+                mime_type: "image/jpeg",
                 aspect_ratio: bannerAspect,
               },
             }),
@@ -1595,7 +1597,10 @@ export async function generateBannerWithGemini(input: {
         const extracted = extractImageFromGeminiResponse(json);
         if (extracted) {
           imageBytes = Buffer.from(extracted.imageBase64, "base64");
-          mimeType = extracted.mimeType;
+          mimeType =
+            extracted.mimeType === "image/jpeg" || !extracted.mimeType
+              ? "image/jpeg"
+              : extracted.mimeType;
           provider = "nano-banana";
         }
       } catch {
