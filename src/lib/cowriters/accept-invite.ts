@@ -1,9 +1,11 @@
-import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
-import { postWriters, writerInvites, writers } from "@/db/schema";
+import { postWriters, writerInvites } from "@/db/schema";
 import { findPendingInviteByToken } from "./invites";
-import { rebalancePostWriterShares } from "./membership";
+import {
+  ensureAuthorForPayoutAddress,
+  rebalancePostWriterShares,
+} from "./membership";
 import { normalizeEmail, normalizeWalletAddress } from "./wallet";
 
 export type CowriterAcceptIdentity = {
@@ -12,7 +14,7 @@ export type CowriterAcceptIdentity = {
 };
 
 export type AcceptCowriterInviteResult =
-  | { ok: true; postId: string; writerId: string }
+  | { ok: true; postId: string; writerId: string | null }
   | { ok: false; reason: "invalid_token" | "identity_mismatch" | "already_used" };
 
 function normalizeIdentityList(values: string[], kind: "email" | "wallet"): string[] {
@@ -43,27 +45,6 @@ function inviteMatchesIdentity(
     return wallets.includes(invite.wallet);
   }
   return false;
-}
-
-async function ensureWriterForWallet(
-  db: DearCreativeDb,
-  wallet: string,
-): Promise<string> {
-  const normalized = normalizeWalletAddress(wallet);
-  const [existing] = await db
-    .select({ id: writers.id })
-    .from(writers)
-    .where(eq(writers.payoutWalletAddress, normalized))
-    .limit(1);
-  if (existing) {
-    return existing.id;
-  }
-  const writerId = randomUUID();
-  await db.insert(writers).values({
-    id: writerId,
-    payoutWalletAddress: normalized,
-  });
-  return writerId;
 }
 
 export async function acceptCowriterInvite(
@@ -101,10 +82,8 @@ export async function acceptCowriterInvite(
     const walletFromUser = normalizeIdentityList(identity.wallets, "wallet")[0];
     const wallet = walletFromInvite ?? walletFromUser;
     if (wallet) {
-      writerId = await ensureWriterForWallet(db, wallet);
-    } else {
-      writerId = randomUUID();
-      await db.insert(writers).values({ id: writerId });
+      const emailLabel = invite.email ?? undefined;
+      writerId = await ensureAuthorForPayoutAddress(db, wallet, emailLabel);
     }
   }
 

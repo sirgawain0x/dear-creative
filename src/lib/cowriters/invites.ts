@@ -9,7 +9,7 @@ import {
 } from "./invite-token";
 import {
   assertCanAddCowriter,
-  findWriterIdByWallet,
+  findAuthorIdByPayoutAddress,
   listActivePostWriters,
   rebalancePostWriterShares,
 } from "./membership";
@@ -58,7 +58,7 @@ export async function createCowriterInvite(
 
   let matchedWriterId: string | null = null;
   if (wallet) {
-    matchedWriterId = await findWriterIdByWallet(db, wallet);
+    matchedWriterId = await findAuthorIdByPayoutAddress(db, wallet);
   }
 
   await db.insert(writerInvites).values({

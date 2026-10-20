@@ -9,7 +9,6 @@ import {
   postWriters,
   posts,
   writerGroupSplits,
-  writers,
 } from "@/db/schema";
 import { acceptCowriterInvite } from "./accept-invite";
 import {
@@ -181,16 +180,18 @@ describe("co-writer publish gate", () => {
       authorId: "a1",
     });
 
-    const writerId = "w-cw";
-    await db.insert(writers).values({
-      id: writerId,
-      payoutWalletAddress: cowriterWallet,
+    await db.insert(authors).values({
+      id: "a2",
+      name: "Co Author",
+      slug: "co-author",
+      payoutAddress: cowriterWallet,
     });
 
     await db.insert(postWriters).values([
       {
         id: "author:multi",
         postId: "multi",
+        writerId: "a1",
         role: "author",
         shareBps: 5000,
         status: "accepted",
@@ -198,7 +199,7 @@ describe("co-writer publish gate", () => {
       {
         id: "cw:multi",
         postId: "multi",
-        writerId,
+        writerId: "a2",
         role: "cowriter",
         shareBps: 5000,
         status: "pending",

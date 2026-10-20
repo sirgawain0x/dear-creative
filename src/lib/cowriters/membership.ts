@@ -1,14 +1,15 @@
-import { and, eq, ne } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { and, eq, ne, sql } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
 import {
   authors,
   postWriters,
   posts,
   writerInvites,
-  writers,
 } from "@/db/schema";
 import { MAX_COWRITERS_PER_POST } from "./constants";
 import { equalWriterShareBps } from "./share-math";
+import { formatWalletLabel, normalizeWalletAddress } from "./wallet";
 
 export type ActivePostWriterRow = typeof postWriters.$inferSelect;
 
@@ -41,16 +42,37 @@ export function assertCanAddCowriter(
   }
 }
 
-export async function findWriterIdByWallet(
+export async function findAuthorIdByPayoutAddress(
   db: DearCreativeDb,
   wallet: string,
 ): Promise<string | null> {
+  const normalized = normalizeWalletAddress(wallet);
   const [row] = await db
-    .select({ id: writers.id })
-    .from(writers)
-    .where(eq(writers.payoutWalletAddress, wallet))
+    .select({ id: authors.id })
+    .from(authors)
+    .where(sql`lower(${authors.payoutAddress}) = ${normalized}`)
     .limit(1);
   return row?.id ?? null;
+}
+
+export async function ensureAuthorForPayoutAddress(
+  db: DearCreativeDb,
+  wallet: string,
+  displayName?: string,
+): Promise<string> {
+  const existing = await findAuthorIdByPayoutAddress(db, wallet);
+  if (existing) {
+    return existing;
+  }
+  const normalized = normalizeWalletAddress(wallet);
+  const authorId = randomUUID();
+  await db.insert(authors).values({
+    id: authorId,
+    name: displayName ?? formatWalletLabel(normalized),
+    slug: `cowriter-${authorId.slice(0, 8)}`,
+    payoutAddress: normalized,
+  });
+  return authorId;
 }
 
 export async function rebalancePostWriterShares(
@@ -101,6 +123,18 @@ export type WriterPayoutInfo = {
   displayLabel: string;
 };
 
+async function loadAuthorById(db: DearCreativeDb, authorId: string) {
+  const [author] = await db
+    .select({
+      name: authors.name,
+      payoutAddress: authors.payoutAddress,
+    })
+    .from(authors)
+    .where(eq(authors.id, authorId))
+    .limit(1);
+  return author ?? null;
+}
+
 export async function resolveWriterPayoutInfos(
   db: DearCreativeDb,
   postId: string,
@@ -112,43 +146,21 @@ export async function resolveWriterPayoutInfos(
     .where(eq(posts.id, postId))
     .limit(1);
 
-  let authorName: string | null = null;
-  if (postRow?.authorId) {
-    const [author] = await db
-      .select({ name: authors.name, payoutAddress: authors.payoutAddress })
-      .from(authors)
-      .where(eq(authors.id, postRow.authorId))
-      .limit(1);
-    authorName = author?.name ?? null;
-  }
-
   const infos: WriterPayoutInfo[] = [];
   for (const row of rows) {
     let payoutWallet: string | null = null;
-    let displayLabel = row.role === "author" ? authorName ?? "Author" : "Co-writer";
+    let displayLabel = row.role === "author" ? "Author" : "Co-writer";
 
-    if (row.writerId) {
-      const [writer] = await db
-        .select({
-          payoutWalletAddress: writers.payoutWalletAddress,
-        })
-        .from(writers)
-        .where(eq(writers.id, row.writerId))
-        .limit(1);
-      payoutWallet = writer?.payoutWalletAddress ?? null;
-      if (row.role === "cowriter" && payoutWallet) {
-        displayLabel = payoutWallet;
+    const authorId = row.writerId ?? (row.role === "author" ? postRow?.authorId : null);
+    if (authorId) {
+      const author = await loadAuthorById(db, authorId);
+      if (author) {
+        payoutWallet = author.payoutAddress;
+        displayLabel = author.name;
       }
-    } else if (row.role === "author" && postRow?.authorId) {
-      const [author] = await db
-        .select({ payoutAddress: authors.payoutAddress })
-        .from(authors)
-        .where(eq(authors.id, postRow.authorId))
-        .limit(1);
-      payoutWallet = author?.payoutAddress ?? null;
     }
 
-    if (row.inviteId && row.role === "cowriter") {
+    if (row.inviteId && row.role === "cowriter" && !row.writerId) {
       const [invite] = await db
         .select({ email: writerInvites.email, wallet: writerInvites.wallet })
         .from(writerInvites)
@@ -157,7 +169,7 @@ export async function resolveWriterPayoutInfos(
       if (invite?.email) {
         displayLabel = invite.email;
       } else if (invite?.wallet) {
-        displayLabel = invite.wallet;
+        displayLabel = formatWalletLabel(invite.wallet);
       }
     }
 

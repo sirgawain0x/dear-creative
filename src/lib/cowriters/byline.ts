@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
-import { authors, postWriters, posts, writerInvites, writers } from "@/db/schema";
+import { authors, postWriters, posts, writerInvites } from "@/db/schema";
 import { isCowritersEnabled } from "./feature-flag";
 import { formatWalletLabel } from "./wallet";
 
@@ -32,20 +32,10 @@ export async function getAcceptedPostByline(
   }
 
   const [postRow] = await db
-    .select({ authorId: posts.authorId, title: posts.title })
+    .select({ authorId: posts.authorId })
     .from(posts)
     .where(eq(posts.id, postId))
     .limit(1);
-
-  let authorName: string | null = null;
-  if (postRow?.authorId) {
-    const [author] = await db
-      .select({ name: authors.name })
-      .from(authors)
-      .where(eq(authors.id, postRow.authorId))
-      .limit(1);
-    authorName = author?.name ?? null;
-  }
 
   const byline: PostBylineWriter[] = [];
   const sorted = [...rows].sort((a, b) => {
@@ -56,21 +46,22 @@ export async function getAcceptedPostByline(
   });
 
   for (const row of sorted) {
-    let label =
-      row.role === "author" ? authorName ?? "Author" : "Co-writer";
+    let label = row.role === "author" ? "Author" : "Co-writer";
+    const authorId =
+      row.writerId ?? (row.role === "author" ? postRow?.authorId : null);
 
-    if (row.writerId) {
-      const [writer] = await db
-        .select({ payoutWalletAddress: writers.payoutWalletAddress })
-        .from(writers)
-        .where(eq(writers.id, row.writerId))
+    if (authorId) {
+      const [author] = await db
+        .select({ name: authors.name })
+        .from(authors)
+        .where(eq(authors.id, authorId))
         .limit(1);
-      if (row.role === "cowriter" && writer?.payoutWalletAddress) {
-        label = formatWalletLabel(writer.payoutWalletAddress);
+      if (author?.name) {
+        label = author.name;
       }
     }
 
-    if (row.inviteId) {
+    if (row.inviteId && row.role === "cowriter" && !authorId) {
       const [invite] = await db
         .select({ email: writerInvites.email, wallet: writerInvites.wallet })
         .from(writerInvites)
@@ -78,7 +69,7 @@ export async function getAcceptedPostByline(
         .limit(1);
       if (invite?.email) {
         label = invite.email;
-      } else if (invite?.wallet && row.role === "cowriter") {
+      } else if (invite?.wallet) {
         label = formatWalletLabel(invite.wallet);
       }
     }
