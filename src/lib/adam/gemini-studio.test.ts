@@ -421,6 +421,41 @@ describe("generateVideoWithVeo (Gemini Omni default)", () => {
 });
 
 describe("generateBannerWithGemini (Nano Banana fallback)", () => {
+  it("requests response_format.mime_type image/jpeg on the interactions API", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    const fakeJpeg = Buffer.from("jpeg").toString("base64");
+
+    const mockFetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes("generateContent")) {
+        return new Response(JSON.stringify({ candidates: [] }), { status: 200 });
+      }
+      if (url.includes("/interactions")) {
+        const body = JSON.parse(String(init?.body));
+        expect(body.response_format?.mime_type).toBe("image/jpeg");
+        return new Response(
+          JSON.stringify({
+            status: "completed",
+            output_image: { data: fakeJpeg, mime_type: "image/jpeg" },
+          }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await generateBannerWithGemini({
+      prompt: "JPEG mime contract",
+      fetchFn: mockFetch as unknown as typeof fetch,
+      uploadFn: mockUpload,
+      fetchTimeoutMs: 5_000,
+    });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining("/interactions"),
+      expect.anything(),
+    );
+  });
+
   it("falls back to gemini-nano-banana-2.1 via Interactions when primary image fails", async () => {
     vi.stubEnv("GEMINI_API_KEY", "test-key");
     const fakeJpeg = Buffer.from("jpeg-bytes").toString("base64");
@@ -469,10 +504,45 @@ describe("generateBannerWithGemini (Nano Banana fallback)", () => {
     });
 
     expect(result.provider).toBe("nano-banana");
+    expect(result.mimeType).toBe("image/jpeg");
     expect(mockUpload).toHaveBeenCalledTimes(1);
     expect(mockUpload).toHaveBeenCalledWith(
       expect.objectContaining({ type: "image/jpeg" }),
       expect.stringMatching(/-banner\.jpg$/),
+    );
+  });
+
+  it("stores Nano Banana output as JPEG when the interaction omits mime_type", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    const fakeJpeg = Buffer.from("jpeg-no-mime").toString("base64");
+
+    const mockFetch = vi.fn(async (url: string) => {
+      if (url.includes("generateContent")) {
+        return new Response(JSON.stringify({ candidates: [] }), { status: 200 });
+      }
+      if (url.includes("/interactions")) {
+        return new Response(
+          JSON.stringify({
+            status: "completed",
+            output_image: { data: fakeJpeg },
+          }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const result = await generateBannerWithGemini({
+      prompt: "Missing mime",
+      fetchFn: mockFetch as unknown as typeof fetch,
+      uploadFn: mockUpload,
+      fetchTimeoutMs: 5_000,
+    });
+
+    expect(result.mimeType).toBe("image/jpeg");
+    expect(mockUpload).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "image/jpeg" }),
+      expect.stringMatching(/\.jpg$/),
     );
   });
 
