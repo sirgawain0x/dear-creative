@@ -43,6 +43,7 @@ yarn-error.log*
 
 # local libSQL
 /data/
+.local/
 
 # typescript
 *.tsbuildinfo
