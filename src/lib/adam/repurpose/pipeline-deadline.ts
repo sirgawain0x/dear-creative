@@ -55,10 +55,10 @@ function isAbortError(err: unknown): boolean {
 function rethrowRepurposePipelineFetchError(
   err: unknown,
   deadlineAtMs: number,
-  nowMs: number,
 ): never {
   if (isAbortError(err)) {
-    if (remainingRepurposePipelineMs(deadlineAtMs, nowMs) > 0) {
+    const atAbortMs = Date.now();
+    if (remainingRepurposePipelineMs(deadlineAtMs, atAbortMs) > 0) {
       throw new Error(REPURPOSE_PER_CALL_TIMEOUT_MESSAGE);
     }
     throw new Error(REPURPOSE_VIDEO_WALL_TIMEOUT_MESSAGE);
@@ -68,7 +68,7 @@ function rethrowRepurposePipelineFetchError(
 
 export async function fetchWithRepurposePipelineDeadline(
   fetchFn: typeof fetch,
-  url: string,
+  input: RequestInfo | URL,
   init: RequestInit | undefined,
   deadlineAtMs: number,
   perFetchCapMs: number,
@@ -80,10 +80,14 @@ export async function fetchWithRepurposePipelineDeadline(
     perFetchCapMs,
     nowMs,
   );
+  const requestInit: RequestInit = { ...init, signal };
   try {
-    return await fetchFn(url, { ...init, signal });
+    if (input instanceof Request) {
+      return await fetchFn(new Request(input, requestInit));
+    }
+    return await fetchFn(input, requestInit);
   } catch (err) {
-    rethrowRepurposePipelineFetchError(err, deadlineAtMs, nowMs);
+    rethrowRepurposePipelineFetchError(err, deadlineAtMs);
   }
 }
 
@@ -93,10 +97,10 @@ export function wrapFetchForRepurposePipeline(
   perFetchCapMs: number,
   nowFn: () => number = Date.now,
 ): typeof fetch {
-  return (url, init) =>
+  return (input, init) =>
     fetchWithRepurposePipelineDeadline(
       fetchFn,
-      typeof url === "string" ? url : url.toString(),
+      input,
       init,
       deadlineAtMs,
       perFetchCapMs,
@@ -126,7 +130,8 @@ export async function uploadWithRepurposePipelineDeadline(
   const uploadPromise = uploadFn(file, fileName, signal);
   const abortPromise = new Promise<never>((_, reject) => {
     const fail = () => {
-      if (remainingRepurposePipelineMs(deadlineAtMs, nowFn()) > 0) {
+      const atAbortMs = Date.now();
+      if (remainingRepurposePipelineMs(deadlineAtMs, atAbortMs) > 0) {
         reject(new Error(REPURPOSE_PER_CALL_TIMEOUT_MESSAGE));
         return;
       }
@@ -141,6 +146,6 @@ export async function uploadWithRepurposePipelineDeadline(
   try {
     return await Promise.race([uploadPromise, abortPromise]);
   } catch (err) {
-    rethrowRepurposePipelineFetchError(err, deadlineAtMs, nowFn());
+    rethrowRepurposePipelineFetchError(err, deadlineAtMs);
   }
 }
