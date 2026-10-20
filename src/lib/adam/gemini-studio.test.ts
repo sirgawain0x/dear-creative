@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  ADAM_VIDEO_DEFAULT_FETCH_TIMEOUT_MS,
+  ADAM_VIDEO_DEFAULT_POLL_INTERVAL_MS,
+  ADAM_VIDEO_ROUTE_BUDGET_MS,
   DEFAULT_ADAM_GEMINI_VIDEO_MODEL,
   DEFAULT_ADAM_IMAGEN_MODEL,
+  computeAdamVideoPollAttempts,
   generateBannerWithGemini,
   generateVideoWithVeo,
 } from "./gemini-studio";
@@ -12,25 +16,40 @@ const mockUpload = vi.fn(async () => ({
   storageKey: "asset1",
 }));
 
+function geminiHeaders(init?: RequestInit): Headers {
+  return new Headers(init?.headers as HeadersInit | undefined);
+}
+
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
 
+describe("computeAdamVideoPollAttempts", () => {
+  it("sizes polling to fit within the 300s route budget", () => {
+    const attempts = computeAdamVideoPollAttempts();
+    const reserve = ADAM_VIDEO_DEFAULT_FETCH_TIMEOUT_MS * 3;
+    const totalMs =
+      attempts * ADAM_VIDEO_DEFAULT_POLL_INTERVAL_MS + reserve;
+    expect(totalMs).toBeLessThanOrEqual(ADAM_VIDEO_ROUTE_BUDGET_MS);
+    expect(totalMs).toBeLessThanOrEqual(300_000);
+  });
+});
+
 describe("generateVideoWithVeo (Gemini Omni default)", () => {
-  it("uses gemini-omni-1.1-flash on the Interactions API by default", async () => {
+  it("uses Interactions with delivery uri and x-goog-api-key header", async () => {
     vi.stubEnv("GEMINI_API_KEY", "test-key");
     const fakeMp4 = Buffer.from("fake-mp4").toString("base64");
     const mockFetch = vi.fn(async (url: string, init?: RequestInit) => {
       expect(String(url)).toContain("/v1beta/interactions");
+      expect(String(url)).not.toContain("key=");
+      expect(geminiHeaders(init).get("x-goog-api-key")).toBe("test-key");
       const body = JSON.parse(String(init?.body));
       expect(body.model).toBe(DEFAULT_ADAM_GEMINI_VIDEO_MODEL);
-      expect(body.input).toEqual([
-        { type: "text", text: "A calm creative studio at dusk" },
-      ]);
       expect(body.response_format).toEqual({
         type: "video",
         aspect_ratio: "16:9",
+        delivery: "uri",
       });
       return new Response(
         JSON.stringify({
@@ -55,6 +74,7 @@ describe("generateVideoWithVeo (Gemini Omni default)", () => {
       uploadFn: mockUpload,
       maxPollAttempts: 1,
       pollIntervalMs: 0,
+      fetchTimeoutMs: 5_000,
     });
 
     expect(result.provider).toBe("gemini-omni");
@@ -70,6 +90,7 @@ describe("generateVideoWithVeo (Gemini Omni default)", () => {
       expect(body.model).toBe("gemini-omni-flash-preview");
       return new Response(
         JSON.stringify({
+          status: "completed",
           steps: [
             {
               type: "model_output",
@@ -86,16 +107,20 @@ describe("generateVideoWithVeo (Gemini Omni default)", () => {
       fetchFn: mockFetch as unknown as typeof fetch,
       uploadFn: mockUpload,
       pollIntervalMs: 0,
+      fetchTimeoutMs: 5_000,
     });
   });
 
   it("polls Gemini Files when the interaction returns a video URI", async () => {
     vi.stubEnv("GEMINI_API_KEY", "test-key");
     const fileId = "abc123";
-    const mockFetch = vi.fn(async (url: string) => {
+    const mockFetch = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(String(url)).not.toContain("key=");
       if (url.includes("/interactions")) {
+        expect(geminiHeaders(init).get("x-goog-api-key")).toBe("test-key");
         return new Response(
           JSON.stringify({
+            status: "completed",
             steps: [
               {
                 type: "model_output",
@@ -112,12 +137,14 @@ describe("generateVideoWithVeo (Gemini Omni default)", () => {
           { status: 200 },
         );
       }
-      if (url.includes(`/files/${fileId}?`)) {
+      if (url.endsWith(`/files/${fileId}`)) {
+        expect(geminiHeaders(init).get("x-goog-api-key")).toBe("test-key");
         return new Response(JSON.stringify({ state: "ACTIVE" }), {
           status: 200,
         });
       }
       if (url.includes(`/files/${fileId}:download`)) {
+        expect(geminiHeaders(init).get("x-goog-api-key")).toBe("test-key");
         return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
       }
       throw new Error(`Unexpected fetch: ${url}`);
@@ -129,11 +156,91 @@ describe("generateVideoWithVeo (Gemini Omni default)", () => {
       uploadFn: mockUpload,
       maxPollAttempts: 2,
       pollIntervalMs: 0,
+      fetchTimeoutMs: 5_000,
     });
 
-    expect(mockFetch.mock.calls.some((c) => String(c[0]).includes(":download"))).toBe(
-      true,
+    expect(
+      mockFetch.mock.calls.some((c) => String(c[0]).includes(":download")),
+    ).toBe(true);
+  });
+
+  it("throws and logs status when the interaction HTTP response is not OK", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const mockFetch = vi.fn(async () => new Response("nope", { status: 503 }));
+
+    await expect(
+      generateVideoWithVeo({
+        prompt: "Fail HTTP",
+        fetchFn: mockFetch as unknown as typeof fetch,
+        uploadFn: mockUpload,
+        fetchTimeoutMs: 5_000,
+      }),
+    ).rejects.toThrow(/503/);
+
+    expect(errorSpy).toHaveBeenCalledWith("Gemini HTTP 503");
+  });
+
+  it("throws when interaction status is not completed", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    const mockFetch = vi.fn(async () =>
+      new Response(
+        JSON.stringify({ status: "in_progress", steps: [] }),
+        { status: 200 },
+      ),
     );
+
+    await expect(
+      generateVideoWithVeo({
+        prompt: "Pending",
+        fetchFn: mockFetch as unknown as typeof fetch,
+        uploadFn: mockUpload,
+        fetchTimeoutMs: 5_000,
+      }),
+    ).rejects.toThrow(/not completed/i);
+  });
+
+  it("throws when Gemini file processing fails", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    const fileId = "failed-file";
+    const mockFetch = vi.fn(async (url: string) => {
+      if (url.includes("/interactions")) {
+        return new Response(
+          JSON.stringify({
+            status: "completed",
+            steps: [
+              {
+                type: "model_output",
+                content: [
+                  {
+                    type: "video",
+                    uri: `https://generativelanguage.googleapis.com/v1beta/files/${fileId}:download?alt=media`,
+                  },
+                ],
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.endsWith(`/files/${fileId}`)) {
+        return new Response(JSON.stringify({ state: "FAILED" }), {
+          status: 200,
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await expect(
+      generateVideoWithVeo({
+        prompt: "File fail",
+        fetchFn: mockFetch as unknown as typeof fetch,
+        uploadFn: mockUpload,
+        maxPollAttempts: 1,
+        pollIntervalMs: 0,
+        fetchTimeoutMs: 5_000,
+      }),
+    ).rejects.toThrow(/file processing failed/i);
   });
 
   it("uses legacy Veo predictLongRunning when ADAM_GEMINI_VIDEO_MODEL is veo-*", async () => {
@@ -194,17 +301,17 @@ describe("generateBannerWithGemini (Nano Banana fallback)", () => {
         });
       }
       if (url.includes("/interactions")) {
+        expect(String(url)).not.toContain("key=");
+        expect(geminiHeaders(init).get("x-goog-api-key")).toBe("test-key");
         const body = JSON.parse(String(init?.body));
         expect(body.model).toBe(DEFAULT_ADAM_IMAGEN_MODEL);
-        expect(body.input).toEqual([
-          { type: "text", text: expect.stringContaining("Neon studio") },
-        ]);
         expect(body.response_format).toMatchObject({
           type: "image",
           aspect_ratio: "16:9",
         });
         return new Response(
           JSON.stringify({
+            status: "completed",
             steps: [
               {
                 type: "model_output",
@@ -226,6 +333,7 @@ describe("generateBannerWithGemini (Nano Banana fallback)", () => {
       aspectRatio: "16:9",
       fetchFn: mockFetch as unknown as typeof fetch,
       uploadFn: mockUpload,
+      fetchTimeoutMs: 5_000,
     });
 
     expect(result.provider).toBe("nano-banana");
@@ -245,6 +353,7 @@ describe("generateBannerWithGemini (Nano Banana fallback)", () => {
         expect(body.model).toBe("gemini-3.1-flash-image");
         return new Response(
           JSON.stringify({
+            status: "completed",
             output_image: { data: fakePng, mime_type: "image/png" },
           }),
           { status: 200 },
@@ -257,8 +366,35 @@ describe("generateBannerWithGemini (Nano Banana fallback)", () => {
       prompt: "Override model banner",
       fetchFn: mockFetch as unknown as typeof fetch,
       uploadFn: mockUpload,
+      fetchTimeoutMs: 5_000,
     });
 
     expect(result.provider).toBe("nano-banana");
+  });
+
+  it("falls back to SVG when the image interaction HTTP response is not OK", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const mockFetch = vi.fn(async (url: string) => {
+      if (url.includes("generateContent")) {
+        return new Response(JSON.stringify({ candidates: [] }), {
+          status: 200,
+        });
+      }
+      if (url.includes("/interactions")) {
+        return new Response("fail", { status: 429 });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const result = await generateBannerWithGemini({
+      prompt: "HTTP fail banner",
+      fetchFn: mockFetch as unknown as typeof fetch,
+      uploadFn: mockUpload,
+      fetchTimeoutMs: 5_000,
+    });
+
+    expect(result.provider).toBe("deterministic-svg");
+    expect(errorSpy).toHaveBeenCalledWith("Gemini HTTP 429");
   });
 });

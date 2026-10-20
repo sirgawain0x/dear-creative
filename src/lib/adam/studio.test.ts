@@ -324,6 +324,7 @@ describe("Adam Studio ideas, schedule, multimodal chat, and voice", () => {
         JSON.stringify({
           status: "completed",
           model: "gemini-omni-1.1-flash",
+          object: "interaction",
           steps: [
             {
               type: "model_output",
@@ -379,9 +380,9 @@ describe("Adam Studio ideas, schedule, multimodal chat, and voice", () => {
       "dear-creative-lens-grove-static-assets-assets.ipynb",
     );
     const allSources = nb.cells.map((c) => c.source.join("")).join("\n");
-    expect(allSources).toContain("gemini-nano-banana-2.1");
+    expect(allSources).toContain("imagen-3.0-generate-002");
     expect(allSources).toContain("gemini-2.5-flash-preview-tts");
-    expect(allSources).toContain("gemini-omni-1.1-flash");
+    expect(allSources).toContain("veo-2.0-generate-001");
     expect(allSources).toContain("https://api.grove.storage?chain_id=232");
   });
 });

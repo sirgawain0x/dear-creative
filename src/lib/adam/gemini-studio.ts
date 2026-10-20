@@ -99,10 +99,72 @@ function usesLegacyVeoPredictApi(model: string): boolean {
   return model.startsWith("veo-");
 }
 
-function geminiInteractionsUrl(apiKey: string): string {
-  return `https://generativelanguage.googleapis.com/v1beta/interactions?key=${encodeURIComponent(
-    apiKey,
-  )}`;
+/** Wall-clock budget for Adam video route polling (ms), below Vercel 300s limit. */
+export const ADAM_VIDEO_ROUTE_BUDGET_MS = 290_000;
+export const ADAM_VIDEO_DEFAULT_POLL_INTERVAL_MS = 5_000;
+export const ADAM_VIDEO_DEFAULT_FETCH_TIMEOUT_MS = 45_000;
+
+/** Poll attempts so interval × attempts + fetch reserve fits inside route budget. */
+export function computeAdamVideoPollAttempts(
+  budgetMs: number = ADAM_VIDEO_ROUTE_BUDGET_MS,
+  pollIntervalMs: number = ADAM_VIDEO_DEFAULT_POLL_INTERVAL_MS,
+  fetchTimeoutMs: number = ADAM_VIDEO_DEFAULT_FETCH_TIMEOUT_MS,
+): number {
+  const fetchReserveMs = fetchTimeoutMs * 3;
+  return Math.max(
+    1,
+    Math.floor((budgetMs - fetchReserveMs) / pollIntervalMs),
+  );
+}
+
+function geminiInteractionsUrl(): string {
+  return "https://generativelanguage.googleapis.com/v1beta/interactions";
+}
+
+function geminiApiKeyHeaders(apiKey: string): Record<string, string> {
+  return {
+    "Content-Type": "application/json",
+    "x-goog-api-key": apiKey,
+  };
+}
+
+function logGeminiHttpFailure(status: number): void {
+  console.error(`Gemini HTTP ${status}`);
+}
+
+async function fetchGeminiWithTimeout(
+  fetchFn: typeof fetch,
+  url: string,
+  init: RequestInit | undefined,
+  timeoutMs: number,
+): Promise<Response> {
+  return fetchFn(url, {
+    ...init,
+    signal: init?.signal ?? AbortSignal.timeout(timeoutMs),
+  });
+}
+
+async function readGeminiResponseOrThrow(
+  res: Response,
+  label: string,
+): Promise<unknown> {
+  if (!res.ok) {
+    logGeminiHttpFailure(res.status);
+    throw new Error(`${label} (${res.status})`);
+  }
+  return res.json();
+}
+
+function assertGeminiInteractionCompleted(payload: unknown): void {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Gemini interaction returned an invalid payload");
+  }
+  const status = (payload as { status?: string }).status;
+  if (status !== "completed") {
+    throw new Error(
+      `Gemini interaction not completed${status ? ` (${status})` : ""}`,
+    );
+  }
 }
 
 function parseGeminiFilesResourceFromUri(uri: string): string | null {
@@ -116,20 +178,27 @@ async function pollGeminiFileUntilActive(input: {
   filesResource: string;
   maxPollAttempts: number;
   pollIntervalMs: number;
+  fetchTimeoutMs: number;
 }): Promise<void> {
   const resource = input.filesResource.replace(/^\//, "");
   for (let attempt = 0; attempt < input.maxPollAttempts; attempt++) {
     if (attempt > 0 && input.pollIntervalMs > 0) {
       await new Promise((r) => setTimeout(r, input.pollIntervalMs));
     }
-    const statusUrl = `https://generativelanguage.googleapis.com/v1beta/${resource}?key=${encodeURIComponent(
-      input.apiKey,
-    )}`;
-    const statusRes = await input.fetchFn(statusUrl, { method: "GET" });
-    if (!statusRes.ok) {
-      throw new Error(`Gemini file status check failed (${statusRes.status})`);
-    }
-    const statusJson = (await statusRes.json()) as { state?: string };
+    const statusUrl = `https://generativelanguage.googleapis.com/v1beta/${resource}`;
+    const statusRes = await fetchGeminiWithTimeout(
+      input.fetchFn,
+      statusUrl,
+      {
+        method: "GET",
+        headers: { "x-goog-api-key": input.apiKey },
+      },
+      input.fetchTimeoutMs,
+    );
+    const statusJson = (await readGeminiResponseOrThrow(
+      statusRes,
+      "Gemini file status check failed",
+    )) as { state?: string };
     if (statusJson.state === "ACTIVE") {
       return;
     }
@@ -146,14 +215,24 @@ async function downloadGeminiFileMedia(input: {
   fetchFn: typeof fetch;
   apiKey: string;
   filesResource: string;
+  fetchTimeoutMs: number;
 }): Promise<Buffer> {
   const resource = input.filesResource.replace(/^\//, "");
   const fileId = resource.replace(/^files\//, "");
   const downloadUrl = `https://generativelanguage.googleapis.com/v1beta/files/${encodeURIComponent(
     fileId,
-  )}:download?alt=media&key=${encodeURIComponent(input.apiKey)}`;
-  const dlRes = await input.fetchFn(downloadUrl);
+  )}:download?alt=media`;
+  const dlRes = await fetchGeminiWithTimeout(
+    input.fetchFn,
+    downloadUrl,
+    {
+      method: "GET",
+      headers: { "x-goog-api-key": input.apiKey },
+    },
+    input.fetchTimeoutMs,
+  );
   if (!dlRes.ok) {
+    logGeminiHttpFailure(dlRes.status);
     throw new Error(`Gemini file download failed (${dlRes.status})`);
   }
   const ab = await dlRes.arrayBuffer();
@@ -1300,6 +1379,7 @@ export async function generateBannerWithGemini(input: {
   teaserText?: string | null;
   slug?: string | null;
   aspectRatio?: "16:9" | "1:1" | "21:9";
+  fetchTimeoutMs?: number;
   fetchFn?: typeof fetch;
   uploadFn?: (
     file: File | Blob,
@@ -1367,33 +1447,41 @@ export async function generateBannerWithGemini(input: {
     // 2. Fallback to Nano Banana 2.1 (Interactions API)
     if (!imageBytes) {
       const imageModel = resolveAdamImageFallbackModel();
-      const interactionsUrl = geminiInteractionsUrl(apiKey);
+      const interactionsUrl = geminiInteractionsUrl();
       const bannerAspect =
         aspectRatio === "21:9" ? "16:9" : aspectRatio;
+      const imageFetchTimeoutMs =
+        input.fetchTimeoutMs ?? ADAM_VIDEO_DEFAULT_FETCH_TIMEOUT_MS;
 
       try {
-        const imageRes = await fetchImpl(interactionsUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: imageModel,
-            input: [{ type: "text", text: effectivePrompt }],
-            response_format: {
-              type: "image",
-              mime_type: "image/png",
-              aspect_ratio: bannerAspect,
-            },
-          }),
-        });
-
-        if (imageRes.ok) {
-          const json = await imageRes.json();
-          const extracted = extractImageFromGeminiResponse(json);
-          if (extracted) {
-            imageBytes = Buffer.from(extracted.imageBase64, "base64");
-            mimeType = extracted.mimeType;
-            provider = "nano-banana";
-          }
+        const imageRes = await fetchGeminiWithTimeout(
+          fetchImpl,
+          interactionsUrl,
+          {
+            method: "POST",
+            headers: geminiApiKeyHeaders(apiKey),
+            body: JSON.stringify({
+              model: imageModel,
+              input: [{ type: "text", text: effectivePrompt }],
+              response_format: {
+                type: "image",
+                mime_type: "image/png",
+                aspect_ratio: bannerAspect,
+              },
+            }),
+          },
+          imageFetchTimeoutMs,
+        );
+        const json = await readGeminiResponseOrThrow(
+          imageRes,
+          "Gemini image interaction failed",
+        );
+        assertGeminiInteractionCompleted(json);
+        const extracted = extractImageFromGeminiResponse(json);
+        if (extracted) {
+          imageBytes = Buffer.from(extracted.imageBase64, "base64");
+          mimeType = extracted.mimeType;
+          provider = "nano-banana";
         }
       } catch {
         // Fall through to deterministic SVG banner
@@ -1460,6 +1548,7 @@ export async function generateVideoWithVeo(input: {
   imageMimeType?: string | null;
   maxPollAttempts?: number;
   pollIntervalMs?: number;
+  fetchTimeoutMs?: number;
   fetchFn?: typeof fetch;
   uploadFn?: (
     file: File | Blob,
@@ -1484,8 +1573,12 @@ export async function generateVideoWithVeo(input: {
   }
 
   const videoModel = resolveAdamGeminiVideoModel();
-  const maxPolls = input.maxPollAttempts ?? 12;
-  const pollInterval = input.pollIntervalMs ?? 2500;
+  const fetchTimeoutMs =
+    input.fetchTimeoutMs ?? ADAM_VIDEO_DEFAULT_FETCH_TIMEOUT_MS;
+  const pollInterval =
+    input.pollIntervalMs ?? ADAM_VIDEO_DEFAULT_POLL_INTERVAL_MS;
+  const maxPolls =
+    input.maxPollAttempts ?? computeAdamVideoPollAttempts();
 
   let videoBytes: Buffer | null = null;
   let videoProvider: GeneratedVideoResult["provider"] = "gemini-omni";
@@ -1583,7 +1676,7 @@ export async function generateVideoWithVeo(input: {
       }
     }
   } else {
-    const interactionsUrl = geminiInteractionsUrl(apiKey);
+    const interactionsUrl = geminiInteractionsUrl();
     const interactionInput: Array<Record<string, string>> = input.imageBase64
       ? [
           {
@@ -1595,26 +1688,30 @@ export async function generateVideoWithVeo(input: {
         ]
       : [{ type: "text", text: promptText }];
 
-    const startRes = await fetchImpl(interactionsUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: videoModel,
-        input: interactionInput,
-        response_format: {
-          type: "video",
-          aspect_ratio: aspectRatio,
-        },
-      }),
-    });
+    const startRes = await fetchGeminiWithTimeout(
+      fetchImpl,
+      interactionsUrl,
+      {
+        method: "POST",
+        headers: geminiApiKeyHeaders(apiKey),
+        body: JSON.stringify({
+          model: videoModel,
+          input: interactionInput,
+          response_format: {
+            type: "video",
+            aspect_ratio: aspectRatio,
+            delivery: "uri",
+          },
+        }),
+      },
+      fetchTimeoutMs,
+    );
 
-    if (!startRes.ok) {
-      throw new Error(
-        `Gemini Omni video generation request failed (${startRes.status})`,
-      );
-    }
-
-    const interactionJson: unknown = await startRes.json();
+    const interactionJson = await readGeminiResponseOrThrow(
+      startRes,
+      "Gemini Omni video generation request failed",
+    );
+    assertGeminiInteractionCompleted(interactionJson);
     const extracted = extractVideoFromGeminiInteraction(interactionJson);
 
     if (!extracted?.videoBase64 && !extracted?.videoUri) {
@@ -1634,20 +1731,29 @@ export async function generateVideoWithVeo(input: {
           filesResource,
           maxPollAttempts: maxPolls,
           pollIntervalMs: pollInterval,
+          fetchTimeoutMs,
         });
         videoBytes = await downloadGeminiFileMedia({
           fetchFn: fetchImpl,
           apiKey,
           filesResource,
+          fetchTimeoutMs,
         });
       } else {
-        const dlUrl = extracted.videoUri.includes("?")
-          ? `${extracted.videoUri}&key=${encodeURIComponent(apiKey)}`
-          : `${extracted.videoUri}?key=${encodeURIComponent(apiKey)}`;
-        const dlRes = await fetchImpl(dlUrl);
-        if (dlRes.ok) {
-          videoBytes = Buffer.from(await dlRes.arrayBuffer());
+        const dlRes = await fetchGeminiWithTimeout(
+          fetchImpl,
+          extracted.videoUri,
+          {
+            method: "GET",
+            headers: { "x-goog-api-key": apiKey },
+          },
+          fetchTimeoutMs,
+        );
+        if (!dlRes.ok) {
+          logGeminiHttpFailure(dlRes.status);
+          throw new Error(`Gemini video download failed (${dlRes.status})`);
         }
+        videoBytes = Buffer.from(await dlRes.arrayBuffer());
       }
     }
   }
