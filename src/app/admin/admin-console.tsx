@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { AdminWalletPanel } from "@/components/admin/admin-wallet-panel";
 import { OracleIngestForm } from "@/components/admin/oracle-ingest-form";
 import { useAuthSession } from "@/components/providers/app-providers";
 import { AdminPayoutsCard } from "./admin-payouts-card";
@@ -47,6 +48,22 @@ export function AdminConsole() {
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [walletEnabled, setWalletEnabled] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/admin/config")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (!cancelled && json && typeof json.walletEnabled === "boolean") {
+          setWalletEnabled(json.walletEnabled);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const refreshSession = useCallback(async () => {
     setError(null);
@@ -171,6 +188,13 @@ export function AdminConsole() {
           )}
         </div>
       </div>
+
+      {isSignedIn ? (
+        <AdminWalletPanel
+          getAccessToken={getAccessToken}
+          walletEnabled={walletEnabled}
+        />
+      ) : null}
 
       {/* Owner Navigation Links (Gated) */}
       {isSignedIn ? (

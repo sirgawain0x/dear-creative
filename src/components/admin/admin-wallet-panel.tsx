@@ -1,0 +1,314 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import QRCode from "qrcode";
+
+type WalletSummaryResponse =
+  | {
+      configured: false;
+      reason: "unset" | "invalid";
+      network: string;
+      chainId: number;
+    }
+  | {
+      configured: true;
+      address: string;
+      network: string;
+      chainId: number;
+      balances: {
+        eth: { formatted: string };
+        usdc: { formatted: string };
+      };
+    };
+
+type HistoryResponse = {
+  configured: boolean;
+  reason?: "unset" | "invalid";
+  transfers: Array<{
+    id: string;
+    direction: "in" | "out";
+    asset: "ETH" | "USDC";
+    value: string;
+    hash: string;
+    timestamp: string | null;
+  }>;
+  pagination?: {
+    incomingPageKey: string | null;
+    outgoingPageKey: string | null;
+  };
+};
+
+export type AdminWalletPreviewData = {
+  summary: Extract<WalletSummaryResponse, { configured: true }>;
+  history: HistoryResponse;
+};
+
+type AdminWalletPanelProps = {
+  getAccessToken: () => Promise<string | null>;
+  walletEnabled: boolean;
+  previewData?: AdminWalletPreviewData;
+};
+
+export function AdminWalletPanel({
+  getAccessToken,
+  walletEnabled,
+  previewData,
+}: AdminWalletPanelProps) {
+  const [loading, setLoading] = useState(
+    () => walletEnabled && !previewData,
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [summary, setSummary] = useState<WalletSummaryResponse | null>(
+    previewData?.summary ?? null,
+  );
+  const [history, setHistory] = useState<HistoryResponse | null>(
+    previewData?.history ?? null,
+  );
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [incomingPageKey, setIncomingPageKey] = useState<string | null>(null);
+  const [outgoingPageKey, setOutgoingPageKey] = useState<string | null>(null);
+
+  const fetchWalletFromApi = useCallback(async () => {
+    if (!walletEnabled || previewData) {
+      return;
+    }
+    setError(null);
+    try {
+      const token = await getAccessToken();
+      if (!token) {
+        setError("Sign in with Privy to view wallet data.");
+        return;
+      }
+      const headers = { Authorization: `Bearer ${token}` };
+      const [summaryRes, historyRes] = await Promise.all([
+        fetch("/api/admin/wallet", { headers }),
+        fetch("/api/admin/wallet/history", { headers }),
+      ]);
+      if (summaryRes.status === 404 || historyRes.status === 404) {
+        setError("Wallet feature is disabled.");
+        return;
+      }
+      if (!summaryRes.ok || !historyRes.ok) {
+        setError("Could not load wallet (admin Privy session required).");
+        return;
+      }
+      const summaryJson = (await summaryRes.json()) as WalletSummaryResponse;
+      const historyJson = (await historyRes.json()) as HistoryResponse;
+      setSummary(summaryJson);
+      setHistory(historyJson);
+      setIncomingPageKey(historyJson.pagination?.incomingPageKey ?? null);
+      setOutgoingPageKey(historyJson.pagination?.outgoingPageKey ?? null);
+
+      if (summaryJson.configured) {
+        const qr = await QRCode.toDataURL(summaryJson.address, {
+          margin: 1,
+          width: 200,
+        });
+        setQrDataUrl(qr);
+      } else {
+        setQrDataUrl(null);
+      }
+    } catch {
+      setError("Failed to load wallet data.");
+    } finally {
+      setLoading(false);
+    }
+  }, [getAccessToken, previewData, walletEnabled]);
+
+  useEffect(() => {
+    if (!walletEnabled || previewData) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      await fetchWalletFromApi();
+      if (cancelled) {
+        return;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchWalletFromApi, previewData, walletEnabled]);
+
+  useEffect(() => {
+    if (!previewData?.summary.configured) {
+      return;
+    }
+    void QRCode.toDataURL(previewData.summary.address, {
+      margin: 1,
+      width: 200,
+    }).then(setQrDataUrl);
+  }, [previewData]);
+
+  const handleRefresh = () => {
+    setLoading(true);
+    void fetchWalletFromApi();
+  };
+
+  const loadMoreHistory = async () => {
+    if (!walletEnabled || !summary?.configured) {
+      return;
+    }
+    const token = await getAccessToken();
+    if (!token) {
+      return;
+    }
+    const params = new URLSearchParams();
+    if (incomingPageKey) {
+      params.set("incomingPageKey", incomingPageKey);
+    }
+    if (outgoingPageKey) {
+      params.set("outgoingPageKey", outgoingPageKey);
+    }
+    const response = await fetch(
+      `/api/admin/wallet/history?${params.toString()}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!response.ok) {
+      return;
+    }
+    const json = (await response.json()) as HistoryResponse;
+    setHistory((prev) => ({
+      ...json,
+      transfers: [
+        ...(prev?.transfers ?? []),
+        ...json.transfers.filter(
+          (t) => !(prev?.transfers ?? []).some((p) => p.id === t.id),
+        ),
+      ],
+    }));
+    setIncomingPageKey(json.pagination?.incomingPageKey ?? null);
+    setOutgoingPageKey(json.pagination?.outgoingPageKey ?? null);
+  };
+
+  if (!walletEnabled) {
+    return (
+      <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-5 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
+        Owner wallet (read-only) is disabled. Set{" "}
+        <code className="text-xs">WALLET_ENABLED=true</code> to enable.
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs dark:border-zinc-800 dark:bg-zinc-900/60"
+      data-testid="admin-wallet-panel"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold">Funds (Base, read-only)</h3>
+          <p className="mt-1 text-xs text-zinc-500">
+            Balances and history for the configured owner address only.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleRefresh}
+          disabled={loading || Boolean(previewData)}
+          className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+        >
+          {loading ? "Refreshing…" : "Refresh"}
+        </button>
+      </div>
+
+      {error ? (
+        <p className="mt-4 text-xs text-red-600 dark:text-red-400">{error}</p>
+      ) : null}
+
+      {loading && !summary ? (
+        <p className="mt-4 text-sm text-zinc-500">Loading wallet…</p>
+      ) : null}
+
+      {summary && !summary.configured ? (
+        <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
+          <p className="font-semibold">Not configured</p>
+          <p className="mt-1 text-xs opacity-90">
+            Set <code>ADMIN_WALLET_ADDRESS</code> to a checksummed Base address.
+            {summary.reason === "invalid" ? " Current value is invalid." : null}
+          </p>
+        </div>
+      ) : null}
+
+      {summary && summary.configured ? (
+        <div className="mt-5 space-y-5">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                ETH balance
+              </p>
+              <p className="mt-1 text-2xl font-bold tabular-nums">
+                {summary.balances.eth.formatted}
+              </p>
+            </div>
+            <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                USDC balance
+              </p>
+              <p className="mt-1 text-2xl font-bold tabular-nums">
+                {summary.balances.usdc.formatted}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Receive on Base
+            </p>
+            <code className="mt-2 block break-all text-xs font-mono text-emerald-700 dark:text-emerald-400">
+              {summary.address}
+            </code>
+            {qrDataUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element -- data URL QR from qrcode lib
+              <img
+                src={qrDataUrl}
+                alt="QR code for wallet receive address"
+                className="mt-3 h-[200px] w-[200px] rounded-lg border border-zinc-200 dark:border-zinc-700"
+              />
+            ) : null}
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Recent activity
+            </p>
+            <ul className="mt-2 divide-y divide-zinc-100 dark:divide-zinc-800">
+              {(history?.transfers ?? []).map((tx) => (
+                <li key={tx.id} className="flex flex-wrap items-center justify-between gap-2 py-3 text-xs">
+                  <span
+                    className={
+                      tx.direction === "in"
+                        ? "font-semibold text-emerald-700 dark:text-emerald-400"
+                        : "font-semibold text-zinc-700 dark:text-zinc-300"
+                    }
+                  >
+                    {tx.direction === "in" ? "Received" : "Sent"}{" "}
+                    {tx.value} {tx.asset}
+                  </span>
+                  <a
+                    className="font-mono text-[10px] text-zinc-500 underline"
+                    href={`https://basescan.org/tx/${tx.hash}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {tx.hash.slice(0, 10)}…
+                  </a>
+                </li>
+              ))}
+            </ul>
+            {(incomingPageKey || outgoingPageKey) && (
+              <button
+                type="button"
+                onClick={() => void loadMoreHistory()}
+                className="mt-3 text-xs font-medium text-zinc-600 underline dark:text-zinc-400"
+              >
+                Load more
+              </button>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
