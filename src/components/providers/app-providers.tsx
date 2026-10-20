@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -37,13 +38,17 @@ export function useSafePrivy() {
     ? isPrivyReady || isTimedOut
     : configLoaded || true;
 
+  const noopLogin = useCallback(() => {}, []);
+  const noopLogout = useCallback(async () => {}, []);
+  const nullAccessToken = useCallback(async () => null, []);
+
   return {
     ready,
     authenticated: privy?.authenticated ?? false,
     user: privy?.user ?? null,
-    login: privy?.login ?? (() => {}),
-    logout: privy?.logout ?? (async () => {}),
-    getAccessToken: privy?.getAccessToken ?? (async () => null),
+    login: privy?.login ?? noopLogin,
+    logout: privy?.logout ?? noopLogout,
+    getAccessToken: privy?.getAccessToken ?? nullAccessToken,
     privyConfigured,
     adamTokenConfigured,
     configLoaded,
