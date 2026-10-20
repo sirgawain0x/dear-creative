@@ -3,15 +3,30 @@
 import { KokoroTTS, TextSplitterStream } from "kokoro-js";
 import { env } from "@huggingface/transformers";
 import {
+  buildKokoroTransformersEnvPatch,
+  preferredKokoroInferenceDevice,
+} from "./transformers-env-settings";
+import {
   KOKORO_DEFAULT_VOICE,
   KOKORO_DTYPE,
   KOKORO_MODEL_ID,
 } from "./kokoro-config";
 
-if (env.backends.onnx.wasm) {
-  env.backends.onnx.wasm.wasmPaths =
-    "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.1/dist/";
+function applyTransformersEnvForKokoroWorker(): void {
+  const patch = buildKokoroTransformersEnvPatch(env.version);
+  env.allowRemoteModels = patch.allowRemoteModels;
+  env.allowLocalModels = patch.allowLocalModels;
+  env.useFS = patch.useFS;
+  env.useFSCache = patch.useFSCache;
+  env.useBrowserCache = patch.useBrowserCache;
+  env.useCustomCache = patch.useCustomCache;
+  env.customCache = patch.customCache;
+  if (env.backends.onnx.wasm) {
+    env.backends.onnx.wasm.wasmPaths = patch.wasmPaths;
+  }
 }
+
+applyTransformersEnvForKokoroWorker();
 
 type WorkerInMessage =
   | { type: "init" }
@@ -51,23 +66,30 @@ async function ensureTts(): Promise<KokoroTTS> {
     return tts;
   }
 
-  try {
-    tts = await loadModel("webgpu");
-    activeDevice = "webgpu";
-    postMessage({ type: "device", device: "webgpu" });
-    return tts;
-  } catch (webgpuError) {
-    postMessage({
-      type: "device-fallback",
-      from: "webgpu",
-      message:
-        webgpuError instanceof Error ? webgpuError.message : String(webgpuError),
-    });
-    tts = await loadModel("wasm");
-    activeDevice = "wasm";
-    postMessage({ type: "device", device: "wasm" });
-    return tts;
+  const primary = preferredKokoroInferenceDevice();
+
+  if (primary === "webgpu") {
+    try {
+      tts = await loadModel("webgpu");
+      activeDevice = "webgpu";
+      postMessage({ type: "device", device: "webgpu" });
+      return tts;
+    } catch (webgpuError) {
+      postMessage({
+        type: "device-fallback",
+        from: "webgpu",
+        message:
+          webgpuError instanceof Error
+            ? webgpuError.message
+            : String(webgpuError),
+      });
+    }
   }
+
+  tts = await loadModel("wasm");
+  activeDevice = "wasm";
+  postMessage({ type: "device", device: "wasm" });
+  return tts;
 }
 
 self.onmessage = async (event: MessageEvent<WorkerInMessage>) => {
