@@ -46,9 +46,7 @@ export function EditorWritersPanel({
   const [loading, setLoading] = useState(false);
 
   const loadWriters = useCallback(async () => {
-    if (!enabled || !postId) {
-      setWriters([]);
-      setPublishGate(null);
+    if (!postId) {
       return;
     }
     setLoading(true);
@@ -67,11 +65,46 @@ export function EditorWritersPanel({
     } finally {
       setLoading(false);
     }
-  }, [authFetch, enabled, postId]);
+  }, [authFetch, postId]);
 
   useEffect(() => {
-    void loadWriters();
-  }, [loadWriters]);
+    if (!enabled || !postId) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      await Promise.resolve();
+      if (cancelled) {
+        return;
+      }
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await authFetch(`/api/adam/posts/${postId}/writers`);
+        const data = (await res.json()) as WritersResponse & { error?: string };
+        if (cancelled) {
+          return;
+        }
+        if (!res.ok) {
+          setError(data.error ?? "Failed to load writers");
+          return;
+        }
+        setWriters(data.writers);
+        setPublishGate(data.publishGate);
+      } catch {
+        if (!cancelled) {
+          setError("Failed to load writers");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authFetch, enabled, postId]);
 
   if (!enabled) {
     return null;

@@ -3833,6 +3833,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
               </div>
 
               <EditorWritersPanel
+                key={selectedEditPostId ?? "no-post"}
                 postId={selectedEditPostId}
                 authFetch={authFetch}
                 enabled={cowritersEnabled}

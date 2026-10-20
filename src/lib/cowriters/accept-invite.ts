@@ -108,7 +108,6 @@ export async function acceptCowriterInvite(
     }
   }
 
-  const now = new Date();
   await db
     .update(writerInvites)
     .set({
