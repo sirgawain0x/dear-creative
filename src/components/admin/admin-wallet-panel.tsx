@@ -54,7 +54,9 @@ export function AdminWalletPanel({
   walletEnabled,
   previewData,
 }: AdminWalletPanelProps) {
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(
+    () => walletEnabled && !previewData,
+  );
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<WalletSummaryResponse | null>(
     previewData?.summary ?? null,
@@ -66,29 +68,10 @@ export function AdminWalletPanel({
   const [incomingPageKey, setIncomingPageKey] = useState<string | null>(null);
   const [outgoingPageKey, setOutgoingPageKey] = useState<string | null>(null);
 
-  const applyPreview = useCallback(async (data: AdminWalletPreviewData) => {
-    setSummary(data.summary);
-    setHistory(data.history);
-    setIncomingPageKey(null);
-    setOutgoingPageKey(null);
-    const qr = await QRCode.toDataURL(data.summary.address, {
-      margin: 1,
-      width: 200,
-    });
-    setQrDataUrl(qr);
-  }, []);
-
-  const loadWallet = useCallback(async () => {
-    if (!walletEnabled) {
+  const fetchWalletFromApi = useCallback(async () => {
+    if (!walletEnabled || previewData) {
       return;
     }
-    if (previewData) {
-      setLoading(true);
-      await applyPreview(previewData);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
     setError(null);
     try {
       const token = await getAccessToken();
@@ -130,11 +113,23 @@ export function AdminWalletPanel({
     } finally {
       setLoading(false);
     }
-  }, [applyPreview, getAccessToken, previewData, walletEnabled]);
+  }, [getAccessToken, previewData, walletEnabled]);
 
   useEffect(() => {
-    void loadWallet();
-  }, [loadWallet]);
+    if (!walletEnabled || previewData) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      await fetchWalletFromApi();
+      if (cancelled) {
+        return;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchWalletFromApi, previewData, walletEnabled]);
 
   useEffect(() => {
     if (!previewData?.summary.configured) {
@@ -145,6 +140,11 @@ export function AdminWalletPanel({
       width: 200,
     }).then(setQrDataUrl);
   }, [previewData]);
+
+  const handleRefresh = () => {
+    setLoading(true);
+    void fetchWalletFromApi();
+  };
 
   const loadMoreHistory = async () => {
     if (!walletEnabled || !summary?.configured) {
@@ -205,8 +205,8 @@ export function AdminWalletPanel({
         </div>
         <button
           type="button"
-          onClick={() => void loadWallet()}
-          disabled={loading}
+          onClick={handleRefresh}
+          disabled={loading || Boolean(previewData)}
           className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
         >
           {loading ? "Refreshing…" : "Refresh"}
