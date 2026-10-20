@@ -2,6 +2,10 @@ import { and, count, desc, eq, isNotNull } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
 import { getPostAudioColumns } from "@/db/ensure-schema";
 import { posts } from "@/db/schema";
+import {
+  getAcceptedPostByline,
+  type PostBylineWriter,
+} from "@/lib/cowriters/byline";
 import { resolvePostCoverImage } from "./post-cover-image";
 import { calculateReadingTime } from "./reading-time";
 import { classifyArticleTopic } from "./topic-tagging";
@@ -22,6 +26,7 @@ export type PublishedPostDetail = PublishedPostListItem & {
   bodyHtml: string | null;
   audioUrl?: string | null;
   audioVoice?: string | null;
+  bylineWriters?: PostBylineWriter[];
 };
 
 export type PublishedPostsPage = {
@@ -148,6 +153,7 @@ export async function getPublishedPostBySlug(
 ): Promise<PublishedPostDetail | null> {
   const [row] = await db
     .select({
+      id: posts.id,
       slug: posts.slug,
       title: posts.title,
       publishedAt: posts.publishedAt,
@@ -164,11 +170,13 @@ export async function getPublishedPostBySlug(
   }
 
   const audio = await getPostAudioColumns(db, slug);
+  const bylineWriters = await getAcceptedPostByline(db, row.id);
 
   return {
     ...mapListRow(row),
     bodyHtml: row.bodyHtml,
     audioUrl: audio.audioUrl,
     audioVoice: audio.audioVoice,
+    bylineWriters,
   };
 }

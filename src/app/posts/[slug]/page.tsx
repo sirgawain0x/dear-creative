@@ -75,6 +75,19 @@ function PostArticle({ post }: { post: PublishedPostDetail }) {
         <h1 className="mt-3 text-4xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
           {post.title}
         </h1>
+        {post.bylineWriters && post.bylineWriters.length > 0 ? (
+          <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">
+            By{" "}
+            {post.bylineWriters.map((writer, index) => (
+              <span key={`${writer.role}-${writer.label}-${index}`}>
+                {index > 0 ? (index === post.bylineWriters!.length - 1 ? ", and " : ", ") : null}
+                <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                  {writer.label}
+                </span>
+              </span>
+            ))}
+          </p>
+        ) : null}
         {post.excerpt ? (
           <p className="mt-4 text-lg text-zinc-600 dark:text-zinc-400">
             {post.excerpt}

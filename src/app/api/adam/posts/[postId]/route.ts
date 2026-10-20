@@ -4,6 +4,7 @@ import { getDb } from "@/db/client";
 import { postStatusEnum, type PostStatus } from "@/db/schema";
 import { DuplicateSlugError } from "@/lib/adam/publish-draft";
 import { requireStudioOrAdamAuth } from "@/lib/adam/studio-auth";
+import { CowriterPublishBlockedError } from "@/lib/cowriters/publish-gate";
 import {
   getAdminPostByIdOrSlug,
   updateAdminPost,
@@ -101,6 +102,15 @@ export async function PATCH(request: Request, context: RouteContext) {
       previousSlug: updated.previousSlug,
     });
   } catch (error) {
+    if (error instanceof CowriterPublishBlockedError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          publishGate: error.checks,
+        },
+        { status: 409 },
+      );
+    }
     if (error instanceof DuplicateSlugError) {
       return NextResponse.json({ error: error.message }, { status: 409 });
     }
