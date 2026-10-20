@@ -52,7 +52,7 @@ function mapListRow(row: {
   const coverImage = resolvePublicPostCoverImage({
     slug: row.slug,
     title: row.title,
-    publicPreview: row.freeContent,
+    bodyHtml: row.bodyHtml,
   });
 
   const teaser = buildPublicPostTeaser({
