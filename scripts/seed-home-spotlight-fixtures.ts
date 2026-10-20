@@ -27,6 +27,9 @@ const FIXTURE_SLUGS = [
   "fixture-spotlight-newest",
   "fixture-spotlight-svg-fallback",
   "fixture-spotlight-preview-teaser",
+  "fixture-papyrus-prod-1",
+  "fixture-papyrus-prod-2",
+  "fixture-papyrus-prod-3",
   "hello-dear-creative",
 ] as const;
 
@@ -63,8 +66,15 @@ function hiddenPosts(now: Date): (typeof posts.$inferInsert)[] {
   ];
 }
 
+/** Verified public prod art (read from news.creativeplatform.xyz post HTML). */
+const PAPYRUS_PROD_COVER_URLS = [
+  "https://storage.googleapis.com/papyrus_images/1561f2d41303599b84b0b17bec1b224df57d01b39a51109b25adec70bfe7896c.png",
+  "https://storage.googleapis.com/papyrus_images/a5984b0c760cd841db3c8264d1cb1fde1617ee70abf3a6783623a4711630a484.png",
+] as const;
+
 async function main() {
   const noTeaserShot = process.argv.includes("--no-teaser-shot");
+  const papyrusProdShot = process.argv.includes("--papyrus-prod-shot");
   const url = resolveDatabaseUrl();
 
   if (!isLocalLibsqlUrl(url)) {
@@ -88,7 +98,51 @@ async function main() {
   const now = new Date();
   let rows: (typeof posts.$inferInsert)[];
 
-  if (noTeaserShot) {
+  if (papyrusProdShot) {
+    rows = [
+      {
+        id: randomUUID(),
+        slug: "fixture-papyrus-prod-1",
+        title: "They're Selling Your Superfans an AI Version of You",
+        status: "published",
+        publishedAt: new Date("2026-10-20T12:00:00.000Z"),
+        teaserText:
+          "Spotify and Universal licensed fan-made AI covers — fixture using prod papyrus art.",
+        freeContent: null,
+        bodyHtml: `<p>Paid body.</p><img src="${PAPYRUS_PROD_COVER_URLS[0]}" alt="Cover" />`,
+        source: "paragraph",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: randomUUID(),
+        slug: "fixture-papyrus-prod-2",
+        title: "Warner Bought the Lie Detector",
+        status: "published",
+        publishedAt: new Date("2026-10-19T12:00:00.000Z"),
+        teaserText: "When the label owns the tool that proves what's yours.",
+        freeContent: null,
+        bodyHtml: `<p>Paid body.</p><img src="${PAPYRUS_PROD_COVER_URLS[1]}" alt="Cover" />`,
+        source: "paragraph",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: randomUUID(),
+        slug: "fixture-papyrus-prod-3",
+        title: "The First Test of the Quest: Embracing the Dip",
+        status: "published",
+        publishedAt: new Date("2026-10-18T12:00:00.000Z"),
+        teaserText: "Establishing the first defensive perimeter as BTC slips below $60k.",
+        freeContent: null,
+        bodyHtml: `<p>Paid body.</p><img src="${PAPYRUS_PROD_COVER_URLS[0]}" alt="Cover" />`,
+        source: "paragraph",
+        createdAt: now,
+        updatedAt: now,
+      },
+      ...hiddenPosts(now),
+    ];
+  } else if (noTeaserShot) {
     rows = [
       {
         id: randomUUID(),
@@ -115,9 +169,8 @@ async function main() {
         status: "published",
         publishedAt: new Date("2026-10-20T12:00:00.000Z"),
         teaserText: "Fixture — cover loaded from api.grove.storage (unoptimized).",
-        freeContent:
-          `<p>Public preview with Grove art.</p><img src="${GROVE_FIXTURE_COVER_URL}" alt="Grove fixture cover" />`,
-        bodyHtml: "<p>Paid/full body.</p>",
+        freeContent: "<p>Public preview with Grove art (teaser only).</p>",
+        bodyHtml: `<p>Paid/full body.</p><img src="${GROVE_FIXTURE_COVER_URL}" alt="Grove fixture cover" />`,
         source: "paragraph",
         createdAt: now,
         updatedAt: now,
@@ -130,9 +183,9 @@ async function main() {
         publishedAt: new Date("2026-10-19T12:00:00.000Z"),
         teaserText:
           "Fixture — img host is not allowlisted; card should show deterministic SVG.",
-        freeContent:
-          '<p>Public preview references a blocked host.</p><img src="https://example.com/not-on-allowlist.png" alt="Blocked" />',
-        bodyHtml: "<p>Paid/full body.</p>",
+        freeContent: "<p>Public preview text only.</p>",
+        bodyHtml:
+          '<p>Paid/full body.</p><img src="https://example.com/not-on-allowlist.png" alt="Blocked" />',
         source: "paragraph",
         createdAt: now,
         updatedAt: now,
@@ -173,9 +226,11 @@ async function main() {
   await db.insert(posts).values(rows);
 
   console.log(
-    noTeaserShot
-      ? "Seeded no-teaser spotlight shot (1 eligible + draft + future)."
-      : "Seeded 4 eligible published + draft + future (spotlight shows newest 3).",
+    papyrusProdShot
+      ? "Seeded 3 papyrus prod-cover posts + draft + future."
+      : noTeaserShot
+        ? "Seeded no-teaser spotlight shot (1 eligible + draft + future)."
+        : "Seeded 4 eligible published + draft + future (spotlight shows newest 3).",
   );
 }
 

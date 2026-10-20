@@ -3,6 +3,7 @@ import {
   isAllowlistedCoverImageUrl,
   optimizedImageRemotePatterns,
   paragraphOptimizedPathAllowed,
+  papyrusImagesPathAllowed,
 } from "./optimized-remote-image-allowlist";
 
 describe("optimized-remote-image-allowlist", () => {
@@ -24,6 +25,22 @@ describe("optimized-remote-image-allowlist", () => {
     );
   });
 
+  it("allows papyrus_images on storage.googleapis.com", () => {
+    const url =
+      "https://storage.googleapis.com/papyrus_images/1561f2d41303599b84b0b17bec1b224df57d01b39a51109b25adec70bfe7896c.png";
+    expect(papyrusImagesPathAllowed("/papyrus_images/abc.png")).toBe(true);
+    expect(isAllowlistedCoverImageUrl(url)).toBe(true);
+  });
+
+  it("rejects other storage.googleapis.com paths", () => {
+    expect(papyrusImagesPathAllowed("/other-bucket/file.png")).toBe(false);
+    expect(
+      isAllowlistedCoverImageUrl(
+        "https://storage.googleapis.com/other-bucket/file.png",
+      ),
+    ).toBe(false);
+  });
+
   it("keeps remotePatterns host/pathnames aligned with the path rules", () => {
     expect(optimizedImageRemotePatterns).toEqual([
       {
@@ -35,6 +52,11 @@ describe("optimized-remote-image-allowlist", () => {
         protocol: "https",
         hostname: "paragraph.xyz",
         pathname: "/@*/**",
+      },
+      {
+        protocol: "https",
+        hostname: "storage.googleapis.com",
+        pathname: "/papyrus_images/**",
       },
     ]);
   });

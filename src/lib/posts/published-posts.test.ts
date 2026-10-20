@@ -88,6 +88,25 @@ describe("published posts queries", () => {
     expect(item?.readMinutes).toBeGreaterThan(1);
   });
 
+  it("resolves list cover from bodyHtml for paid posts without preview images", async () => {
+    const db = await createPostsTestDb();
+    const papyrus =
+      "https://storage.googleapis.com/papyrus_images/1561f2d41303599b84b0b17bec1b224df57d01b39a51109b25adec70bfe7896c.png";
+    await insertPost(db, {
+      slug: "papyrus-body-cover",
+      title: "Papyrus hero",
+      status: "published",
+      publishedAt: new Date("2024-06-01T00:00:00.000Z"),
+      teaserText: "Teaser only",
+      freeContent: null,
+      bodyHtml: `<p>Paid</p><img src="${papyrus}" alt="Cover" />`,
+    });
+
+    const [item] = await listRecentPublishedPosts(db, 1);
+    expect(item?.coverImage).toBe(papyrus);
+    expect(item).not.toHaveProperty("bodyHtml");
+  });
+
   it("does not expose bodyHtml on list items", async () => {
     const db = await createPostsTestDb();
     await insertPost(db, {

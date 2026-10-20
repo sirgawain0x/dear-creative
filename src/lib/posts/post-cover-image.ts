@@ -30,6 +30,42 @@ export function extractFirstImageFromHtml(
   return null;
 }
 
+function* iterateImageCandidates(
+  html: string,
+): Generator<string, void, undefined> {
+  const imgRe = /<img\s+[^>]*src=["']([^"']+)["']/gi;
+  let imgMatch: RegExpExecArray | null;
+  while ((imgMatch = imgRe.exec(html)) !== null) {
+    if (imgMatch[1]) {
+      yield resolveGroveOrIpfsUrl(imgMatch[1].trim());
+    }
+  }
+
+  const mdRe =
+    /!\[[\s\S]*?\]\s*\(\s*((?:https?:\/\/|\/|ipfs:\/\/|lens:\/\/|data:image\/)[^\s)]+)\s*\)/gi;
+  let mdMatch: RegExpExecArray | null;
+  while ((mdMatch = mdRe.exec(html)) !== null) {
+    if (mdMatch[1]) {
+      yield resolveGroveOrIpfsUrl(mdMatch[1].trim());
+    }
+  }
+}
+
+/** First image in HTML whose URL is allowlisted for public cover surfaces. */
+export function extractFirstAllowlistedImageFromHtml(
+  html: string | null | undefined,
+): string | null {
+  if (!html) {
+    return null;
+  }
+  for (const candidate of iterateImageCandidates(html)) {
+    if (isAllowlistedCoverImageUrl(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
 const PALETTES = [
   {
     bg1: "#09090b",
@@ -255,7 +291,7 @@ function finalizeResolvedCoverUrl(
  */
 export function resolvePublicPostCoverImage(post: {
   coverImage?: string | null;
-  publicPreview?: string | null;
+  bodyHtml?: string | null;
   slug?: string;
   title?: string;
 }): string {
@@ -272,9 +308,9 @@ export function resolvePublicPostCoverImage(post: {
     return "/images/hello-dear-creative-banner.jpg";
   }
 
-  const previewImage = extractFirstImageFromHtml(post.publicPreview);
-  if (previewImage) {
-    return finalizeResolvedCoverUrl(previewImage, fallback);
+  const bodyImage = extractFirstAllowlistedImageFromHtml(post.bodyHtml);
+  if (bodyImage) {
+    return finalizeResolvedCoverUrl(bodyImage, fallback);
   }
 
   return generateDeterministicBannerDataUrl(fallback);

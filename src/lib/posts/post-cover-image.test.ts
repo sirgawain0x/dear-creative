@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  extractFirstAllowlistedImageFromHtml,
   extractFirstImageFromHtml,
   generateDeterministicBannerSvg,
   resolvePostCoverImage,
   resolvePublicPostCoverImage,
 } from "./post-cover-image";
+
+const PAPYRUS_COVER =
+  "https://storage.googleapis.com/papyrus_images/1561f2d41303599b84b0b17bec1b224df57d01b39a51109b25adec70bfe7896c.png";
 
 describe("post-cover-image", () => {
   it("extracts <img> tags from HTML", () => {
@@ -51,14 +55,31 @@ describe("post-cover-image", () => {
     expect(url).toBe("https://api.grove.storage/abc123");
   });
 
-  it("resolvePublicPostCoverImage reads images from free preview only", () => {
+  it("resolvePublicPostCoverImage prefers explicit coverImage", () => {
     const url = resolvePublicPostCoverImage({
-      title: "Preview image",
-      slug: "preview-image",
-      publicPreview:
-        '![cover](/images/hello-dear-creative-banner.jpg)\n\nIntro copy.',
+      title: "Explicit cover",
+      slug: "explicit-cover",
+      coverImage: PAPYRUS_COVER,
+      bodyHtml: `<img src="/images/hello-dear-creative-banner.jpg" alt="body" />`,
     });
-    expect(url).toBe("/images/hello-dear-creative-banner.jpg");
+    expect(url).toBe(PAPYRUS_COVER);
+  });
+
+  it("resolvePublicPostCoverImage uses first allowlisted image in bodyHtml", () => {
+    const url = resolvePublicPostCoverImage({
+      title: "Paid body art",
+      slug: "paid-body-art",
+      bodyHtml: `<p>Lead</p><img src="https://example.com/blocked.png" /><img src="${PAPYRUS_COVER}" alt="Hero" />`,
+    });
+    expect(url).toBe(PAPYRUS_COVER);
+  });
+
+  it("extractFirstAllowlistedImageFromHtml skips blocked hosts", () => {
+    expect(
+      extractFirstAllowlistedImageFromHtml(
+        `<img src="https://example.com/x.png" /><img src="${PAPYRUS_COVER}" />`,
+      ),
+    ).toBe(PAPYRUS_COVER);
   });
 
   it("resolves hello-dear-creative to the local asset", () => {
@@ -69,11 +90,11 @@ describe("post-cover-image", () => {
     expect(url).toBe("/images/hello-dear-creative-banner.jpg");
   });
 
-  it("falls back to deterministic data URL when no image is present", () => {
+  it("falls back to deterministic data URL when no allowlisted image is present", () => {
     const url = resolvePublicPostCoverImage({
       title: "Text Only",
       slug: "text-only",
-      publicPreview: "Just text without any images.",
+      bodyHtml: "<p>Just text without any images.</p>",
     });
     expect(url.startsWith("data:image/svg+xml;utf8,")).toBe(true);
   });
