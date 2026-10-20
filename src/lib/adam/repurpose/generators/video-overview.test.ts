@@ -51,6 +51,11 @@ describe("generateVideoOverview", () => {
     });
 
     const ffmpeg = vi.fn(async (args: string[]) => {
+      if (args.includes("-hide_banner") && args.includes("-i")) {
+        const err = new Error("probe") as Error & { stderr: string };
+        err.stderr = "Duration: 00:00:04.00, start: 0.000000";
+        throw err;
+      }
       const outArg = args.at(-1);
       if (outArg?.endsWith(".mp4")) {
         await writeFile(outArg, Buffer.from("mock-mp4"));

@@ -8,9 +8,15 @@ import {
 } from "@/lib/storage/lens-grove";
 import {
   buildNarratedSlidesMp4,
+  createDeadlineAwareFfmpegRunner,
   probeAudioDurationSeconds,
   type FfmpegRunner,
 } from "../ffmpeg";
+import {
+  assertRepurposePipelineBudget,
+  createRepurposeVideoPipelineDeadline,
+  wrapFetchForRepurposePipeline,
+} from "../pipeline-deadline";
 import type { RepurposePostSource } from "../post-source";
 import { validateRepurposeModelOutput } from "../validate-output";
 import { generateTextRepurposeOutput } from "./text";
@@ -23,6 +29,12 @@ type SlideDeck = {
     bullets?: string[];
     speakerNotes?: string;
   }>;
+};
+
+export type RepurposeVideoPipelineOptions = {
+  deadlineAtMs?: number;
+  nowFn?: () => number;
+  perFetchCapMs?: number;
 };
 
 function narrationTextForSlide(slide: NonNullable<SlideDeck["slides"]>[number]): string {
@@ -42,15 +54,36 @@ export async function generateVideoOverview(input: {
     file: File | Blob,
     fileName?: string,
   ) => Promise<LensGroveUploadResult>;
+  pipeline?: RepurposeVideoPipelineOptions;
 }): Promise<{
   payload: { slideDeck: SlideDeck; mode: "narrated_slides" };
   mediaUrl: string;
   mediaMimeType: string;
 }> {
+  const nowFn = input.pipeline?.nowFn ?? Date.now;
+  const deadlineAtMs =
+    input.pipeline?.deadlineAtMs ?? createRepurposeVideoPipelineDeadline(nowFn());
+  const perFetchCapMs = input.pipeline?.perFetchCapMs ?? 45_000;
+  const baseFetch = input.fetchFn ?? fetch;
+  const fetchFn = wrapFetchForRepurposePipeline(
+    baseFetch,
+    deadlineAtMs,
+    perFetchCapMs,
+    nowFn,
+  );
+  const ffmpeg =
+    input.ffmpeg ??
+    createDeadlineAwareFfmpegRunner({
+      deadlineAtMs,
+      nowFn,
+    });
+
+  assertRepurposePipelineBudget(deadlineAtMs, nowFn());
+
   const deckResult = await generateTextRepurposeOutput({
     outputType: "slide_deck",
     source: input.source,
-    fetchFn: input.fetchFn,
+    fetchFn,
   });
   const slideDeck = validateRepurposeModelOutput(
     "slide_deck",
@@ -73,29 +106,34 @@ export async function generateVideoOverview(input: {
     }> = [];
 
     for (let i = 0; i < slides.length; i++) {
+      assertRepurposePipelineBudget(deadlineAtMs, nowFn());
       const slide = slides[i]!;
       const title = slide.title?.trim() || `Slide ${i + 1}`;
       const narration = narrationTextForSlide(slide);
       const mp3 = await synthesizeSlideNarrationMp3({
         text: narration,
-        fetchFn: input.fetchFn,
+        fetchFn,
         synthesizeFn: input.synthesizeFn,
       });
       const audioPath = join(workDir, `narration-${i}.mp3`);
       await writeFile(audioPath, mp3);
       const durationSeconds = await probeAudioDurationSeconds({
         audioPath,
-        ffmpeg: input.ffmpeg,
+        ffmpeg,
       });
       slideSpecs.push({ title, audioPath, durationSeconds });
     }
+
+    assertRepurposePipelineBudget(deadlineAtMs, nowFn());
 
     await buildNarratedSlidesMp4({
       workDir,
       slides: slideSpecs,
       outputPath,
-      ffmpeg: input.ffmpeg,
+      ffmpeg,
     });
+
+    assertRepurposePipelineBudget(deadlineAtMs, nowFn());
 
     const mp4 = await readFile(outputPath);
     const upload = input.uploadFn ?? uploadToLensGrove;

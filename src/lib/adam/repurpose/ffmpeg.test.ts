@@ -2,7 +2,21 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { buildNarratedSlidesMp4 } from "./ffmpeg";
+import { buildNarratedSlidesMp4, probeAudioDurationSeconds } from "./ffmpeg";
+
+describe("probeAudioDurationSeconds", () => {
+  it("throws when probe output has no duration", async () => {
+    const ffmpeg = vi.fn(async () => {
+      throw new Error("probe failed");
+    });
+    await expect(
+      probeAudioDurationSeconds({
+        audioPath: "/tmp/narration.mp3",
+        ffmpeg,
+      }),
+    ).rejects.toThrow(/Could not probe audio duration/);
+  });
+});
 
 describe("buildNarratedSlidesMp4", () => {
   it("invokes ffmpeg per slide and concat without final -shortest", async () => {
@@ -32,6 +46,7 @@ describe("buildNarratedSlidesMp4", () => {
 
     expect(ffmpeg).toHaveBeenCalledTimes(3);
     expect(calls[0]?.join(" ")).toContain("drawtext");
+    expect(calls[0]?.join(" ")).toContain("expansion=none");
     expect(calls[0]?.join(" ")).toContain("textfile=");
     expect(calls[0]?.join(" ")).not.toContain("-shortest");
     expect(calls.at(-1)?.join(" ")).toContain("out.mp4");
