@@ -1,7 +1,8 @@
 import { and, count, desc, eq, isNotNull, lte } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
 import { getPostAudioColumns } from "@/db/ensure-schema";
-import { posts } from "@/db/schema";
+import { authors, posts } from "@/db/schema";
+import { mapAuthorRow, type PostAuthorDetail } from "./post-author";
 import { resolvePublicPostCoverImage } from "./post-cover-image";
 import { buildPublicPostTeaser } from "./post-public-teaser";
 import { calculateReadingTime } from "./reading-time";
@@ -26,6 +27,7 @@ export type PublishedPostDetail = PublishedPostListItem & {
   bodyHtml: string | null;
   audioUrl?: string | null;
   audioVoice?: string | null;
+  author?: PostAuthorDetail | null;
 };
 
 export type PublishedPostsPage = {
@@ -175,8 +177,15 @@ export async function getPublishedPostBySlug(
       canonicalUrl: posts.canonicalUrl,
       freeContent: posts.freeContent,
       bodyHtml: posts.bodyHtml,
+      authorName: authors.name,
+      authorSlug: authors.slug,
+      authorBio: authors.bio,
+      authorAvatarUrl: authors.avatarUrl,
+      authorMeTokenAddress: authors.meTokenAddress,
+      authorMeTokenSymbol: authors.meTokenSymbol,
     })
     .from(posts)
+    .leftJoin(authors, eq(posts.authorId, authors.id))
     .where(and(publishedVisibilityFilter(asOf), eq(posts.slug, slug)))
     .limit(1);
 
@@ -185,6 +194,18 @@ export async function getPublishedPostBySlug(
   }
 
   const audio = await getPostAudioColumns(db, slug);
+
+  const author =
+    row.authorName && row.authorSlug
+      ? mapAuthorRow({
+          name: row.authorName,
+          slug: row.authorSlug,
+          bio: row.authorBio,
+          avatarUrl: row.authorAvatarUrl,
+          meTokenAddress: row.authorMeTokenAddress,
+          meTokenSymbol: row.authorMeTokenSymbol,
+        })
+      : null;
 
   return {
     ...mapListRow({
@@ -199,5 +220,6 @@ export async function getPublishedPostBySlug(
     bodyHtml: row.bodyHtml,
     audioUrl: audio.audioUrl,
     audioVoice: audio.audioVoice,
+    author,
   };
 }
