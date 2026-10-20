@@ -12,7 +12,6 @@ const nextConfig: NextConfig = {
       "./node_modules/ffmpeg-static/**/*",
       "./src/assets/fonts/**/*",
     ],
-    "/api/adam/repurpose/diagnostics/*": ["./node_modules/ffmpeg-static/**/*"],
   },
   turbopack: {
     rules: {

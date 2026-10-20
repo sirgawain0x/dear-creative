@@ -173,21 +173,3 @@ export async function buildNarratedSlidesMp4(input: {
     input.outputPath,
   ]);
 }
-
-/** Runs ffmpeg -version for diagnostics (auth-gated route). */
-export async function getFfmpegVersionLine(): Promise<{
-  binary: string;
-  versionLine: string;
-}> {
-  const binary = resolveFfmpegBinaryPath();
-  const { stdout, stderr } = await execFile(binary, ["-version"], {
-    maxBuffer: 512 * 1024,
-    timeout: 15_000,
-  });
-  const text = `${stdout}\n${stderr}`.trim();
-  const versionLine = text.split("\n").find((line) => line.length > 0) ?? "";
-  if (!versionLine) {
-    throw new Error("ffmpeg -version returned no output");
-  }
-  return { binary, versionLine };
-}
