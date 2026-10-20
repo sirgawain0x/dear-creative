@@ -4,6 +4,7 @@ Auth: Authorization: Bearer <KOKORO_TTS_TOKEN>
 """
 from __future__ import annotations
 
+import hmac
 import io
 import os
 import threading
@@ -12,7 +13,6 @@ from typing import Annotated
 import numpy as np
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import Response
-from kokoro import KPipeline
 from pydantic import BaseModel, Field
 from pydub import AudioSegment
 
@@ -23,7 +23,7 @@ MAX_TEXT_CHARS = int(os.environ.get("KOKORO_MAX_TEXT_CHARS", "12000"))
 app = FastAPI(title="Dear Creative Kokoro TTS", version="1.0.0")
 
 _pipeline_lock = threading.Lock()
-_pipeline: KPipeline | None = None
+_pipeline = None
 
 
 def _expected_token() -> str:
@@ -38,17 +38,19 @@ def verify_bearer(
 ) -> None:
     expected = _expected_token()
     if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing Bearer token")
+        raise HTTPException(status_code=401, detail="Unauthorized")
     provided = authorization[7:].strip()
-    if provided != expected:
-        raise HTTPException(status_code=403, detail="Invalid Bearer token")
+    if not hmac.compare_digest(provided, expected):
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
-def get_pipeline() -> KPipeline:
+def get_pipeline():
     global _pipeline
     if _pipeline is None:
         with _pipeline_lock:
             if _pipeline is None:
+                from kokoro import KPipeline
+
                 _pipeline = KPipeline(lang_code=LANG_CODE)
     return _pipeline
 
