@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import {
+  STUDIO_TOKEN_STORAGE_KEY,
+  useAuthSession,
+} from "@/components/providers/app-providers";
 
 interface MetricsData {
   subscribers: {
@@ -94,29 +98,85 @@ function DeliveryMetricsCard({
 }
 
 export function AdminMetricsClient() {
+  const {
+    ready,
+    authenticated,
+    getAccessToken,
+    isSignedIn,
+  } = useAuthSession();
   const [data, setData] = useState<MetricsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [needsSignIn, setNeedsSignIn] = useState(false);
 
   useEffect(() => {
+    if (!ready) {
+      return;
+    }
+
+    let cancelled = false;
+
     async function fetchMetrics() {
+      setLoading(true);
+      setError(null);
+      setNeedsSignIn(false);
+      setData(null);
+
       try {
-        const response = await fetch("/api/admin/metrics");
+        let token: string | null = null;
+        if (authenticated) {
+          try {
+            token = await getAccessToken();
+          } catch {
+            token = null;
+          }
+        }
+        if (!token && typeof window !== "undefined") {
+          const studioToken = window.localStorage
+            .getItem(STUDIO_TOKEN_STORAGE_KEY)
+            ?.trim();
+          if (studioToken) {
+            token = studioToken;
+          }
+        }
+
+        if (!token) {
+          if (!cancelled) {
+            setNeedsSignIn(true);
+            setLoading(false);
+          }
+          return;
+        }
+
+        const response = await fetch("/api/admin/metrics", {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
         if (!response.ok) {
           throw new Error(`Failed to fetch metrics: ${response.status}`);
         }
-        const json = await response.json();
-        setData(json);
+        const json = (await response.json()) as MetricsData;
+        if (!cancelled) {
+          setData(json);
+        }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Unknown error");
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Unknown error");
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
-    fetchMetrics();
-  }, []);
 
-  if (loading) {
+    void fetchMetrics();
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, authenticated, getAccessToken, isSignedIn]);
+
+  if (!ready || loading) {
     return (
       <div className="space-y-6">
         <div className="grid gap-4 md:grid-cols-3">
@@ -127,6 +187,20 @@ export function AdminMetricsClient() {
             </div>
           ))}
         </div>
+      </div>
+    );
+  }
+
+  if (needsSignIn) {
+    return (
+      <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+        <p>Sign in as the Dear Creative owner to view metrics.</p>
+        <Link
+          href="/admin"
+          className="mt-2 inline-block font-semibold underline underline-offset-2"
+        >
+          Go to admin sign-in
+        </Link>
       </div>
     );
   }

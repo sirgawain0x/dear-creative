@@ -154,7 +154,7 @@ export function AdminConsole() {
           <p className="mt-1 text-xs text-zinc-500">
             Access private editorial tools unlocked by your active session.
           </p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <Link
               href="/adam"
               className="flex flex-col rounded-xl border border-zinc-200 p-3.5 hover:border-zinc-400 hover:bg-zinc-50 transition dark:border-zinc-800 dark:hover:bg-zinc-800/60"
@@ -180,6 +180,15 @@ export function AdminConsole() {
               <span className="text-sm font-semibold">Manage Posts →</span>
               <span className="mt-1 text-[11px] text-zinc-500">
                 Edit &amp; Lens Grove banners
+              </span>
+            </Link>
+            <Link
+              href="/admin/metrics"
+              className="flex flex-col rounded-xl border border-zinc-200 p-3.5 hover:border-zinc-400 hover:bg-zinc-50 transition dark:border-zinc-800 dark:hover:bg-zinc-800/60"
+            >
+              <span className="text-sm font-semibold">Metrics →</span>
+              <span className="mt-1 text-[11px] text-zinc-500">
+                Subscribers, delivery, and tips
               </span>
             </Link>
           </div>

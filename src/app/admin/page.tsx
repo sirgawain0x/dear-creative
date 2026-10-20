@@ -10,7 +10,7 @@ export default function AdminPage() {
         <h1 className="text-3xl font-bold tracking-tight">Sign In / Sign Out</h1>
         <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
           Authenticate as the Dear Creative owner to unlock Adam Studio, Approvals,
-          Lens Grove banner uploads, and post editing tools.
+          Metrics, Lens Grove banner uploads, and post editing tools.
         </p>
       </div>
       <AdminConsole />
