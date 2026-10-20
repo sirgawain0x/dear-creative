@@ -30,6 +30,10 @@ const FIXTURE_SLUGS = [
   "hello-dear-creative",
 ] as const;
 
+/** Public Grove JPEG uploaded via anonymous POST (chain_id=232); verified 200 image/jpeg. */
+const GROVE_FIXTURE_COVER_URL =
+  "https://api.grove.storage/95f583249cbf56cfb647ef3e76315338330388444317ddb20439cbaa5ebcf777";
+
 function hiddenPosts(now: Date): (typeof posts.$inferInsert)[] {
   return [
     {
@@ -112,7 +116,7 @@ async function main() {
         publishedAt: new Date("2026-10-20T12:00:00.000Z"),
         teaserText: "Fixture — cover loaded from api.grove.storage (unoptimized).",
         freeContent:
-          '<p>Public preview with Grove art.</p><img src="https://api.grove.storage/fixture-screenshot-grove-cover" alt="Grove fixture cover" />',
+          `<p>Public preview with Grove art.</p><img src="${GROVE_FIXTURE_COVER_URL}" alt="Grove fixture cover" />`,
         bodyHtml: "<p>Paid/full body.</p>",
         source: "paragraph",
         createdAt: now,

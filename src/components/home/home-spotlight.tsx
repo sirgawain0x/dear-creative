@@ -19,6 +19,8 @@ function SpotlightCard({
         <div className="relative aspect-[16/10] w-full overflow-hidden rounded-xl border border-zinc-200/80 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-800/80">
           <PostSpotlightCoverImage
             src={post.coverImage ?? ""}
+            slug={post.slug}
+            title={post.title}
             priority={priorityImage}
           />
         </div>
