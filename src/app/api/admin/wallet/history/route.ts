@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { resolveAdminWalletConfig } from "@/lib/wallet/admin-wallet-address";
 import {
+  AlchemyTransfersError,
   fetchAlchemyAssetTransfersPage,
   isWalletReadFixtureEnabled,
   mergeWalletHistoryPages,
@@ -57,36 +58,50 @@ export async function GET(request: Request) {
     });
   }
 
-  const [incomingResult, outgoingResult] = await Promise.all([
-    fetchAlchemyAssetTransfersPage({
-      wallet: config.address,
-      direction: "in",
-      maxCount,
-      pageKey: incomingPageKey,
-    }),
-    fetchAlchemyAssetTransfersPage({
-      wallet: config.address,
-      direction: "out",
-      maxCount,
-      pageKey: outgoingPageKey,
-    }),
-  ]);
+  try {
+    const [incomingResult, outgoingResult] = await Promise.all([
+      fetchAlchemyAssetTransfersPage({
+        wallet: config.address,
+        direction: "in",
+        maxCount,
+        pageKey: incomingPageKey,
+      }),
+      fetchAlchemyAssetTransfersPage({
+        wallet: config.address,
+        direction: "out",
+        maxCount,
+        pageKey: outgoingPageKey,
+      }),
+    ]);
 
-  const incoming = normalizeTransferPage(incomingResult, config.address, "in");
-  const outgoing = normalizeTransferPage(
-    outgoingResult,
-    config.address,
-    "out",
-  );
-  const transfers = mergeWalletHistoryPages(incoming.items, outgoing.items);
+    const incoming = normalizeTransferPage(incomingResult, config.address, "in");
+    const outgoing = normalizeTransferPage(
+      outgoingResult,
+      config.address,
+      "out",
+    );
+    const transfers = mergeWalletHistoryPages(incoming.items, outgoing.items);
 
-  return NextResponse.json({
-    configured: true,
-    address: config.address,
-    transfers,
-    pagination: {
-      incomingPageKey: incoming.pageKey ?? null,
-      outgoingPageKey: outgoing.pageKey ?? null,
-    },
-  });
+    return NextResponse.json({
+      configured: true,
+      address: config.address,
+      transfers,
+      pagination: {
+        incomingPageKey: incoming.pageKey ?? null,
+        outgoingPageKey: outgoing.pageKey ?? null,
+      },
+    });
+  } catch (error) {
+    if (error instanceof AlchemyTransfersError) {
+      return NextResponse.json(
+        {
+          error: "transfer_history_unavailable",
+          code: error.code,
+          message: error.alchemyMessage,
+        },
+        { status: 502 },
+      );
+    }
+    throw error;
+  }
 }

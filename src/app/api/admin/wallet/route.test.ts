@@ -5,7 +5,6 @@ import { GET as GET_HISTORY } from "./history/route";
 
 vi.mock("@/lib/privy/require-auth", () => ({
   requirePrivyAuth: vi.fn(),
-  extractBearerToken: vi.fn(),
 }));
 
 vi.mock("@/lib/wallet/balances", () => ({
@@ -56,9 +55,12 @@ describe("GET /api/admin/wallet", () => {
       }),
     );
     expect(res.status).toBe(403);
+    expect(requirePrivyAuth).toHaveBeenCalledWith(expect.any(Request), {
+      requireAdmin: true,
+    });
   });
 
-  it("rejects adam service token (privy admin only)", async () => {
+  it("rejects adam/studio service token (privy admin only)", async () => {
     vi.mocked(requirePrivyAuth).mockResolvedValue({
       ok: false,
       response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
@@ -97,6 +99,38 @@ describe("GET /api/admin/wallet", () => {
     const json = await res.json();
     expect(json.configured).toBe(true);
     expect(json.balances.eth.formatted).toBe("0.001");
+  });
+});
+
+describe("GET /api/admin/wallet/history adam bearer", () => {
+  beforeEach(() => {
+    setWalletEnabledForTests(true);
+    vi.stubEnv(
+      "ADMIN_WALLET_ADDRESS",
+      "0xAE48B6dB64772b9CC24e33A79c809896776a20f6",
+    );
+    vi.mocked(requirePrivyAuth).mockResolvedValue({
+      ok: false,
+      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+    });
+  });
+
+  afterEach(() => {
+    setWalletEnabledForTests(undefined);
+    vi.unstubAllEnvs();
+    vi.clearAllMocks();
+  });
+
+  it("rejects adam/studio bearer with 401", async () => {
+    const res = await GET_HISTORY(
+      new Request("http://localhost/api/admin/wallet/history", {
+        headers: { Authorization: "Bearer studio-adam-key" },
+      }),
+    );
+    expect(res.status).toBe(401);
+    expect(requirePrivyAuth).toHaveBeenCalledWith(expect.any(Request), {
+      requireAdmin: true,
+    });
   });
 });
 

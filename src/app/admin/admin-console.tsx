@@ -190,10 +190,7 @@ export function AdminConsole() {
       </div>
 
       {isSignedIn ? (
-        <AdminWalletPanel
-          getAccessToken={getAccessToken}
-          walletEnabled={walletEnabled}
-        />
+        <AdminWalletPanel walletEnabled={walletEnabled} />
       ) : null}
 
       {/* Owner Navigation Links (Gated) */}

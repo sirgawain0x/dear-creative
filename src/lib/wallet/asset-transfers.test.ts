@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getAddress } from "viem";
 import {
+  AlchemyTransfersError,
   mergeWalletHistoryPages,
   normalizeAlchemyTransfer,
   normalizeTransferPage,
@@ -130,6 +131,36 @@ describe("asset transfer normalizer", () => {
     expect(merged).toHaveLength(2);
     expect(incoming.pageKey).toBe("in-key");
     expect(outgoing.pageKey).toBe("out-key");
+  });
+
+  it("logs HTTP status and Alchemy message on non-2xx without URL or key", async () => {
+    vi.stubEnv("ALCHEMY_API_KEY", "secret-key");
+    const logSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: { message: "Invalid API key" } }), {
+        status: 403,
+        statusText: "Forbidden",
+      }),
+    );
+
+    await expect(
+      fetchAlchemyAssetTransfersPage({ wallet: WALLET, direction: "in" }),
+    ).rejects.toBeInstanceOf(AlchemyTransfersError);
+
+    expect(logSpy).toHaveBeenCalledWith(
+      "[admin-wallet] alchemy_getAssetTransfers failed",
+      expect.objectContaining({
+        code: "http_error",
+        httpStatus: 403,
+        message: "Invalid API key",
+      }),
+    );
+    const logged = JSON.stringify(logSpy.mock.calls[0]);
+    expect(logged).not.toContain("secret-key");
+    expect(logged).not.toContain("base-mainnet.g.alchemy.com");
+
+    logSpy.mockRestore();
+    vi.unstubAllEnvs();
   });
 
   it("paginates via mocked Alchemy fetcher", async () => {

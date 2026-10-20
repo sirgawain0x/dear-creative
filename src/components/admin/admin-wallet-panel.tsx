@@ -2,6 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import QRCode from "qrcode";
+import { useAuthSession } from "@/components/providers/app-providers";
+import { adminPrivyAuthorizationHeaders } from "@/lib/admin/admin-api-auth";
+import {
+  resolveWalletPanelLoadErrors,
+  WALLET_HISTORY_ERROR_MESSAGE,
+} from "./admin-wallet-panel-errors";
 
 type WalletSummaryResponse =
   | {
@@ -44,20 +50,26 @@ export type AdminWalletPreviewData = {
 };
 
 type AdminWalletPanelProps = {
-  getAccessToken: () => Promise<string | null>;
   walletEnabled: boolean;
   previewData?: AdminWalletPreviewData;
 };
 
 export function AdminWalletPanel({
-  getAccessToken,
   walletEnabled,
   previewData,
 }: AdminWalletPanelProps) {
+  const {
+    ready,
+    isSignedIn,
+    authenticated,
+    getAccessToken,
+    privyConfigured,
+  } = useAuthSession();
   const [loading, setLoading] = useState(
     () => walletEnabled && !previewData,
   );
   const [error, setError] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [summary, setSummary] = useState<WalletSummaryResponse | null>(
     previewData?.summary ?? null,
   );
@@ -73,50 +85,79 @@ export function AdminWalletPanel({
       return;
     }
     setError(null);
+    setHistoryError(null);
     try {
-      const token = await getAccessToken();
-      if (!token) {
-        setError("Sign in with Privy to view wallet data.");
+      const headers = await adminPrivyAuthorizationHeaders({
+        privyConfigured,
+        authenticated,
+        getAccessToken,
+      });
+      if (!isSignedIn || !headers) {
+        setError("Sign in to view wallet data.");
         return;
       }
-      const headers = { Authorization: `Bearer ${token}` };
       const [summaryRes, historyRes] = await Promise.all([
         fetch("/api/admin/wallet", { headers }),
         fetch("/api/admin/wallet/history", { headers }),
       ]);
-      if (summaryRes.status === 404 || historyRes.status === 404) {
+
+      const loadErrors = resolveWalletPanelLoadErrors({
+        summaryOk: summaryRes.ok,
+        summaryStatus: summaryRes.status,
+        historyOk: historyRes.ok,
+        historyStatus: historyRes.status,
+      });
+
+      if (loadErrors.featureDisabled) {
         setError("Wallet feature is disabled.");
         return;
       }
-      if (!summaryRes.ok || !historyRes.ok) {
-        setError("Could not load wallet (admin Privy session required).");
+      if (loadErrors.authError) {
+        setError(loadErrors.authError);
         return;
       }
-      const summaryJson = (await summaryRes.json()) as WalletSummaryResponse;
-      const historyJson = (await historyRes.json()) as HistoryResponse;
-      setSummary(summaryJson);
-      setHistory(historyJson);
-      setIncomingPageKey(historyJson.pagination?.incomingPageKey ?? null);
-      setOutgoingPageKey(historyJson.pagination?.outgoingPageKey ?? null);
 
-      if (summaryJson.configured) {
-        const qr = await QRCode.toDataURL(summaryJson.address, {
-          margin: 1,
-          width: 200,
-        });
-        setQrDataUrl(qr);
+      if (summaryRes.ok) {
+        const summaryJson = (await summaryRes.json()) as WalletSummaryResponse;
+        setSummary(summaryJson);
+        if (summaryJson.configured) {
+          const qr = await QRCode.toDataURL(summaryJson.address, {
+            margin: 1,
+            width: 200,
+          });
+          setQrDataUrl(qr);
+        } else {
+          setQrDataUrl(null);
+        }
       } else {
-        setQrDataUrl(null);
+        setError(loadErrors.summaryError);
+      }
+
+      if (historyRes.ok) {
+        const historyJson = (await historyRes.json()) as HistoryResponse;
+        setHistory(historyJson);
+        setIncomingPageKey(historyJson.pagination?.incomingPageKey ?? null);
+        setOutgoingPageKey(historyJson.pagination?.outgoingPageKey ?? null);
+      } else {
+        setHistory(null);
+        setHistoryError(loadErrors.historyError ?? WALLET_HISTORY_ERROR_MESSAGE);
       }
     } catch {
       setError("Failed to load wallet data.");
     } finally {
       setLoading(false);
     }
-  }, [getAccessToken, previewData, walletEnabled]);
+  }, [
+    authenticated,
+    getAccessToken,
+    isSignedIn,
+    previewData,
+    privyConfigured,
+    walletEnabled,
+  ]);
 
   useEffect(() => {
-    if (!walletEnabled || previewData) {
+    if (!ready || !walletEnabled || previewData) {
       return;
     }
     let cancelled = false;
@@ -129,7 +170,7 @@ export function AdminWalletPanel({
     return () => {
       cancelled = true;
     };
-  }, [fetchWalletFromApi, previewData, walletEnabled]);
+  }, [fetchWalletFromApi, previewData, ready, walletEnabled]);
 
   useEffect(() => {
     if (!previewData?.summary.configured) {
@@ -150,8 +191,12 @@ export function AdminWalletPanel({
     if (!walletEnabled || !summary?.configured) {
       return;
     }
-    const token = await getAccessToken();
-    if (!token) {
+    const headers = await adminPrivyAuthorizationHeaders({
+      privyConfigured,
+      authenticated,
+      getAccessToken,
+    });
+    if (!headers) {
       return;
     }
     const params = new URLSearchParams();
@@ -163,7 +208,7 @@ export function AdminWalletPanel({
     }
     const response = await fetch(
       `/api/admin/wallet/history?${params.toString()}`,
-      { headers: { Authorization: `Bearer ${token}` } },
+      { headers },
     );
     if (!response.ok) {
       return;
@@ -273,6 +318,11 @@ export function AdminWalletPanel({
             <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
               Recent activity
             </p>
+            {historyError ? (
+              <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                {historyError}
+              </p>
+            ) : null}
             <ul className="mt-2 divide-y divide-zinc-100 dark:divide-zinc-800">
               {(history?.transfers ?? []).map((tx) => (
                 <li key={tx.id} className="flex flex-wrap items-center justify-between gap-2 py-3 text-xs">
