@@ -1,5 +1,7 @@
+import { REPURPOSE_GEMINI_FETCH_TIMEOUT_MS } from "./constants";
 import { getRepurposeGenerationPrompt, getRepurposeResponseSchema } from "./schemas";
 import type { RepurposeOutputType } from "./types";
+import { validateRepurposeModelOutput } from "./validate-output";
 
 function getGeminiApiKey(): string | null {
   return (
@@ -22,6 +24,7 @@ export async function generateRepurposeStructuredJson(input: {
   outputType: RepurposeOutputType;
   source: { title: string; plainText: string };
   fetchFn?: typeof fetch;
+  timeoutMs?: number;
 }): Promise<unknown> {
   const apiKey = getGeminiApiKey();
   if (!apiKey) {
@@ -32,14 +35,18 @@ export async function generateRepurposeStructuredJson(input: {
   const model = getRepurposeTextModel();
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     model,
-  )}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  )}:generateContent`;
 
   const responseSchema = getRepurposeResponseSchema(input.outputType);
   const prompt = getRepurposeGenerationPrompt(input.outputType, input.source);
+  const timeoutMs = input.timeoutMs ?? REPURPOSE_GEMINI_FETCH_TIMEOUT_MS;
 
   const response = await fetchImpl(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey,
+    },
     body: JSON.stringify({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       generationConfig: {
@@ -48,6 +55,7 @@ export async function generateRepurposeStructuredJson(input: {
         temperature: 0.4,
       },
     }),
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   if (!response.ok) {
@@ -62,5 +70,12 @@ export async function generateRepurposeStructuredJson(input: {
     throw new Error("Empty structured response from Gemini");
   }
 
-  return JSON.parse(rawText) as unknown;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawText) as unknown;
+  } catch {
+    throw new Error("Gemini returned invalid JSON");
+  }
+
+  return validateRepurposeModelOutput(input.outputType, parsed);
 }

@@ -2365,13 +2365,6 @@
             "output_type"
           ],
           "isUnique": true
-        },
-        "post_repurpose_outputs_post_id_idx": {
-          "name": "post_repurpose_outputs_post_id_idx",
-          "columns": [
-            "post_id"
-          ],
-          "isUnique": false
         }
       },
       "foreignKeys": {

@@ -1,15 +1,12 @@
 import type { DearCreativeDb } from "@/db/client";
+import type { StudioAuthSuccess } from "@/lib/adam/studio-auth";
+import { assertRepurposeCallerAccess } from "./access";
 import { isRepurposeEnabled } from "./feature-flag";
 import { generateTextRepurposeOutput, isTextRepurposeType } from "./generators/text";
-import {
-  tryAcquireRepurposeLock,
-  releaseRepurposeLock,
-} from "./locks";
 import { loadRepurposePostSource, RepurposePostError } from "./post-source";
 import {
-  ensureRepurposeTable,
+  claimRepurposeGenerationLock,
   getRepurposeOutput,
-  markRepurposeGenerating,
   saveRepurposeFailed,
   saveRepurposeReady,
 } from "./storage";
@@ -18,9 +15,10 @@ import type { RepurposeOutputType, RepurposeStoredOutput } from "./types";
 export class RepurposeGenerationError extends Error {
   constructor(
     readonly httpStatus: number,
-    message: string,
+    readonly clientMessage: string,
+    logDetail?: string,
   ) {
-    super(message);
+    super(logDetail ?? clientMessage);
     this.name = "RepurposeGenerationError";
   }
 }
@@ -33,36 +31,50 @@ export async function runRepurposeGeneration(input: {
   db: DearCreativeDb;
   postIdOrSlug: string;
   outputType: RepurposeOutputType;
+  auth: StudioAuthSuccess;
   deps?: RunRepurposeGenerationDeps;
 }): Promise<RepurposeStoredOutput> {
   if (!isRepurposeEnabled()) {
     throw new RepurposeGenerationError(503, "Repurpose is not enabled.");
   }
 
-  await ensureRepurposeTable(input.db);
-  const source = await loadRepurposePostSource(input.db, input.postIdOrSlug);
-
-  const existing = await getRepurposeOutput(input.db, source.id, input.outputType);
-  if (existing?.status === "ready") {
-    return existing;
-  }
-  if (existing?.status === "generating") {
-    throw new RepurposeGenerationError(
-      409,
-      "A generation for this output type is already in progress.",
-    );
-  }
-
-  if (!tryAcquireRepurposeLock(source.id, input.outputType)) {
-    throw new RepurposeGenerationError(
-      409,
-      "A generation for this output type is already in progress.",
-    );
-  }
-
+  let source;
   try {
-    await markRepurposeGenerating(input.db, source.id, input.outputType);
+    source = await loadRepurposePostSource(input.db, input.postIdOrSlug);
+    await assertRepurposeCallerAccess({
+      db: input.db,
+      postAuthorId: source.authorId,
+      postStatus: source.status,
+      auth: input.auth,
+    });
+  } catch (error) {
+    if (error instanceof RepurposePostError) {
+      throw new RepurposeGenerationError(
+        error.code === "not_found" ? 404 : 403,
+        error.message,
+      );
+    }
+    throw error;
+  }
 
+  const claim = await claimRepurposeGenerationLock({
+    db: input.db,
+    postId: source.id,
+    outputType: input.outputType,
+  });
+
+  if (claim.outcome === "ready") {
+    return claim.output;
+  }
+  if (claim.outcome === "conflict") {
+    throw new RepurposeGenerationError(
+      409,
+      "A generation for this output type is already in progress.",
+    );
+  }
+
+  const lockClaimed = claim.outcome === "claimed";
+  try {
     if (!isTextRepurposeType(input.outputType)) {
       throw new RepurposeGenerationError(
         501,
@@ -85,27 +97,44 @@ export async function runRepurposeGeneration(input: {
       mediaMimeType: generated.mediaMimeType,
     });
   } catch (error) {
-    const message =
+    const logDetail =
       error instanceof Error ? error.message : "Repurpose generation failed";
-    if (!(error instanceof RepurposeGenerationError)) {
+    console.error("[repurpose] generation failed", {
+      postId: source.id,
+      outputType: input.outputType,
+      detail: logDetail,
+    });
+    if (lockClaimed) {
       await saveRepurposeFailed({
         db: input.db,
         postId: source.id,
         outputType: input.outputType,
-        errorMessage: message,
+        errorMessage: logDetail,
       });
     }
     if (error instanceof RepurposePostError) {
       throw new RepurposeGenerationError(
-        error.code === "not_found" ? 404 : 400,
+        error.code === "not_found" ? 404 : 403,
         error.message,
+        logDetail,
       );
     }
     if (error instanceof RepurposeGenerationError) {
       throw error;
     }
-    throw new RepurposeGenerationError(500, message);
-  } finally {
-    releaseRepurposeLock(source.id, input.outputType);
+    throw new RepurposeGenerationError(
+      500,
+      "Repurpose generation failed.",
+      logDetail,
+    );
   }
+}
+
+/** @internal test helper */
+export async function getRepurposeOutputForPost(
+  db: DearCreativeDb,
+  postId: string,
+  outputType: RepurposeOutputType,
+): Promise<RepurposeStoredOutput | null> {
+  return getRepurposeOutput(db, postId, outputType);
 }

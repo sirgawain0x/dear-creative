@@ -632,7 +632,6 @@ export const postRepurposeOutputs = sqliteTable(
       table.postId,
       table.outputType,
     ),
-    index("post_repurpose_outputs_post_id_idx").on(table.postId),
   ],
 );
 

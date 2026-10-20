@@ -5,16 +5,16 @@ import {
   RepurposeGenerationError,
   runRepurposeGeneration,
 } from "@/lib/adam/repurpose/run-generation";
-import {
-  ensureRepurposeTable,
-  getRepurposeOutput,
-} from "@/lib/adam/repurpose/storage";
+import { getRepurposeOutput } from "@/lib/adam/repurpose/storage";
 import {
   isRepurposeOutputType,
   type RepurposeOutputType,
 } from "@/lib/adam/repurpose/types";
 import { loadRepurposePostSource, RepurposePostError } from "@/lib/adam/repurpose/post-source";
+import { assertRepurposeCallerAccess } from "@/lib/adam/repurpose/access";
 import { requireStudioOrAdamAuth } from "@/lib/adam/studio-auth";
+
+export const maxDuration = 300;
 
 type RouteContext = {
   params: Promise<{ postId: string; outputType: string }>;
@@ -37,8 +37,13 @@ export async function GET(request: Request, context: RouteContext) {
 
   const db = getDb();
   try {
-    await ensureRepurposeTable(db);
     const source = await loadRepurposePostSource(db, postId);
+    await assertRepurposeCallerAccess({
+      db,
+      postAuthorId: source.authorId,
+      postStatus: source.status,
+      auth,
+    });
     const output = await getRepurposeOutput(
       db,
       source.id,
@@ -52,10 +57,11 @@ export async function GET(request: Request, context: RouteContext) {
     if (error instanceof RepurposePostError) {
       return NextResponse.json(
         { error: error.message },
-        { status: error.code === "not_found" ? 404 : 400 },
+        { status: error.code === "not_found" ? 404 : 403 },
       );
     }
-    return NextResponse.json({ error: "Failed to load output" }, { status: 500 });
+    console.error("[repurpose] GET failed", error);
+    return NextResponse.json({ error: "Failed to load output." }, { status: 500 });
   }
 }
 
@@ -74,29 +80,32 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Invalid output type" }, { status: 400 });
   }
 
-  const db = getDb();
   try {
+    const db = getDb();
     const output = await runRepurposeGeneration({
       db,
       postIdOrSlug: postId,
       outputType: rawType,
+      auth,
     });
     return NextResponse.json({ output });
   } catch (error) {
     if (error instanceof RepurposeGenerationError) {
       return NextResponse.json(
-        { error: error.message },
+        { error: error.clientMessage },
         { status: error.httpStatus },
       );
     }
     if (error instanceof RepurposePostError) {
       return NextResponse.json(
         { error: error.message },
-        { status: error.code === "not_found" ? 404 : 400 },
+        { status: error.code === "not_found" ? 404 : 403 },
       );
     }
-    const message =
-      error instanceof Error ? error.message : "Repurpose generation failed";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[repurpose] POST failed", error);
+    return NextResponse.json(
+      { error: "Repurpose generation failed." },
+      { status: 500 },
+    );
   }
 }
