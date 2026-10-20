@@ -3,13 +3,12 @@ import { getDb } from "@/db/client";
 import { runDearCreativePixelsClipGeneration } from "@/lib/adam/pixels/run-clip-generation";
 import { requireAdamAuth } from "@/lib/adam/require-auth";
 
-type RouteContext = { params: Promise<{ slug: string }> };
-
 type RequestBody = {
+  slug?: string;
   dryRun?: boolean;
 };
 
-export async function POST(request: Request, context: RouteContext) {
+export async function POST(request: Request) {
   const auth = requireAdamAuth(request);
   if (!auth.ok) {
     return auth.response;
@@ -22,7 +21,11 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { slug } = await context.params;
+  const slug = body.slug?.trim();
+  if (!slug) {
+    return NextResponse.json({ error: "slug is required" }, { status: 400 });
+  }
+
   const dryRun = body.dryRun !== false;
 
   try {

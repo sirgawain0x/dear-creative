@@ -13,7 +13,7 @@ vi.mock("@/db/client", () => ({
   getDb: getDbMock,
 }));
 
-describe("POST /api/adam/posts/[slug]/pixels-clips", () => {
+describe("POST /api/adam/posts/pixels-clips", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     getDbMock.mockReset();
@@ -23,11 +23,10 @@ describe("POST /api/adam/posts/[slug]/pixels-clips", () => {
     vi.stubEnv("ADAM_API_TOKEN", "secret-token");
     const { POST } = await import("./route");
     const response = await POST(
-      new Request("http://localhost/api/adam/posts/demo/pixels-clips", {
+      new Request("http://localhost/api/adam/posts/pixels-clips", {
         method: "POST",
-        body: JSON.stringify({ dryRun: true }),
+        body: JSON.stringify({ slug: "demo", dryRun: true }),
       }),
-      { params: Promise.resolve({ slug: "demo" }) },
     );
     expect(response.status).toBe(401);
   });
@@ -57,12 +56,11 @@ describe("POST /api/adam/posts/[slug]/pixels-clips", () => {
 
     const { POST } = await import("./route");
     const response = await POST(
-      new Request("http://localhost/api/adam/posts/clip-ready/pixels-clips", {
+      new Request("http://localhost/api/adam/posts/pixels-clips", {
         method: "POST",
         headers: { Authorization: "Bearer secret-token" },
-        body: JSON.stringify({ dryRun: true }),
+        body: JSON.stringify({ slug: "clip-ready", dryRun: true }),
       }),
-      { params: Promise.resolve({ slug: "clip-ready" }) },
     );
 
     expect(response.status).toBe(200);
