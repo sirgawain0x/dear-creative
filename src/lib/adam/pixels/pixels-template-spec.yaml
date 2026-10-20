@@ -25,23 +25,6 @@ input:
     postSlug:
       type: "string"
       description: "URL slug of the Dear Creative post (e.g., 'creative-pulse-weekly-dispatch-2024-01-15')"
-    paymentConfig:
-      type: "object"
-      description: "Optional X402 payment configuration"
-      properties:
-        accountId:
-          type: "string"
-          description: "Billing account ID (wallet address or API key)"
-        treasuryAddress:
-          type: "string"
-          description: "Platform treasury address for CRTVAI deposits"
-        premium:
-          type: "boolean"
-          default: false
-          description: "Use premium interval pricing"
-        ledgerPath:
-          type: "string"
-          description: "Path to credit ledger JSON file"
     outputFormats:
       type: "array"
       items:
@@ -407,19 +390,6 @@ renderSettings:
     quality: "high"
     gpuDensity: "light"
 
-# X402 Payment Configuration
-payment:
-  method: "x402_usdc"
-  chain: "base"
-  chainId: 8453
-  token: "USDC"
-  tokenAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
-  billingMiddleware: "headless/mcp-server-billing.mjs"
-  pricing:
-    renderIntervalCostUsdc6: 1000000
-    premiumIntervalCostUsdc6: 500000
-    editOpCostUsdc6: 10000
-
 # Project template for each aspect ratio
 projectTemplates:
   "9:16":
@@ -740,7 +710,3 @@ example:
   outputFormats: ["9:16", "16:9", "1:1"]
   durationSeconds: 15
   usePostAudio: true
-  paymentConfig:
-    accountId: "0x1234..."
-    treasuryAddress: "0xabcd..."
-    premium: false

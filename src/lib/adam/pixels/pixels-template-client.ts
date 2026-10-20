@@ -1,57 +1,21 @@
 /**
- * Pixels Template Client Wrapper for "Dear Creative" Branded Video Clips
- *
- * Generates 3 aspect ratio clips (9:16, 16:9, 1:1) from post data + Lens Grove assets
- * with X402 USDC payment on Base via CRTVAI credits.
- *
- * Usage:
- *   import { generateDearCreativeClips } from './pixels-template-client';
- *
- *   const clips = await generateDearCreativeClips('creative-pulse-weekly-dispatch-2024-01-15', {
- *     accountId: '0x1234...',
- *     treasuryAddress: '0xabcd...',
- *     premium: false,
- *   });
- *
- *   console.log(clips.reel9x16.url); // Lens Grove gateway URL
+ * Pixels template client for Dear Creative branded social clips.
+ * Not wired into production routes yet — import from `@/lib/adam/pixels` when ready.
  */
 
-import { StorageClient } from '@lens-chain/storage-client';
-import { createPublicClient, http } from 'viem';
-import { base } from 'viem/chains';
-import { randomUUID } from 'crypto';
-import type { File as FileType } from 'node:buffer';
+import { StorageClient } from "@lens-chain/storage-client";
+import { randomUUID } from "node:crypto";
+import type { DearCreativeDb } from "@/db/client";
+import {
+  loadPixelsPostDataFromDb,
+  type PixelsPostData,
+} from "./post-data";
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export interface X402Config {
-  accountId: string;
-  treasuryAddress?: string;
-  premium?: boolean;
-  ledgerPath?: string;
-}
-
-export interface PostData {
-  id: string;
-  slug: string;
-  title: string;
-  teaserText: string;
-  publishedAt: number;
-  audioUrl?: string;
-  audioVoice?: string;
-  bannerUrls: {
-    '16:9': string;
-    '1:1': string;
-    '21:9'?: string;
-  };
-  videoUrls: {
-    '16:9': string;
-    '9:16': string;
-  };
-  keyQuote?: string;
-}
+export type PostData = PixelsPostData;
 
 export interface GeneratedClip {
   url: string;
@@ -195,14 +159,6 @@ export interface LensGroveUploadResult {
   storageKey: string;
 }
 
-export interface BillingConfig {
-  accountId: string;
-  treasuryAddress: string;
-  premium: boolean;
-  ledgerPath: string;
-  intervalCostUsdc6: number;
-}
-
 // ============================================================================
 // Constants
 // ============================================================================
@@ -284,32 +240,23 @@ export function resolveGroveUrl(urlOrUri: string | null | undefined): string {
 // Pixels HTTP Client
 // ============================================================================
 
-class PixelsHttpClient {
+export class PixelsHttpClient {
   private baseUrl: string;
-  private paymentConfig?: X402Config;
 
-  constructor(baseUrl: string, paymentConfig?: X402Config) {
-    this.baseUrl = baseUrl.replace(/\/$/, '');
-    this.paymentConfig = paymentConfig;
+  constructor(baseUrl: string) {
+    this.baseUrl = baseUrl.replace(/\/$/, "");
   }
 
   private async request<T>(
     method: string,
     path: string,
     body?: unknown,
-    extraHeaders?: Record<string, string>
+    extraHeaders?: Record<string, string>,
   ): Promise<T> {
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       ...extraHeaders,
     };
-
-    // Add X402 payment header if configured
-    if (this.paymentConfig?.accountId) {
-      // X402 header format: X-PAYMENT: x402 <token>
-      // The actual token would come from the billing middleware
-      headers['X-PAYMENT'] = `x402 ${this.paymentConfig.accountId}`;
-    }
 
     const response = await fetch(`${this.baseUrl}${path}`, {
       method,
@@ -359,23 +306,7 @@ class PixelsHttpClient {
   }
 
   async renderProject(request: PixelsRenderRequest): Promise<PixelsRenderResponse> {
-    const response = await fetch(`${this.baseUrl}/v1/render`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(this.paymentConfig?.accountId
-          ? { 'X-PAYMENT': `x402 ${this.paymentConfig.accountId}` }
-          : {}),
-      },
-      body: JSON.stringify(request),
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Render failed: ${response.status} - ${text}`);
-    }
-
-    return response.json() as Promise<PixelsRenderResponse>;
+    return this.request<PixelsRenderResponse>("POST", "/v1/render", request);
   }
 
   async importMediaFromUrl(
@@ -489,7 +420,7 @@ interface EditOp {
   [key: string]: unknown;
 }
 
-function createImportMediaOps(post: PostData, aspectRatio: string): EditOp[] {
+export function createImportMediaOps(post: PostData, aspectRatio: string): EditOp[] {
   const ops: EditOp[] = [];
 
   // Import banner
@@ -821,77 +752,43 @@ function createTimelineOps(
 }
 
 // ============================================================================
-// Post Data Fetcher
-// ============================================================================
-
-export async function fetchPostData(
-  postSlug: string,
-  tursoUrl: string,
-  authToken: string
-): Promise<PostData> {
-  // Fetch from Turso / Dear Creative API
-  const response = await fetch(
-    `${tursoUrl.replace(/\/$/, '')}/api/posts/${encodeURIComponent(postSlug)}/full`,
-    {
-      headers: {
-        Authorization: `Bearer ${authToken}`,
-        'Content-Type': 'application/json',
-      },
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch post: ${response.status} ${response.statusText}`);
-  }
-
-  const data = await response.json();
-
-  // Transform to our expected format
-  return {
-    id: data.id,
-    slug: data.slug,
-    title: data.title,
-    teaserText: data.teaserText,
-    publishedAt: data.publishedAt,
-    audioUrl: data.audioUrl,
-    audioVoice: data.audioVoice,
-    bannerUrls: data.bannerUrls || {},
-    videoUrls: data.videoUrls || {},
-    keyQuote: data.keyQuote,
-  };
-}
-
-// ============================================================================
 // Main Generation Function
 // ============================================================================
 
 export interface GenerateClipsOptions {
   postSlug: string;
-  paymentConfig?: X402Config;
-  outputFormats?: Array<'9:16' | '16:9' | '1:1'>;
+  db: DearCreativeDb;
+  pixelsBaseUrl: string;
+  outputFormats?: Array<"9:16" | "16:9" | "1:1">;
   durationSeconds?: number;
   usePostAudio?: boolean;
-  pixelsBaseUrl?: string;
-  tursoUrl?: string;
-  tursoAuthToken?: string;
+  /** When set, skips DB load and uses this payload (for tests or preloaded data). */
+  post?: PostData;
 }
 
 export async function generateDearCreativeClips(
-  options: GenerateClipsOptions
+  options: GenerateClipsOptions,
 ): Promise<DearCreativeClipsResult> {
   const {
     postSlug,
-    paymentConfig,
-    outputFormats = ['9:16', '16:9', '1:1'],
+    db,
+    pixelsBaseUrl,
+    outputFormats = ["9:16", "16:9", "1:1"],
     durationSeconds = 15.5,
     usePostAudio = true,
-    pixelsBaseUrl = process.env.PIXELS_API_URL || 'http://localhost:3001',
-    tursoUrl = process.env.TURSO_DATABASE_URL || 'http://localhost:8080',
-    tursoAuthToken = process.env.TURSO_AUTH_TOKEN || '',
+    post: postOverride,
   } = options;
 
-  // 1. Fetch post data
-  const post = await fetchPostData(postSlug, tursoUrl, tursoAuthToken);
+  if (!pixelsBaseUrl.trim()) {
+    throw new Error("pixelsBaseUrl is required");
+  }
+
+  const post =
+    postOverride ??
+    (await loadPixelsPostDataFromDb(db, postSlug));
+  if (!post) {
+    throw new Error(`Post not found or missing clip assets: ${postSlug}`);
+  }
 
   // Validate required fields
   if (!post.audioUrl && usePostAudio) {
@@ -904,8 +801,7 @@ export async function generateDearCreativeClips(
     throw new Error('Post missing required video URLs (16:9, 9:16)');
   }
 
-  // 2. Initialize Pixels client
-  const pixels = new PixelsHttpClient(pixelsBaseUrl, paymentConfig);
+  const pixels = new PixelsHttpClient(pixelsBaseUrl);
 
   // 3. Generate clips for each format
   const results: Partial<DearCreativeClipsResult> = {};
@@ -925,10 +821,14 @@ export async function generateDearCreativeClips(
         width = DEFAULT_WIDTH_16_9;
         height = DEFAULT_HEIGHT_16_9;
         break;
-      case '1:1':
+      case "1:1":
         width = DEFAULT_WIDTH_1_1;
         height = DEFAULT_HEIGHT_1_1;
         break;
+      default: {
+        const _exhaustive: never = aspectRatio;
+        throw new Error(`Unsupported aspect ratio: ${_exhaustive}`);
+      }
     }
 
     // Create project
@@ -1002,77 +902,10 @@ export async function generateDearCreativeClips(
   return results as DearCreativeClipsResult;
 }
 
-// ============================================================================
-// Billing Helpers (X402 USDC on Base)
-// ============================================================================
-
-async function estimateRenderCost(
-  durationSeconds: number,
-  quality: 'low' | 'medium' | 'high' | 'ultra' = 'high',
-  gpuDensity: 'none' | 'light' | 'medium' | 'heavy' = 'light',
-  premium = false
-): Promise<{ usdc6: number; formatted: string }> {
-  const INTERVAL_COST_RETAIL_USDC6 = 1_000_000; // $1.00 per 30s
-  const INTERVAL_COST_PREMIUM_USDC6 = 500_000; // $0.50 per 30s
-
-  const intervalCostUsdc6 = premium ? INTERVAL_COST_PREMIUM_USDC6 : INTERVAL_COST_RETAIL_USDC6;
-  const intervals = Math.ceil(durationSeconds / 30);
-
-  const qualityMultiplier: Record<string, number> = {
-    low: 0.5,
-    medium: 0.75,
-    high: 1.0,
-    ultra: 1.5,
-  };
-
-  const gpuMultiplier: Record<string, number> = {
-    none: 1.0,
-    light: 1.2,
-    medium: 1.5,
-    heavy: 2.0,
-  };
-
-  const baseCost = intervalCostUsdc6 * intervals;
-  const adjustedCost = Math.round(
-    baseCost * qualityMultiplier[quality] * gpuMultiplier[gpuDensity]
-  );
-
-  return {
-    usdc6: adjustedCost,
-    formatted: `$${(adjustedCost / 1_000_000).toFixed(6)}`,
-  };
-}
-
-async function checkAccountBalance(
-  accountId: string,
-  alchemyApiKey: string
-): Promise<{ balance: bigint; formatted: string }> {
-  const publicClient = createPublicClient({
-    chain: base,
-    transport: http(`https://base-mainnet.g.alchemy.com/v2/${alchemyApiKey}`),
-  });
-
-  const crtvaiAddress = '0x...'; // CRTVAI token address on Base
-  // This would need the actual CRTVAI contract ABI
-  // For now, return mock
-  return {
-    balance: BigInt(0),
-    formatted: '$0.00',
-  };
-}
-
-// ============================================================================
-// Export all
-// ============================================================================
-
 export {
   BRANDING,
   secondsToFrames,
-  PixelsHttpClient,
   createBaseProject,
   createVideoTracks,
-  createImportMediaOps,
   createTimelineOps,
-  estimateRenderCost,
-  checkAccountBalance,
 };
