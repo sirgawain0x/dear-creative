@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useState } from "react";
+import { OracleIngestForm } from "@/components/admin/oracle-ingest-form";
 import { useAuthSession } from "@/components/providers/app-providers";
 
 export function AdminConsole() {
@@ -183,6 +184,12 @@ export function AdminConsole() {
               </span>
             </Link>
           </div>
+        </div>
+      ) : null}
+      {session?.isAdmin ? (
+        <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs dark:border-zinc-800 dark:bg-zinc-900/60">
+          <h3 className="text-sm font-semibold">Oracle ingest</h3>
+          <OracleIngestForm getAccessToken={getAccessToken} />
         </div>
       ) : null}
       {session ? (
