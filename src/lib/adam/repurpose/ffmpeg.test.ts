@@ -1,8 +1,51 @@
 import { mkdtempSync } from "node:fs";
+import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
-import { buildNarratedSlidesMp4, probeAudioDurationSeconds } from "./ffmpeg";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  buildNarratedSlidesMp4,
+  probeAudioDurationSeconds,
+  resetRepurposeFfmpegEnvCacheForTests,
+  resolveRepurposeFfmpegEnv,
+  tailFfmpegStderrForLog,
+} from "./ffmpeg";
+
+describe("resolveRepurposeFfmpegEnv", () => {
+  afterEach(() => {
+    resetRepurposeFfmpegEnvCacheForTests();
+  });
+
+  it("writes fonts.conf under tmpdir when cwd is read-only", async () => {
+    const roCwd = await mkdtemp(join(tmpdir(), "dear-ro-cwd-"));
+    await chmod(roCwd, 0o555);
+    const previous = process.cwd();
+    process.chdir(roCwd);
+    try {
+      resetRepurposeFfmpegEnvCacheForTests();
+      const env = await resolveRepurposeFfmpegEnv();
+      expect(env.FONTCONFIG_FILE).toContain("dear-creative-fontconfig");
+      expect(env.FONTCONFIG_FILE).toContain(tmpdir());
+      expect(env.FONTCONFIG_FILE).not.toContain("repurpose-fontconfig.conf");
+    } finally {
+      process.chdir(previous);
+      await chmod(roCwd, 0o755);
+      await rm(roCwd, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("tailFfmpegStderrForLog", () => {
+  it("keeps the last 2KB of stderr for error messages", () => {
+    const headMarker = "HEAD_SHOULD_BE_TRUNCATED";
+    const tailMarker = "ERROR_MARKER_AT_END";
+    const stderr = `${headMarker}${"x".repeat(3000)}${tailMarker}`;
+    const tailed = tailFfmpegStderrForLog(stderr);
+    expect(tailed.length).toBeLessThanOrEqual(2048);
+    expect(tailed).toContain(tailMarker);
+    expect(tailed).not.toContain(headMarker);
+  });
+});
 
 describe("probeAudioDurationSeconds", () => {
   it("throws when probe output has no duration", async () => {
