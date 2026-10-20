@@ -2,6 +2,10 @@
 
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { stripHtmlTags } from "@/lib/posts/reading-time";
+import {
+  LISTEN_SKIP_BACK_ARIA,
+  LISTEN_SKIP_FORWARD_ARIA,
+} from "./dispatch-audio-player-controls";
 import { handleDispatchAudioDocumentClick } from "./dispatch-audio-player-navigation";
 import { readerStoredNarrationLabel } from "./dispatch-audio-reader-label";
 import {
@@ -456,6 +460,16 @@ export function DispatchAudioPlayer({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
+            {showSeekControls ? (
+              <button
+                type="button"
+                onClick={handleSkipBackward}
+                className="rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs font-medium text-zinc-700 shadow-xs hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                aria-label={LISTEN_SKIP_BACK_ARIA}
+              >
+                −10s
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => void handleTogglePlay()}
@@ -480,24 +494,14 @@ export function DispatchAudioPlayer({
               )}
             </button>
             {showSeekControls ? (
-              <>
-                <button
-                  type="button"
-                  onClick={handleSkipBackward}
-                  className="rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs font-medium text-zinc-700 shadow-xs hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                  aria-label="Seek back 10 seconds"
-                >
-                  −10s
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSkipForward}
-                  className="rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs font-medium text-zinc-700 shadow-xs hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                  aria-label="Seek forward 10 seconds"
-                >
-                  +10s
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={handleSkipForward}
+                className="rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs font-medium text-zinc-700 shadow-xs hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                aria-label={LISTEN_SKIP_FORWARD_ARIA}
+              >
+                +10s
+              </button>
             ) : null}
           </div>
           <div>
