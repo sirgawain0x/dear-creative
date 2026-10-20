@@ -32,11 +32,15 @@ describe("PixelsHttpClient", () => {
     const client = new PixelsHttpClient("https://pixels.example.com");
     await client.createProject({ name: "Test", width: 1080, height: 1920 });
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    const headers = init.headers as Record<string, string>;
-    expect(headers["X-PAYMENT"]).toBeUndefined();
-    expect(headers["Content-Type"]).toBe("application/json");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://pixels.example.com/v1/projects",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.not.objectContaining({
+          "X-PAYMENT": expect.anything(),
+        }),
+      }),
+    );
   });
 });
 

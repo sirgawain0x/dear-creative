@@ -73,7 +73,6 @@ describe("fetchPublishedPostAudioFromApi", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "https://news.example.com/api/posts/demo-slug/audio",
     );
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
-    expect(init?.headers).toBeUndefined();
+    expect(fetchMock.mock.calls[0]?.length).toBe(1);
   });
 });
