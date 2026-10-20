@@ -1,3 +1,4 @@
+import { isAllowlistedCoverImageUrl } from "@/lib/images/optimized-remote-image-allowlist";
 import { resolveGroveOrIpfsUrl } from "@/lib/storage/lens-grove";
 
 /**
@@ -26,6 +27,42 @@ export function extractFirstImageFromHtml(
     return resolveGroveOrIpfsUrl(mdMatch[1].trim());
   }
 
+  return null;
+}
+
+function* iterateImageCandidates(
+  html: string,
+): Generator<string, void, undefined> {
+  const imgRe = /<img\s+[^>]*src=["']([^"']+)["']/gi;
+  let imgMatch: RegExpExecArray | null;
+  while ((imgMatch = imgRe.exec(html)) !== null) {
+    if (imgMatch[1]) {
+      yield resolveGroveOrIpfsUrl(imgMatch[1].trim());
+    }
+  }
+
+  const mdRe =
+    /!\[[\s\S]*?\]\s*\(\s*((?:https?:\/\/|\/|ipfs:\/\/|lens:\/\/|data:image\/)[^\s)]+)\s*\)/gi;
+  let mdMatch: RegExpExecArray | null;
+  while ((mdMatch = mdRe.exec(html)) !== null) {
+    if (mdMatch[1]) {
+      yield resolveGroveOrIpfsUrl(mdMatch[1].trim());
+    }
+  }
+}
+
+/** First image in HTML whose URL is allowlisted for public cover surfaces. */
+export function extractFirstAllowlistedImageFromHtml(
+  html: string | null | undefined,
+): string | null {
+  if (!html) {
+    return null;
+  }
+  for (const candidate of iterateImageCandidates(html)) {
+    if (isAllowlistedCoverImageUrl(candidate)) {
+      return candidate;
+    }
+  }
   return null;
 }
 
@@ -228,6 +265,57 @@ export function generateDeterministicBannerDataUrl(options: {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
+function bannerFallbackOptions(post: { title?: string; slug?: string }) {
+  return { title: post.title, slug: post.slug };
+}
+
+function finalizeResolvedCoverUrl(
+  candidate: string,
+  bannerOptions: { title?: string; slug?: string },
+): string {
+  const trimmed = candidate.trim();
+  if (!trimmed) {
+    return generateDeterministicBannerDataUrl(bannerOptions);
+  }
+  if (trimmed.startsWith("data:") || trimmed.startsWith("/")) {
+    return trimmed;
+  }
+  if (isAllowlistedCoverImageUrl(trimmed)) {
+    return trimmed;
+  }
+  return generateDeterministicBannerDataUrl(bannerOptions);
+}
+
+/**
+ * Resolves cover art for public list surfaces (no paid body HTML).
+ */
+export function resolvePublicPostCoverImage(post: {
+  coverImage?: string | null;
+  bodyHtml?: string | null;
+  slug?: string;
+  title?: string;
+}): string {
+  const fallback = bannerFallbackOptions(post);
+
+  if (post.coverImage?.trim()) {
+    return finalizeResolvedCoverUrl(
+      resolveGroveOrIpfsUrl(post.coverImage.trim()),
+      fallback,
+    );
+  }
+
+  if (post.slug === "hello-dear-creative") {
+    return "/images/hello-dear-creative-banner.jpg";
+  }
+
+  const bodyImage = extractFirstAllowlistedImageFromHtml(post.bodyHtml);
+  if (bodyImage) {
+    return finalizeResolvedCoverUrl(bodyImage, fallback);
+  }
+
+  return generateDeterministicBannerDataUrl(fallback);
+}
+
 /**
  * Resolves the primary banner / thumbnail image URL for any post.
  */
@@ -239,9 +327,14 @@ export function resolvePostCoverImage(post: {
   slug?: string;
   title?: string;
 }): string {
+  const fallback = bannerFallbackOptions(post);
+
   // 1. Explicit cover image
   if (post.coverImage && post.coverImage.trim()) {
-    return resolveGroveOrIpfsUrl(post.coverImage.trim());
+    return finalizeResolvedCoverUrl(
+      resolveGroveOrIpfsUrl(post.coverImage.trim()),
+      fallback,
+    );
   }
 
   // 2. Sample post special asset
@@ -252,14 +345,14 @@ export function resolvePostCoverImage(post: {
   // 3. Image extracted from post bodyHtml
   const bodyImage = extractFirstImageFromHtml(post.bodyHtml);
   if (bodyImage) {
-    return bodyImage;
+    return finalizeResolvedCoverUrl(bodyImage, fallback);
   }
 
   // 4. Image extracted from post markdown
   if (post.markdown) {
     const mdImage = extractFirstImageFromHtml(post.markdown);
     if (mdImage) {
-      return mdImage;
+      return finalizeResolvedCoverUrl(mdImage, fallback);
     }
   }
 
@@ -267,13 +360,10 @@ export function resolvePostCoverImage(post: {
   if (post.emailHtml) {
     const emailImage = extractFirstImageFromHtml(post.emailHtml);
     if (emailImage) {
-      return emailImage;
+      return finalizeResolvedCoverUrl(emailImage, fallback);
     }
   }
 
   // 6. Deterministic vector banner
-  return generateDeterministicBannerDataUrl({
-    title: post.title,
-    slug: post.slug,
-  });
+  return generateDeterministicBannerDataUrl(fallback);
 }
