@@ -46,9 +46,19 @@ describe("0015_cowriters migration", () => {
       args: ["post-1", "alpha", "Alpha", "draft"],
     });
     await client.execute({
-      sql: `INSERT INTO posts (id, slug, title, status, created_at, updated_at)
+      sql: `INSERT INTO authors (id, name, slug, payout_address, created_at, updated_at)
             VALUES (?, ?, ?, ?, unixepoch() * 1000, unixepoch() * 1000)`,
-      args: ["post-2", "beta", "Beta", "published"],
+      args: [
+        "author-1",
+        "Primary Author",
+        "primary-author",
+        "0x1111111111111111111111111111111111111111",
+      ],
+    });
+    await client.execute({
+      sql: `INSERT INTO posts (id, slug, title, status, author_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, unixepoch() * 1000, unixepoch() * 1000)`,
+      args: ["post-2", "beta", "Beta", "published", "author-1"],
     });
 
     const migrationSql = readFileSync(
@@ -78,6 +88,7 @@ describe("0015_cowriters migration", () => {
           role: "author",
           shareBps: 10_000,
           status: "accepted",
+          writerId: "author-1",
         }),
       ]),
     );

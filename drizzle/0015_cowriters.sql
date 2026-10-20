@@ -10,7 +10,7 @@ CREATE TABLE `writer_invites` (
 	`status` text DEFAULT 'pending' NOT NULL,
 	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
 	FOREIGN KEY (`post_id`) REFERENCES `posts`(`id`) ON UPDATE no action ON DELETE no action,
-	FOREIGN KEY (`accepted_writer_id`) REFERENCES `writers`(`id`) ON UPDATE no action ON DELETE no action
+	FOREIGN KEY (`accepted_writer_id`) REFERENCES `authors`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
 CREATE INDEX `writer_invites_post_id_idx` ON `writer_invites` (`post_id`);--> statement-breakpoint
@@ -25,7 +25,7 @@ CREATE TABLE `post_writers` (
 	`status` text DEFAULT 'pending' NOT NULL,
 	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
 	FOREIGN KEY (`post_id`) REFERENCES `posts`(`id`) ON UPDATE no action ON DELETE no action,
-	FOREIGN KEY (`writer_id`) REFERENCES `writers`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`writer_id`) REFERENCES `authors`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`invite_id`) REFERENCES `writer_invites`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
@@ -46,7 +46,7 @@ INSERT INTO `post_writers` (`id`, `post_id`, `writer_id`, `invite_id`, `role`, `
 SELECT
 	'author:' || `id`,
 	`id`,
-	NULL,
+	`author_id`,
 	NULL,
 	'author',
 	10000,
