@@ -14,6 +14,7 @@ import { computeApprovalContentHash } from "@/lib/approval/content-hash";
 import { writeAuditEvent } from "@/lib/audit/write-audit-event";
 import { htmlToMarkdown } from "@/lib/html/html-to-markdown";
 import { ensureArticleHtml } from "@/lib/html/markdown-to-html";
+import { maybeSchedulePublishedPostNarrationRegeneration } from "@/lib/audio/schedule-narration-regeneration";
 import { loadFullPostContent } from "@/lib/paywall/full-post-content";
 
 export type AdminPostRecord = {
@@ -327,6 +328,9 @@ export async function updateAdminPost(
     })
     .where(eq(posts.id, existing.id));
 
+  const explicitAudioUpdate =
+    input.audioUrl !== undefined || input.audioVoice !== undefined;
+
   if (input.audioUrl !== undefined || input.audioVoice !== undefined) {
     await setPostAudioColumns(db, existing.id, {
       audioUrl:
@@ -337,6 +341,18 @@ export async function updateAdminPost(
           : undefined,
     });
   }
+
+  maybeSchedulePublishedPostNarrationRegeneration({
+    db,
+    postId: existing.id,
+    existing,
+    nextStatus,
+    nextTitle,
+    nextTeaserText,
+    nextBodyHtml,
+    explicitAudioUpdate,
+    actor,
+  });
 
   // Keep pending approval contentHash synchronized if a draft post is edited
   const [approvalRow] = await db

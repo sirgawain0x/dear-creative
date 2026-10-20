@@ -5,10 +5,10 @@ import { setPostAudioColumns } from "@/db/ensure-schema";
 import { requireStudioOrAdamAuth } from "@/lib/adam/studio-auth";
 import { writeAuditEvent } from "@/lib/audit/write-audit-event";
 import {
-  generatePostNarrationMp3,
   isNarrationVoice,
   NARRATION_VOICES,
 } from "@/lib/audio/narration";
+import { regenerateStoredPostNarration } from "@/lib/audio/regenerate-stored-post-narration";
 import { getAdminPostByIdOrSlug } from "@/lib/posts/manage-posts";
 import { publishedPostCacheTag } from "@/lib/posts/published-posts";
 
@@ -57,44 +57,22 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
 
-  try {
-    const narration = await generatePostNarrationMp3({
-      slug: post.slug,
-      title: post.title,
-      teaserText: post.teaserText,
-      bodyHtml: post.bodyHtml ?? post.emailHtml,
-      voice,
-    });
+  const result = await regenerateStoredPostNarration(db, post.id, {
+    voice,
+    actor: auth.actor,
+  });
 
-    await setPostAudioColumns(db, post.id, {
-      audioUrl: narration.url,
-      audioVoice: voice,
-    });
-    await writeAuditEvent(db, {
-      actor: auth.actor,
-      action: "post.narration_generated",
-      entityType: "post",
-      entityId: post.id,
-      payload: {
-        voice,
-        uri: narration.uri,
-        bytes: narration.bytes,
-        chunks: narration.chunks,
-        provider: narration.provider,
-      },
-    });
-
-    revalidateTag(publishedPostCacheTag(post.slug), "max");
-
-    return NextResponse.json({ ok: true, ...narration });
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Narration generation failed";
+  if (!result.ok) {
     return NextResponse.json(
-      { error: "Narration generation failed", details: message },
+      {
+        error: "Narration generation failed",
+        details: result.reason,
+      },
       { status: 500 },
     );
   }
+
+  return NextResponse.json({ ok: true, url: result.url });
 }
 
 /** Removes the stored narration so the post falls back to on-page speech. */
