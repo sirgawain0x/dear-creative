@@ -363,7 +363,9 @@ export function DispatchAudioPlayer({
     fallbackToBrowserSpeech();
   }, [fallbackToBrowserSpeech, startKokoroPlayback]);
 
-  playLiveNarrationRef.current = playLiveNarration;
+  useLayoutEffect(() => {
+    playLiveNarrationRef.current = playLiveNarration;
+  }, [playLiveNarration]);
 
   const playStoredMp3 = useCallback(async () => {
     if (!staticAudioSrc || !isActiveRef.current) return;
