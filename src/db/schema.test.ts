@@ -8,6 +8,7 @@ import {
   deliveryChannelEnum,
   payMethodEnum,
   postSourceEnum,
+  postWriters,
   posts,
   postStatusEnum,
   predictions,
@@ -57,6 +58,11 @@ describe("schema enums", () => {
       "invalid",
     ]);
     expect(predictions).toBeDefined();
+  });
+
+  it("links post_writers.writer_id to authors for payout resolution", () => {
+    expect(postWriters.writerId).toBeDefined();
+    expect(postWriters.writerId.name).toBe("writer_id");
   });
 
   it("defines authors table and post paywall fields", () => {

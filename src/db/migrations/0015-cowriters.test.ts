@@ -93,6 +93,21 @@ describe("0015_cowriters migration", () => {
       ]),
     );
 
+    await expect(
+      client.execute({
+        sql: `INSERT INTO post_writers (id, post_id, writer_id, role, share_bps, status, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, unixepoch() * 1000)`,
+        args: [
+          "bad-writer",
+          "post-1",
+          "not-an-author",
+          "cowriter",
+          0,
+          "pending",
+        ],
+      }),
+    ).rejects.toThrow();
+
     client.close();
   });
 
