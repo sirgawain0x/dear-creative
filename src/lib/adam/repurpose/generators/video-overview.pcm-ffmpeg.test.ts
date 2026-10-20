@@ -1,10 +1,10 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
 import ffmpegStatic from "ffmpeg-static";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { geminiTtsPayloadToMp3 } from "@/lib/audio/gemini-tts-audio";
 import {
   buildNarratedSlidesMp4,
@@ -19,6 +19,14 @@ const ffmpegPath =
   typeof ffmpegStatic === "string" && ffmpegStatic.length > 0
     ? ffmpegStatic
     : null;
+
+const workDirs: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    workDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
+  );
+});
 
 async function ffmpegSupportsDrawtext(): Promise<boolean> {
   if (!ffmpegPath) {
@@ -45,9 +53,10 @@ function makeGeminiPcmFixture(byteLength = 24000 * 2 * 2): Buffer {
 describe("video overview PCM + ffmpeg integration", () => {
   it("rejects raw PCM written as .mp3 without normalization", async () => {
     if (!ffmpegPath) {
-          return;
-        }
+      return;
+    }
     const workDir = await mkdtemp(join(tmpdir(), "dear-pcm-bad-"));
+    workDirs.push(workDir);
     const rawPath = join(workDir, "narration-0.mp3");
     await writeFile(rawPath, makeGeminiPcmFixture());
 
@@ -77,6 +86,7 @@ describe("video overview PCM + ffmpeg integration", () => {
     );
 
     const workDir = await mkdtemp(join(tmpdir(), "dear-pcm-good-"));
+    workDirs.push(workDir);
     const audioPath = join(workDir, "narration-0.mp3");
     await writeFile(audioPath, mp3);
 

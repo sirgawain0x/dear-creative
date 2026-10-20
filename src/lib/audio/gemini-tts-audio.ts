@@ -10,13 +10,118 @@ export function parseSampleRateFromAudioMime(mimeType: string): number | null {
   return Number.isFinite(rate) && rate > 0 ? rate : null;
 }
 
-/** True when the buffer looks like MP3 (ID3 tag or frame sync), not raw PCM. */
-export function isLikelyMp3Buffer(buf: Buffer): boolean {
-  if (buf.length >= 3 && buf[0] === 0x49 && buf[1] === 0x44 && buf[2] === 0x33) {
-    return true;
+const UNSUPPORTED_TTS_FORMAT = "Unsupported TTS audio format";
+
+function assertNotOggOrFlac(buf: Buffer): void {
+  if (buf.length >= 4 && buf.subarray(0, 4).toString("ascii") === "OggS") {
+    throw new Error(UNSUPPORTED_TTS_FORMAT);
   }
-  if (buf.length >= 2 && buf[0] === 0xff && (buf[1]! & 0xe0) === 0xe0) {
-    return true;
+  if (buf.length >= 4 && buf.subarray(0, 4).toString("ascii") === "fLaC") {
+    throw new Error(UNSUPPORTED_TTS_FORMAT);
+  }
+}
+
+function skipId3Tag(buf: Buffer): number {
+  if (buf.length < 10) {
+    return 0;
+  }
+  if (buf.subarray(0, 3).toString("ascii") !== "ID3") {
+    return 0;
+  }
+  const size =
+    ((buf[6]! & 0x7f) << 21) |
+    ((buf[7]! & 0x7f) << 14) |
+    ((buf[8]! & 0x7f) << 7) |
+    (buf[9]! & 0x7f);
+  return 10 + size;
+}
+
+const MPEG1_L3_BITRATE_KBPS = [
+  0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0,
+];
+const MPEG2_L3_BITRATE_KBPS = [
+  0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0,
+];
+
+function mp3FrameLengthAt(buf: Buffer, offset: number): number | null {
+  if (offset + 4 > buf.length) {
+    return null;
+  }
+  if (buf[offset] !== 0xff || (buf[offset + 1]! & 0xe0) !== 0xe0) {
+    return null;
+  }
+
+  const b1 = buf[offset + 1]!;
+  const b2 = buf[offset + 2]!;
+
+  const versionBits = (b1 >> 3) & 0x03;
+  if (versionBits === 0x01) {
+    return null;
+  }
+  const layerBits = (b1 >> 1) & 0x03;
+  if (layerBits === 0x00) {
+    return null;
+  }
+  if (layerBits !== 0x01) {
+    return null;
+  }
+
+  const bitrateIndex = (b2 >> 4) & 0x0f;
+  if (bitrateIndex === 0x0f || bitrateIndex === 0x00) {
+    return null;
+  }
+
+  const sampleRateIndex = (b2 >> 2) & 0x03;
+  if (sampleRateIndex === 0x03) {
+    return null;
+  }
+
+  const padding = (b2 >> 1) & 0x01;
+
+  let bitrateKbps: number;
+  let sampleRate: number;
+  if (versionBits === 0x03) {
+    bitrateKbps = MPEG1_L3_BITRATE_KBPS[bitrateIndex]!;
+    sampleRate = [44100, 48000, 32000, 0][sampleRateIndex]!;
+  } else if (versionBits === 0x02) {
+    bitrateKbps = MPEG2_L3_BITRATE_KBPS[bitrateIndex]!;
+    sampleRate = [22050, 24000, 16000, 0][sampleRateIndex]!;
+  } else {
+    bitrateKbps = MPEG2_L3_BITRATE_KBPS[bitrateIndex]!;
+    sampleRate = [11025, 12000, 8000, 0][sampleRateIndex]!;
+  }
+
+  if (!bitrateKbps || !sampleRate) {
+    return null;
+  }
+
+  const scale = versionBits === 0x03 ? 144 : 72;
+  return Math.floor((scale * bitrateKbps * 1000) / sampleRate) + padding;
+}
+
+function hasValidMp3FrameSync(buf: Buffer, offset: number): boolean {
+  const frameLen = mp3FrameLengthAt(buf, offset);
+  if (frameLen === null || frameLen < 4) {
+    return false;
+  }
+  const next = offset + frameLen;
+  if (next + 2 > buf.length) {
+    return buf.length - offset >= 4;
+  }
+  return buf[next] === 0xff && (buf[next + 1]! & 0xe0) === 0xe0;
+}
+
+/** True when the buffer contains a validated MP3 (ID3 + frames or frame sync chain). */
+export function isLikelyMp3Buffer(buf: Buffer): boolean {
+  if (buf.length < 4) {
+    return false;
+  }
+  if (buf.subarray(0, 3).toString("ascii") === "ID3") {
+    const audioStart = skipId3Tag(buf);
+    return hasValidMp3FrameSync(buf, audioStart);
+  }
+  if (buf[0] === 0xff && (buf[1]! & 0xe0) === 0xe0) {
+    return hasValidMp3FrameSync(buf, 0);
   }
   return false;
 }
@@ -26,6 +131,8 @@ export function isLikelyMp3Buffer(buf: Buffer): boolean {
  * while advertising audio/mp3 or audio/L16;rate=24000.
  */
 export function geminiTtsPayloadToMp3(buf: Buffer, mimeType: string): Buffer {
+  assertNotOggOrFlac(buf);
+
   if (isLikelyMp3Buffer(buf)) {
     return buf;
   }
@@ -41,7 +148,7 @@ export function geminiTtsPayloadToMp3(buf: Buffer, mimeType: string): Buffer {
   }
 
   if (!wav) {
-    throw new Error(`Unsupported TTS audio format: ${mimeType}`);
+    throw new Error(`${UNSUPPORTED_TTS_FORMAT}: ${mimeType}`);
   }
 
   return encodePcmToMp3(wav.pcm, wav.sampleRate, wav.channels);

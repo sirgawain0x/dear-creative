@@ -1,5 +1,5 @@
 import { execFile as execFileCb } from "node:child_process";
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import ffmpegStatic from "ffmpeg-static";
@@ -32,28 +32,41 @@ function rethrowFfmpegExecError(error: unknown): never {
   throw error;
 }
 
-let repurposeFontconfigPath: string | null = null;
+let repurposeFontconfigEnvPromise: Promise<Record<string, string>> | null =
+  null;
 
-/** Minimal fontconfig for Lambda (ffmpeg-static builds enable fontconfig). */
-export async function resolveRepurposeFfmpegEnv(): Promise<
-  Record<string, string>
-> {
+/** @internal */
+export function resetRepurposeFfmpegEnvCacheForTests(): void {
+  repurposeFontconfigEnvPromise = null;
+}
+
+async function writeRepurposeFontconfigEnv(): Promise<Record<string, string>> {
   const fontDir = join(process.cwd(), "src/assets/fonts");
-  if (!repurposeFontconfigPath) {
-    repurposeFontconfigPath = join(fontDir, "repurpose-fontconfig.conf");
-    const cacheDir = join(tmpdir(), "fontconfig-cache-dear-creative");
-    const xml = `<?xml version="1.0"?>
+  const configDir = join(tmpdir(), "dear-creative-fontconfig");
+  const configPath = join(configDir, "fonts.conf");
+  const cacheDir = join(tmpdir(), "fontconfig-cache-dear-creative");
+  await mkdir(configDir, { recursive: true });
+  const xml = `<?xml version="1.0"?>
 <!DOCTYPE fontconfig SYSTEM "fonts.dtd">
 <fontconfig>
   <dir>${fontDir}</dir>
   <cachedir>${cacheDir}</cachedir>
 </fontconfig>
 `;
-    await writeFile(repurposeFontconfigPath, xml, "utf8");
-  }
+  await writeFile(configPath, xml, "utf8");
   return {
-    FONTCONFIG_FILE: repurposeFontconfigPath,
+    FONTCONFIG_FILE: configPath,
   };
+}
+
+/** Minimal fontconfig for Lambda (ffmpeg-static builds enable fontconfig). */
+export async function resolveRepurposeFfmpegEnv(): Promise<
+  Record<string, string>
+> {
+  if (!repurposeFontconfigEnvPromise) {
+    repurposeFontconfigEnvPromise = writeRepurposeFontconfigEnv();
+  }
+  return repurposeFontconfigEnvPromise;
 }
 
 export function resolveFfmpegBinaryPath(): string {
