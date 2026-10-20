@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdamApiToken } from "@/lib/adam/require-auth";
 import { getPrivyAppId } from "@/lib/privy/config";
+import { isWalletEnabled } from "@/lib/wallet/feature-flag";
 
 export async function GET() {
   const privyAppId = getPrivyAppId() ?? null;
@@ -8,5 +9,6 @@ export async function GET() {
     privyAppId,
     privyConfigured: Boolean(privyAppId),
     adamTokenConfigured: Boolean(getAdamApiToken()),
+    walletEnabled: isWalletEnabled(),
   });
 }
