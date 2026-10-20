@@ -18,7 +18,7 @@ export const SITE_NAV_LINKS: readonly SiteNavLink[] = [
   { href: "/subscribe", label: "Subscribe", matchPrefix: true },
   { href: "/adam", label: "Studio", matchPrefix: true, requiresAuth: true },
   { href: "/approvals", label: "Approvals", matchPrefix: true, requiresAuth: true },
-  { href: "/admin", label: "Sign-In/Sign-Out", matchPrefix: true },
+  { href: "/admin", label: "Sign In", matchPrefix: true },
 ] as const;
 
 export function isNavLinkActive(pathname: string | null, link: SiteNavLink): boolean {
@@ -71,7 +71,7 @@ export function SiteHeader() {
           {visibleLinks.map((link) => {
             const active = isNavLinkActive(pathname, link);
             const isAuthAction = link.href === "/admin";
-            const label = isAuthAction && isSignedIn ? "Sign-Out" : link.label;
+            const label = isAuthAction && isSignedIn ? "Sign Out" : link.label;
 
             if (isAuthAction && isSignedIn) {
               return (
@@ -94,7 +94,7 @@ export function SiteHeader() {
                     className="rounded-full border border-zinc-200 px-3 py-1 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 hover:text-red-600 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-red-400"
                     title="Sign Out"
                   >
-                    Sign-Out
+                    Sign Out
                   </button>
                 </div>
               );
@@ -153,7 +153,7 @@ export function SiteHeader() {
             {visibleLinks.map((link) => {
               const active = isNavLinkActive(pathname, link);
               const isAuthAction = link.href === "/admin";
-              const label = isAuthAction && isSignedIn ? "Sign-Out" : link.label;
+              const label = isAuthAction && isSignedIn ? "Sign Out" : link.label;
 
               if (isAuthAction && isSignedIn) {
                 return (
@@ -178,7 +178,7 @@ export function SiteHeader() {
                       }}
                       className="block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
                     >
-                      Sign-Out
+                      Sign Out
                     </button>
                   </li>
                 );
