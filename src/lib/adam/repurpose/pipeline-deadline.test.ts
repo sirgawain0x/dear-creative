@@ -86,7 +86,9 @@ describe("fetchWithRepurposePipelineDeadline errors", () => {
 
 describe("wrapFetchForRepurposePipeline", () => {
   it("preserves Request method, body, and headers", async () => {
-    const fetchFn = vi.fn(async () => new Response("ok"));
+    const fetchFn = vi.fn<
+      (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+    >(async () => new Response("ok"));
     const wrapped = wrapFetchForRepurposePipeline(
       fetchFn as typeof fetch,
       10_000,
@@ -103,7 +105,7 @@ describe("wrapFetchForRepurposePipeline", () => {
     await wrapped(request);
 
     expect(fetchFn).toHaveBeenCalledTimes(1);
-    const passed = fetchFn.mock.calls[0][0];
+    const [passed] = fetchFn.mock.calls[0] as [RequestInfo | URL];
     expect(passed).toBeInstanceOf(Request);
     const req = passed as Request;
     expect(req.method).toBe("POST");

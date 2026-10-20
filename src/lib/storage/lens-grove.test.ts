@@ -35,8 +35,12 @@ describe("uploadToLensGrove", () => {
     await uploadToLensGrove(file, "clip.mp4", controller.signal);
 
     expect(fetchMock).toHaveBeenCalled();
-    for (const [, init] of fetchMock.mock.calls) {
-      expect(init?.signal).toBe(controller.signal);
+    for (const call of fetchMock.mock.calls) {
+      const [input, init] = call as [RequestInfo | URL, RequestInit?];
+      const signal =
+        init?.signal ??
+        (input instanceof Request ? input.signal : undefined);
+      expect(signal).toBe(controller.signal);
     }
   });
 });
