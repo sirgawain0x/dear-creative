@@ -1,4 +1,5 @@
 import { TwitterApi } from "twitter-api-v2";
+import { readXOAuth1UserCredentials } from "@/lib/x/credentials";
 
 export interface TwitterClientLike {
   v2: {
@@ -20,20 +21,16 @@ export function getTwitterClient(): TwitterClientLike | null {
   if (twitterClientOverride !== undefined) {
     return twitterClientOverride;
   }
-  const appKey = process.env.X_API_KEY;
-  const appSecret = process.env.X_API_SECRET;
-  const accessToken = process.env.X_ACCESS_TOKEN;
-  const accessSecret = process.env.X_ACCESS_SECRET;
-
-  if (!appKey || !appSecret || !accessToken || !accessSecret) {
+  const creds = readXOAuth1UserCredentials();
+  if (!creds) {
     return null;
   }
 
   return new TwitterApi({
-    appKey,
-    appSecret,
-    accessToken,
-    accessSecret,
+    appKey: creds.apiKey,
+    appSecret: creds.apiSecret,
+    accessToken: creds.accessToken,
+    accessSecret: creds.accessTokenSecret,
   });
 }
 

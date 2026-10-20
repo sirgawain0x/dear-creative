@@ -1,7 +1,8 @@
-export type XOAuth2Credentials = {
-  clientId: string;
-  clientSecret: string;
-  refreshToken: string;
+export type XOAuth1UserCredentials = {
+  apiKey: string;
+  apiSecret: string;
+  accessToken: string;
+  accessTokenSecret: string;
 };
 
 let missingCredentialsLogged = false;
@@ -10,20 +11,32 @@ export function resetXCredentialsLogForTests(): void {
   missingCredentialsLogged = false;
 }
 
-export function readXOAuth2Credentials(): XOAuth2Credentials | null {
-  const clientId = process.env.X_CLIENT_ID?.trim();
-  const clientSecret = process.env.X_CLIENT_SECRET?.trim();
-  const refreshToken = process.env.X_REFRESH_TOKEN?.trim();
+function readAccessTokenSecret(): string | undefined {
+  const primary = process.env.X_ACCESS_TOKEN_SECRET?.trim();
+  if (primary) {
+    return primary;
+  }
+  return process.env.X_ACCESS_SECRET?.trim();
+}
+
+export function readXOAuth1UserCredentials(): XOAuth1UserCredentials | null {
+  const apiKey = process.env.X_API_KEY?.trim();
+  const apiSecret = process.env.X_API_SECRET?.trim();
+  const accessToken = process.env.X_ACCESS_TOKEN?.trim();
+  const accessTokenSecret = readAccessTokenSecret();
 
   const missing: string[] = [];
-  if (!clientId) {
-    missing.push("X_CLIENT_ID");
+  if (!apiKey) {
+    missing.push("X_API_KEY");
   }
-  if (!clientSecret) {
-    missing.push("X_CLIENT_SECRET");
+  if (!apiSecret) {
+    missing.push("X_API_SECRET");
   }
-  if (!refreshToken) {
-    missing.push("X_REFRESH_TOKEN");
+  if (!accessToken) {
+    missing.push("X_ACCESS_TOKEN");
+  }
+  if (!accessTokenSecret) {
+    missing.push("X_ACCESS_TOKEN_SECRET (or legacy X_ACCESS_SECRET)");
   }
 
   if (missing.length > 0) {
@@ -37,8 +50,9 @@ export function readXOAuth2Credentials(): XOAuth2Credentials | null {
   }
 
   return {
-    clientId: clientId!,
-    clientSecret: clientSecret!,
-    refreshToken: refreshToken!,
+    apiKey: apiKey!,
+    apiSecret: apiSecret!,
+    accessToken: accessToken!,
+    accessTokenSecret: accessTokenSecret!,
   };
 }

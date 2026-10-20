@@ -1,8 +1,11 @@
-import { readXOAuth2Credentials } from "./credentials";
+import { readXOAuth1UserCredentials } from "./credentials";
+import type { FetchLike } from "./fetch-like";
 import { isXLiveEnabled } from "./feature-flag";
-import { OAuth2UserContextXClient } from "./live-client";
+import {
+  OAuth1UserContextXClient,
+  setOAuth1SigningHooksForTests,
+} from "./live-client";
 import { loggingMockXClient } from "./mock-client";
-import type { FetchLike } from "./oauth2";
 import type { XClient } from "./types";
 
 export type { XClient, XPostPayload, XPostResult } from "./types";
@@ -19,6 +22,7 @@ export function resetXClientForTests(): void {
   clientOverride = undefined;
   liveClientSingleton = undefined;
   fetchOverride = undefined;
+  setOAuth1SigningHooksForTests(undefined);
 }
 
 export function setXFetchForTests(fetchFn: FetchLike | undefined): void {
@@ -35,7 +39,7 @@ export function getXClient(): XClient | null {
     return clientOverride;
   }
 
-  const creds = readXOAuth2Credentials();
+  const creds = readXOAuth1UserCredentials();
   if (!creds) {
     return null;
   }
@@ -45,7 +49,7 @@ export function getXClient(): XClient | null {
   }
 
   if (!liveClientSingleton) {
-    liveClientSingleton = new OAuth2UserContextXClient(creds, getFetchFn());
+    liveClientSingleton = new OAuth1UserContextXClient(creds, getFetchFn());
   }
   return liveClientSingleton;
 }

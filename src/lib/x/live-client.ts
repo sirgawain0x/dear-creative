@@ -1,7 +1,11 @@
-import type { XOAuth2Credentials } from "./credentials";
+import type { XOAuth1UserCredentials } from "./credentials";
 import { formatXApiFailure } from "./api-errors";
-import type { FetchLike } from "./oauth2";
-import { refreshOAuth2AccessToken } from "./oauth2";
+import type { FetchLike } from "./fetch-like";
+import {
+  generateOAuthNonce,
+  oauthTimestampSeconds,
+  signOAuth1Request,
+} from "./oauth1-sign";
 import type { XClient, XPostPayload, XPostResult } from "./types";
 
 const CREATE_TWEET_URL = "https://api.x.com/2/tweets";
@@ -10,21 +14,51 @@ type CreateTweetResponse = {
   data?: { id?: string };
 };
 
-export class OAuth2UserContextXClient implements XClient {
-  private accessToken: string | null = null;
-  private accessTokenExpiresAtMs = 0;
+export type OAuth1SigningHooks = {
+  nonce: () => string;
+  timestamp: () => string;
+};
 
+let signingHooksOverride: OAuth1SigningHooks | undefined;
+
+export function setOAuth1SigningHooksForTests(
+  hooks: OAuth1SigningHooks | undefined,
+): void {
+  signingHooksOverride = hooks;
+}
+
+function resolveSigningHooks(): OAuth1SigningHooks {
+  return (
+    signingHooksOverride ?? {
+      nonce: generateOAuthNonce,
+      timestamp: () => oauthTimestampSeconds(),
+    }
+  );
+}
+
+export class OAuth1UserContextXClient implements XClient {
   constructor(
-    private readonly creds: XOAuth2Credentials,
+    private readonly creds: XOAuth1UserCredentials,
     private readonly fetchFn: FetchLike,
+    private readonly signingHooks: OAuth1SigningHooks = resolveSigningHooks(),
   ) {}
 
   async postTweet(payload: XPostPayload): Promise<XPostResult> {
-    const accessToken = await this.getAccessToken();
+    const { authorizationHeader } = signOAuth1Request({
+      method: "POST",
+      baseUrl: CREATE_TWEET_URL,
+      consumerKey: this.creds.apiKey,
+      consumerSecret: this.creds.apiSecret,
+      accessToken: this.creds.accessToken,
+      accessTokenSecret: this.creds.accessTokenSecret,
+      nonce: this.signingHooks.nonce(),
+      timestamp: this.signingHooks.timestamp(),
+    });
+
     const response = await this.fetchFn(CREATE_TWEET_URL, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: authorizationHeader,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ text: payload.text }),
@@ -40,25 +74,5 @@ export class OAuth2UserContextXClient implements XClient {
       throw new Error("X API create post response missing data.id");
     }
     return { tweetId };
-  }
-
-  private async getAccessToken(): Promise<string> {
-    const now = Date.now();
-    if (this.accessToken && now < this.accessTokenExpiresAtMs - 60_000) {
-      return this.accessToken;
-    }
-
-    const token = await refreshOAuth2AccessToken(this.creds, this.fetchFn);
-    if (!token.access_token?.trim()) {
-      throw new Error("X OAuth token refresh returned no access_token");
-    }
-
-    this.accessToken = token.access_token.trim();
-    const expiresInSec =
-      typeof token.expires_in === "number" && token.expires_in > 0
-        ? token.expires_in
-        : 7200;
-    this.accessTokenExpiresAtMs = now + expiresInSec * 1000;
-    return this.accessToken;
   }
 }
