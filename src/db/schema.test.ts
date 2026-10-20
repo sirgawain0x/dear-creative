@@ -66,6 +66,7 @@ describe("schema enums", () => {
     expect(posts.gatedContent).toBeDefined();
     expect(posts.isGated).toBeDefined();
     expect(posts.gatePriceUsdc).toBeDefined();
+    expect(posts.splitAddressOverride).toBeDefined();
   });
 });
 
