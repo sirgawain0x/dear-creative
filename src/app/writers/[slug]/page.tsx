@@ -4,6 +4,8 @@ import { AuthorByline } from "@/components/posts/author-byline";
 import { getDb } from "@/db/client";
 import { getAuthorBySlug } from "@/lib/posts/post-author";
 
+export const instant = false;
+
 type PageProps = {
   params: Promise<{ slug: string }>;
 };
