@@ -35,7 +35,7 @@ describe("claimRepurposeGenerationLock insert errors", () => {
           values: async () => {
             throw new Error("disk I/O error");
           },
-        } as ReturnType<typeof db.insert>;
+        } as unknown as ReturnType<typeof db.insert>;
       }
       return originalInsert(table);
     });

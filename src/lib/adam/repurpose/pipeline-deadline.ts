@@ -76,7 +76,7 @@ export function wrapFetchForRepurposePipeline(
   return (url, init) =>
     fetchWithRepurposePipelineDeadline(
       fetchFn,
-      url,
+      typeof url === "string" ? url : url.toString(),
       init,
       deadlineAtMs,
       perFetchCapMs,
