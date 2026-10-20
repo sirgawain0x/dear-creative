@@ -69,6 +69,25 @@ describe("published posts queries", () => {
     expect(recent.map((p) => p.slug)).toEqual(["live-now"]);
   });
 
+  it("does not expose bodyHtml on list items", async () => {
+    const db = await createPostsTestDb();
+    await insertPost(db, {
+      slug: "public-list-item",
+      title: "Public",
+      status: "published",
+      publishedAt: new Date("2024-06-01T00:00:00.000Z"),
+      teaserText: null,
+      bodyHtml: "<p>paid body must not leak</p>",
+      freeContent: "Free preview only",
+    });
+
+    const [item] = await listRecentPublishedPosts(db, 1);
+    expect(item).toBeDefined();
+    expect(item).not.toHaveProperty("bodyHtml");
+    expect(item?.teaser).toBe("Free preview only");
+    expect(JSON.stringify(item)).not.toContain("paid body");
+  });
+
   it("paginates published posts", async () => {
     const db = await createPostsTestDb();
     for (let i = 0; i < 5; i += 1) {

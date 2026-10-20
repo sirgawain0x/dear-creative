@@ -2,7 +2,8 @@ import { and, count, desc, eq, isNotNull, lte } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
 import { getPostAudioColumns } from "@/db/ensure-schema";
 import { posts } from "@/db/schema";
-import { resolvePostCoverImage } from "./post-cover-image";
+import { resolvePublicPostCoverImage } from "./post-cover-image";
+import { buildPublicPostTeaser } from "./post-public-teaser";
 import { calculateReadingTime } from "./reading-time";
 import { classifyArticleTopic } from "./topic-tagging";
 import type { PostMeta } from "./types";
@@ -19,8 +20,6 @@ export function publishedVisibilityFilter(asOf: Date = new Date()) {
 
 export type PublishedPostListItem = PostMeta & {
   canonicalUrl: string | null;
-  /** Present on list/recent queries for teasers and cover resolution. */
-  bodyHtml?: string | null;
 };
 
 export type PublishedPostDetail = PublishedPostListItem & {
@@ -47,19 +46,24 @@ function mapListRow(row: {
   publishedAt: Date | null;
   teaserText: string | null;
   canonicalUrl: string | null;
-  bodyHtml?: string | null;
+  freeContent: string | null;
 }): PublishedPostListItem {
-  const coverImage = resolvePostCoverImage({
+  const coverImage = resolvePublicPostCoverImage({
     slug: row.slug,
     title: row.title,
-    bodyHtml: row.bodyHtml,
+    publicPreview: row.freeContent,
   });
 
-  const metrics = calculateReadingTime(row.bodyHtml ?? row.teaserText);
+  const teaser = buildPublicPostTeaser({
+    excerpt: row.teaserText,
+    publicPreview: row.freeContent,
+  });
+
+  const metrics = calculateReadingTime(row.freeContent ?? row.teaserText);
   const topic = classifyArticleTopic({
     title: row.title,
     excerpt: row.teaserText,
-    bodyHtml: row.bodyHtml,
+    bodyHtml: row.freeContent,
   });
 
   return {
@@ -67,9 +71,9 @@ function mapListRow(row: {
     title: row.title,
     publishedAt: toIsoPublishedAt(row.publishedAt as Date),
     excerpt: row.teaserText ?? undefined,
+    teaser,
     canonicalUrl: row.canonicalUrl,
     coverImage,
-    bodyHtml: row.bodyHtml ?? undefined,
     readMinutes: metrics.readMinutes,
     listenMinutes: metrics.listenMinutes,
     readingTimeLabel: metrics.label,
@@ -112,7 +116,7 @@ export async function listPublishedPosts(
       publishedAt: posts.publishedAt,
       teaserText: posts.teaserText,
       canonicalUrl: posts.canonicalUrl,
-      bodyHtml: posts.bodyHtml,
+      freeContent: posts.freeContent,
     })
     .from(posts)
     .where(publishedVisibilityFilter(asOf))
@@ -143,7 +147,7 @@ export async function listRecentPublishedPosts(
       publishedAt: posts.publishedAt,
       teaserText: posts.teaserText,
       canonicalUrl: posts.canonicalUrl,
-      bodyHtml: posts.bodyHtml,
+      freeContent: posts.freeContent,
     })
     .from(posts)
     .where(publishedVisibilityFilter(asOf))
@@ -166,6 +170,7 @@ export async function getPublishedPostBySlug(
       publishedAt: posts.publishedAt,
       teaserText: posts.teaserText,
       canonicalUrl: posts.canonicalUrl,
+      freeContent: posts.freeContent,
       bodyHtml: posts.bodyHtml,
     })
     .from(posts)
@@ -179,7 +184,14 @@ export async function getPublishedPostBySlug(
   const audio = await getPostAudioColumns(db, slug);
 
   return {
-    ...mapListRow(row),
+    ...mapListRow({
+      slug: row.slug,
+      title: row.title,
+      publishedAt: row.publishedAt,
+      teaserText: row.teaserText,
+      canonicalUrl: row.canonicalUrl,
+      freeContent: row.freeContent,
+    }),
     bodyHtml: row.bodyHtml,
     audioUrl: audio.audioUrl,
     audioVoice: audio.audioVoice,
