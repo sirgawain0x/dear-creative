@@ -3,8 +3,8 @@ import { NextResponse } from "next/server";
 import { GET } from "./route";
 import { GET as GET_HISTORY } from "./history/route";
 
-vi.mock("@/lib/adam/studio-auth", () => ({
-  requireStudioOrAdamAuth: vi.fn(),
+vi.mock("@/lib/privy/require-auth", () => ({
+  requirePrivyAuth: vi.fn(),
 }));
 
 vi.mock("@/lib/wallet/balances", () => ({
@@ -14,7 +14,7 @@ vi.mock("@/lib/wallet/balances", () => ({
   }),
 }));
 
-import { requireStudioOrAdamAuth } from "@/lib/adam/studio-auth";
+import { requirePrivyAuth } from "@/lib/privy/require-auth";
 import { setWalletEnabledForTests } from "@/lib/wallet/feature-flag";
 import * as historyRoute from "./history/route";
 import * as walletRoute from "./route";
@@ -26,10 +26,9 @@ describe("GET /api/admin/wallet", () => {
       "ADMIN_WALLET_ADDRESS",
       "0xAE48B6dB64772b9CC24e33A79c809896776a20f6",
     );
-    vi.mocked(requireStudioOrAdamAuth).mockResolvedValue({
+    vi.mocked(requirePrivyAuth).mockResolvedValue({
       ok: true,
-      actor: "did:privy:admin",
-      mode: "privy_admin",
+      user: { userId: "did:privy:admin" },
     });
   });
 
@@ -45,8 +44,8 @@ describe("GET /api/admin/wallet", () => {
     expect(res.status).toBe(404);
   });
 
-  it("requires admin auth via requireStudioOrAdamAuth", async () => {
-    vi.mocked(requireStudioOrAdamAuth).mockResolvedValue({
+  it("requires privy admin auth", async () => {
+    vi.mocked(requirePrivyAuth).mockResolvedValue({
       ok: false,
       response: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
     });
@@ -56,21 +55,25 @@ describe("GET /api/admin/wallet", () => {
       }),
     );
     expect(res.status).toBe(403);
+    expect(requirePrivyAuth).toHaveBeenCalledWith(expect.any(Request), {
+      requireAdmin: true,
+    });
   });
 
-  it("accepts adam studio bearer like /api/admin/payouts", async () => {
-    vi.mocked(requireStudioOrAdamAuth).mockResolvedValue({
-      ok: true,
-      actor: "adam-token",
-      mode: "adam_token",
+  it("rejects adam/studio service token (privy admin only)", async () => {
+    vi.mocked(requirePrivyAuth).mockResolvedValue({
+      ok: false,
+      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
     });
     const res = await GET(
       new Request("http://localhost/api/admin/wallet", {
         headers: { Authorization: "Bearer adam-token" },
       }),
     );
-    expect(res.status).toBe(200);
-    expect(requireStudioOrAdamAuth).toHaveBeenCalled();
+    expect(res.status).toBe(401);
+    expect(requirePrivyAuth).toHaveBeenCalledWith(expect.any(Request), {
+      requireAdmin: true,
+    });
   });
 
   it("returns not configured when ADMIN_WALLET_ADDRESS is unset", async () => {
@@ -96,6 +99,38 @@ describe("GET /api/admin/wallet", () => {
     const json = await res.json();
     expect(json.configured).toBe(true);
     expect(json.balances.eth.formatted).toBe("0.001");
+  });
+});
+
+describe("GET /api/admin/wallet/history adam bearer", () => {
+  beforeEach(() => {
+    setWalletEnabledForTests(true);
+    vi.stubEnv(
+      "ADMIN_WALLET_ADDRESS",
+      "0xAE48B6dB64772b9CC24e33A79c809896776a20f6",
+    );
+    vi.mocked(requirePrivyAuth).mockResolvedValue({
+      ok: false,
+      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+    });
+  });
+
+  afterEach(() => {
+    setWalletEnabledForTests(undefined);
+    vi.unstubAllEnvs();
+    vi.clearAllMocks();
+  });
+
+  it("rejects adam/studio bearer with 401", async () => {
+    const res = await GET_HISTORY(
+      new Request("http://localhost/api/admin/wallet/history", {
+        headers: { Authorization: "Bearer studio-adam-key" },
+      }),
+    );
+    expect(res.status).toBe(401);
+    expect(requirePrivyAuth).toHaveBeenCalledWith(expect.any(Request), {
+      requireAdmin: true,
+    });
   });
 });
 

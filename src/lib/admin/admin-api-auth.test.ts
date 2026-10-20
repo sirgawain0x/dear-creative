@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { STUDIO_TOKEN_STORAGE_KEY } from "@/components/providers/app-providers";
 import {
   adminApiAuthorizationHeaders,
+  adminPrivyAuthorizationHeaders,
   resolveAdminApiBearerToken,
 } from "./admin-api-auth";
 
@@ -35,6 +36,18 @@ describe("adminApiAuthorizationHeaders", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("adminPrivyAuthorizationHeaders does not fall back to studio token", async () => {
+    store[STUDIO_TOKEN_STORAGE_KEY] = "studio-admin-key";
+
+    const headers = await adminPrivyAuthorizationHeaders({
+      privyConfigured: true,
+      authenticated: true,
+      getAccessToken: async () => null,
+    });
+
+    expect(headers).toBeNull();
   });
 
   it("falls back to studio localStorage token when Privy getAccessToken returns null", async () => {

@@ -26,3 +26,22 @@ export async function adminApiAuthorizationHeaders(
   }
   return { Authorization: `Bearer ${token}` };
 }
+
+/** Privy access token only — no studio/Adam localStorage fallback (Funds API). */
+export async function adminPrivyAuthorizationHeaders(
+  session: AdminApiAuthSession,
+): Promise<{ Authorization: string } | null> {
+  if (!session.privyConfigured || !session.authenticated) {
+    return null;
+  }
+  try {
+    const token = await session.getAccessToken();
+    const trimmed = token?.trim();
+    if (!trimmed) {
+      return null;
+    }
+    return { Authorization: `Bearer ${trimmed}` };
+  } catch {
+    return null;
+  }
+}

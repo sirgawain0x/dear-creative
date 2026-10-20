@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextResponse } from "next/server";
 import { GET } from "./route";
 
-vi.mock("@/lib/adam/studio-auth", () => ({
-  requireStudioOrAdamAuth: vi.fn(),
+vi.mock("@/lib/privy/require-auth", () => ({
+  requirePrivyAuth: vi.fn(),
 }));
 
 vi.mock("@/lib/wallet/asset-transfers", async (importOriginal) => {
@@ -16,7 +16,7 @@ vi.mock("@/lib/wallet/asset-transfers", async (importOriginal) => {
   };
 });
 
-import { requireStudioOrAdamAuth } from "@/lib/adam/studio-auth";
+import { requirePrivyAuth } from "@/lib/privy/require-auth";
 import {
   AlchemyTransfersError,
   fetchAlchemyAssetTransfersPage,
@@ -30,10 +30,9 @@ describe("GET /api/admin/wallet/history", () => {
       "ADMIN_WALLET_ADDRESS",
       "0xAE48B6dB64772b9CC24e33A79c809896776a20f6",
     );
-    vi.mocked(requireStudioOrAdamAuth).mockResolvedValue({
+    vi.mocked(requirePrivyAuth).mockResolvedValue({
       ok: true,
-      actor: "did:privy:admin",
-      mode: "privy_admin",
+      user: { userId: "did:privy:admin" },
     });
   });
 
@@ -64,8 +63,8 @@ describe("GET /api/admin/wallet/history", () => {
     expect(json.message).toBe("Invalid API key");
   });
 
-  it("returns 403 from auth gate without calling Alchemy", async () => {
-    vi.mocked(requireStudioOrAdamAuth).mockResolvedValue({
+  it("returns 403 from Privy auth gate without calling Alchemy", async () => {
+    vi.mocked(requirePrivyAuth).mockResolvedValue({
       ok: false,
       response: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
     });
@@ -75,6 +74,25 @@ describe("GET /api/admin/wallet/history", () => {
     );
 
     expect(res.status).toBe(403);
+    expect(fetchAlchemyAssetTransfersPage).not.toHaveBeenCalled();
+  });
+
+  it("rejects adam/studio bearer (401)", async () => {
+    vi.mocked(requirePrivyAuth).mockResolvedValue({
+      ok: false,
+      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+    });
+
+    const res = await GET(
+      new Request("http://localhost/api/admin/wallet/history", {
+        headers: { Authorization: "Bearer studio-adam-key" },
+      }),
+    );
+
+    expect(res.status).toBe(401);
+    expect(requirePrivyAuth).toHaveBeenCalledWith(expect.any(Request), {
+      requireAdmin: true,
+    });
     expect(fetchAlchemyAssetTransfersPage).not.toHaveBeenCalled();
   });
 });

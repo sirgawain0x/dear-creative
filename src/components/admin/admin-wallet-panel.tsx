@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { useAuthSession } from "@/components/providers/app-providers";
-import { adminApiAuthorizationHeaders } from "@/lib/admin/admin-api-auth";
+import { adminPrivyAuthorizationHeaders } from "@/lib/admin/admin-api-auth";
 import {
   resolveWalletPanelLoadErrors,
   WALLET_HISTORY_ERROR_MESSAGE,
@@ -87,7 +87,7 @@ export function AdminWalletPanel({
     setError(null);
     setHistoryError(null);
     try {
-      const headers = await adminApiAuthorizationHeaders({
+      const headers = await adminPrivyAuthorizationHeaders({
         privyConfigured,
         authenticated,
         getAccessToken,
@@ -191,7 +191,7 @@ export function AdminWalletPanel({
     if (!walletEnabled || !summary?.configured) {
       return;
     }
-    const headers = await adminApiAuthorizationHeaders({
+    const headers = await adminPrivyAuthorizationHeaders({
       privyConfigured,
       authenticated,
       getAccessToken,

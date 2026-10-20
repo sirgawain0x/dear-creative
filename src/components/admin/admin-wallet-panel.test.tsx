@@ -105,7 +105,29 @@ describe("AdminWalletPanel admin fetch auth", () => {
     ).toBeNull();
   });
 
-  it("uses studio bearer fallback like Payouts when Privy access token is missing", async () => {
+  it("does not send studio bearer when Privy access token is missing", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+
+    await act(async () => {
+      render(<AdminWalletPanel walletEnabled={true} />);
+    });
+
+    await vi.waitFor(() => {
+      expect(screen.getByText(/Sign in to view wallet/i)).toBeInTheDocument();
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("sends Privy access token when available", async () => {
+    mockUseAuthSession.mockReturnValue({
+      ready: true,
+      isSignedIn: true,
+      authenticated: true,
+      getAccessToken: vi.fn(async () => "privy-access-token"),
+      privyConfigured: true,
+    });
+
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
       if (url.includes("/api/admin/wallet/history")) {
@@ -128,17 +150,14 @@ describe("AdminWalletPanel admin fetch auth", () => {
       render(<AdminWalletPanel walletEnabled={true} />);
     });
 
-    await vi.waitFor(
-      () => {
-        expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
-      },
-      { timeout: 3000 },
-    );
+    await vi.waitFor(() => {
+      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
 
     for (const call of fetchMock.mock.calls) {
       const init = call[1] as RequestInit | undefined;
       expect(init?.headers).toEqual({
-        Authorization: "Bearer studio-admin-key",
+        Authorization: "Bearer privy-access-token",
       });
     }
   });
