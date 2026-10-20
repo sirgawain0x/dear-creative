@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Script from "next/script";
+import type { Address } from "viem";
 import { DispatchAudioPlayer } from "@/components/audio/dispatch-audio-player";
 import { OwnerEditPostButton } from "@/components/auth/owner-edit-controls";
 import { MicroTippingWidget } from "@/components/monetization/micro-tipping-widget";
@@ -35,7 +36,7 @@ function PostArticle({
   payToAddress,
 }: {
   post: PublishedPostDetail;
-  payToAddress: string | null;
+  payToAddress: Address | null;
 }) {
   const bodyHtml = publishedPostBodyForDisplay(post.bodyHtml);
   const metrics = calculateReadingTime(post.bodyHtml ?? post.excerpt);
