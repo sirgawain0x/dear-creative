@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { migrate } from "drizzle-orm/libsql/migrator";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setOracleEnabledForTests } from "./feature-flag";
 import * as schema from "@/db/schema";
 import { predictions } from "@/db/schema";
 import {
@@ -22,6 +23,22 @@ async function createTestDb() {
 }
 
 describe("oracle-resolver", () => {
+  beforeEach(() => {
+    setOracleEnabledForTests(true);
+  });
+
+  afterEach(() => {
+    setOracleEnabledForTests(undefined);
+  });
+
+  it("no-ops when oracle is disabled", async () => {
+    setOracleEnabledForTests(false);
+    const db = await createTestDb();
+    const report = await resolvePendingPredictions(db);
+    expect(report.disabled).toBe(true);
+    expect(report.totalPending).toBe(0);
+  });
+
   it("resolves pending predictions when finalized and broadcasts social updates", async () => {
     const db = await createTestDb();
 
