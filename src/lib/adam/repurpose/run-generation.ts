@@ -1,7 +1,14 @@
 import type { DearCreativeDb } from "@/db/client";
+import { synthesizeSpeechWithGoogle } from "@/lib/adam/gemini-studio";
 import type { StudioAuthSuccess } from "@/lib/adam/studio-auth";
+import { uploadToLensGrove } from "@/lib/storage/lens-grove";
 import { assertRepurposeCallerAccess } from "./access";
+import type { FfmpegRunner } from "./ffmpeg";
 import { isRepurposeEnabled } from "./feature-flag";
+import {
+  generateMediaRepurposeOutput,
+  isMediaRepurposeType,
+} from "./generators/media";
 import { generateTextRepurposeOutput, isTextRepurposeType } from "./generators/text";
 import { loadRepurposePostSource, RepurposePostError } from "./post-source";
 import {
@@ -26,6 +33,10 @@ export class RepurposeGenerationError extends Error {
 
 export type RunRepurposeGenerationDeps = {
   fetchFn?: typeof fetch;
+  synthesizeFn?: typeof synthesizeSpeechWithGoogle;
+  synthesizeMultiSpeakerFn?: typeof import("./gemini-tts").synthesizePodcastMultiSpeaker;
+  ffmpeg?: FfmpegRunner;
+  uploadFn?: typeof uploadToLensGrove;
 };
 
 export async function runRepurposeGeneration(input: {
@@ -79,18 +90,28 @@ export async function runRepurposeGeneration(input: {
       ? { rowId: claim.rowId, claimToken: claim.claimToken }
       : null;
   try {
-    if (!isTextRepurposeType(input.outputType)) {
-      throw new RepurposeGenerationError(
-        501,
-        `${input.outputType} generation is not available in this release.`,
-      );
-    }
-
-    const generated = await generateTextRepurposeOutput({
-      outputType: input.outputType,
-      source,
-      fetchFn: input.deps?.fetchFn,
-    });
+    const generated = isTextRepurposeType(input.outputType)
+      ? await generateTextRepurposeOutput({
+          outputType: input.outputType,
+          source,
+          fetchFn: input.deps?.fetchFn,
+        })
+      : isMediaRepurposeType(input.outputType)
+        ? await generateMediaRepurposeOutput({
+            outputType: input.outputType,
+            source,
+            fetchFn: input.deps?.fetchFn,
+            synthesizeFn: input.deps?.synthesizeFn,
+            synthesizeMultiSpeakerFn: input.deps?.synthesizeMultiSpeakerFn,
+            ffmpeg: input.deps?.ffmpeg,
+            uploadFn: input.deps?.uploadFn,
+          })
+        : (() => {
+            throw new RepurposeGenerationError(
+              400,
+              `Unsupported repurpose output type: ${input.outputType}`,
+            );
+          })();
 
     if (!activeClaim) {
       throw new RepurposeGenerationError(

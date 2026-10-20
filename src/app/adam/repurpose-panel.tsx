@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  repurposeMediaOutputTypes,
   repurposeOutputLabel,
+  repurposeOutputTypes,
   repurposeTextOutputTypes,
   type RepurposeOutputType,
   type RepurposeStoredOutput,
@@ -20,7 +22,7 @@ type OutputRowState = {
 
 function initialRows(): Record<RepurposeOutputType, OutputRowState> {
   const rows = {} as Record<RepurposeOutputType, OutputRowState>;
-  for (const type of repurposeTextOutputTypes) {
+  for (const type of repurposeOutputTypes) {
     rows[type] = { output: null, isGenerating: false };
   }
   return rows;
@@ -88,16 +90,14 @@ export function RepurposePanel({ postId, authFetch }: RepurposePanelProps) {
       const data = (await res.json()) as { outputs?: RepurposeStoredOutput[] };
       setRows((prev) => {
         const next = { ...prev };
-        for (const type of repurposeTextOutputTypes) {
+        for (const type of repurposeOutputTypes) {
           next[type] = { ...next[type], output: null };
         }
         for (const output of data.outputs ?? []) {
-          if ((repurposeTextOutputTypes as readonly string[]).includes(output.outputType)) {
-            next[output.outputType as RepurposeOutputType] = {
-              output,
-              isGenerating: output.status === "generating",
-            };
-          }
+          next[output.outputType] = {
+            output,
+            isGenerating: output.status === "generating",
+          };
         }
         return next;
       });
@@ -191,7 +191,7 @@ export function RepurposePanel({ postId, authFetch }: RepurposePanelProps) {
       </div>
 
       <ul className="space-y-3">
-        {repurposeTextOutputTypes.map((type) => {
+        {repurposeOutputTypes.map((type) => {
           const row = rows[type];
           const status = row.output?.status;
           return (
@@ -225,13 +225,50 @@ export function RepurposePanel({ postId, authFetch }: RepurposePanelProps) {
                       : "Generate"}
                 </button>
               </div>
+              {row.output?.status === "ready" && row.output.mediaUrl ? (
+                <div className="mt-2 space-y-1">
+                  {(repurposeMediaOutputTypes as readonly string[]).includes(type) &&
+                  row.output.mediaMimeType?.startsWith("audio/") ? (
+                    <audio controls preload="none" src={row.output.mediaUrl} className="w-full">
+                      <track kind="captions" />
+                    </audio>
+                  ) : null}
+                  {(repurposeMediaOutputTypes as readonly string[]).includes(type) &&
+                  row.output.mediaMimeType?.startsWith("video/") ? (
+                    <video
+                      controls
+                      preload="metadata"
+                      src={row.output.mediaUrl}
+                      className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800"
+                    >
+                      <track kind="captions" />
+                    </video>
+                  ) : null}
+                  {type === "infographic" && row.output.mediaUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={row.output.mediaUrl}
+                      alt="Generated infographic"
+                      className="max-h-64 w-full rounded-lg object-contain"
+                    />
+                  ) : null}
+                  <a
+                    href={row.output.mediaUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-mono underline"
+                  >
+                    Lens Grove media ↗
+                  </a>
+                </div>
+              ) : null}
               {row.output?.status === "ready" && row.output.payload ? (
                 <div className="mt-2">
                   {type === "slide_deck" ? (
                     <SlideDeckPreview payload={row.output.payload} />
-                  ) : (
+                  ) : (repurposeTextOutputTypes as readonly string[]).includes(type) ? (
                     <JsonPreview payload={row.output.payload} />
-                  )}
+                  ) : null}
                 </div>
               ) : null}
               {row.output?.status === "failed" && row.output.errorMessage ? (
