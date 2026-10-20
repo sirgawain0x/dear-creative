@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   buildPostShareMenuItems,
+  createBrowserShareEnvironment,
   formatShareText,
   isShareAbortError,
   shouldUseNativeWebShare,
   triggerPostShare,
   wrapMenuFocusIndex,
+  type ShareEnvironment,
 } from "./post-share-urls";
 
 const SPECIAL_TITLE = 'Creators & "Web3" — 100% onchain';
@@ -120,6 +122,67 @@ describe("buildPostShareMenuItems", () => {
       expect(item.href).not.toContain(`${SPECIAL_URL}`);
       expect(item.href).not.toContain(`${SPECIAL_TITLE}`);
     }
+  });
+});
+
+describe("createBrowserShareEnvironment + mobile share", () => {
+  it("uses window.matchMedia when navigator has no matchMedia (coarse phone → native share)", async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    const onFallback = vi.fn();
+    const windowMatchMedia = vi.fn((query: string) => ({
+      matches: query === "(pointer: coarse)",
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+
+    const phoneNavigator = {
+      share,
+      canShare: vi.fn().mockReturnValue(true),
+    };
+
+    const env: ShareEnvironment = {
+      share: phoneNavigator.share.bind(phoneNavigator),
+      canShare: phoneNavigator.canShare.bind(phoneNavigator),
+      matchMedia: windowMatchMedia,
+    };
+
+    expect(phoneNavigator).not.toHaveProperty("matchMedia");
+
+    const result = await triggerPostShare(
+      {
+        title: "Mobile post",
+        url: "https://example.com/posts/mobile",
+        onFallback,
+      },
+      env,
+    );
+
+    expect(result).toBe("native");
+    expect(windowMatchMedia).toHaveBeenCalledWith("(pointer: coarse)");
+    expect(share).toHaveBeenCalled();
+    expect(onFallback).not.toHaveBeenCalled();
+  });
+
+  it("createBrowserShareEnvironment wires navigator share to window.matchMedia", () => {
+    const share = vi.fn();
+    const canShare = vi.fn().mockReturnValue(true);
+    const matchMedia = vi.fn(() => ({ matches: true }));
+
+    vi.stubGlobal("navigator", { share, canShare });
+    vi.stubGlobal("window", { matchMedia });
+
+    const env = createBrowserShareEnvironment();
+    expect(env?.share).toBeTypeOf("function");
+    expect(env?.canShare).toBeTypeOf("function");
+    env?.matchMedia?.("(pointer: coarse)");
+    expect(matchMedia).toHaveBeenCalledWith("(pointer: coarse)");
+
+    vi.unstubAllGlobals();
   });
 });
 

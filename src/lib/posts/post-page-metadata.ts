@@ -10,16 +10,6 @@ import {
 
 const DEFAULT_OG_WIDTH = 1200;
 const DEFAULT_OG_HEIGHT = 630;
-/** Keeps /api/og query strings within practical limits. */
-export const MAX_OG_TITLE_QUERY_LENGTH = 120;
-
-export function truncateOgTitle(title: string): string {
-  const trimmed = title.trim();
-  if (trimmed.length <= MAX_OG_TITLE_QUERY_LENGTH) {
-    return trimmed;
-  }
-  return `${trimmed.slice(0, MAX_OG_TITLE_QUERY_LENGTH - 1)}…`;
-}
 
 export function isGeneratedOgImageUrl(imageUrl: string, siteOrigin: string): boolean {
   const prefix = `${siteOrigin.replace(/\/$/, "")}/api/og`;
@@ -51,9 +41,8 @@ export function resolvePostOgImageAbsolute(
     dateStyle: "medium",
   });
 
-  const ogTitle = truncateOgTitle(post.title);
   const ogPath = `/api/og?title=${encodeURIComponent(
-    ogTitle,
+    post.title,
   )}&date=${encodeURIComponent(dateStr)}&readTime=${encodeURIComponent(
     metrics.label,
   )}&topic=${encodeURIComponent(getTopicLabel(topic))}`;

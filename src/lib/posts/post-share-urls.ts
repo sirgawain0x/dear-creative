@@ -129,6 +129,26 @@ export function isShareAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
+/** Browser env: share/canShare live on navigator; matchMedia is on window. */
+export function createBrowserShareEnvironment():
+  | ShareEnvironment
+  | undefined {
+  if (typeof navigator === "undefined") {
+    return undefined;
+  }
+  const nav = navigator;
+  return {
+    share: typeof nav.share === "function" ? nav.share.bind(nav) : undefined,
+    canShare:
+      typeof nav.canShare === "function" ? nav.canShare.bind(nav) : undefined,
+    matchMedia:
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function"
+        ? window.matchMedia.bind(window)
+        : undefined,
+  };
+}
+
 /** Native share only on coarse pointers when canShare accepts the payload. */
 export function shouldUseNativeWebShare(
   data: ShareData,

@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   buildPostShareMenuItems,
+  createBrowserShareEnvironment,
   triggerPostShare,
   wrapMenuFocusIndex,
-  type ShareEnvironment,
   type ShareMenuItem,
 } from "@/lib/posts/post-share-urls";
 import { useToast } from "@/components/ui/toast";
@@ -81,9 +81,7 @@ export function PostShareButton({ title, url }: PostShareButtonProps) {
         url,
         onFallback: openMenu,
       },
-      typeof navigator !== "undefined"
-        ? (navigator as ShareEnvironment)
-        : undefined,
+      createBrowserShareEnvironment(),
     );
   };
 

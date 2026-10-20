@@ -3,7 +3,6 @@ import {
   buildPostPageMetadata,
   isGeneratedOgImageUrl,
   resolvePostOgImageAbsolute,
-  truncateOgTitle,
 } from "./post-page-metadata";
 import type { PublishedPostDetail } from "./published-posts";
 
@@ -27,15 +26,6 @@ function samplePost(
     ...overrides,
   };
 }
-
-describe("truncateOgTitle", () => {
-  it("caps long titles for the OG route query string", () => {
-    const long = "A".repeat(200);
-    const truncated = truncateOgTitle(long);
-    expect(truncated.length).toBeLessThanOrEqual(120);
-    expect(truncated.endsWith("…")).toBe(true);
-  });
-});
 
 describe("resolvePostOgImageAbsolute", () => {
   it("uses absolute cover path on the site origin", () => {
