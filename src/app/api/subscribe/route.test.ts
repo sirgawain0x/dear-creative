@@ -17,8 +17,19 @@ import { POST } from "./route";
 
 let testDb: ReturnType<typeof drizzle>;
 
+const resendSendMock = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ id: "mock-email-id" }),
+);
+
 vi.mock("@/db/client", () => ({
   getDb: () => testDb,
+}));
+
+vi.mock("@/lib/resend/client", () => ({
+  getResendClient: () => ({
+    send: resendSendMock,
+  }),
+  getResendFromAddress: () => "newsletter@example.test",
 }));
 
 async function createTestDb() {
@@ -33,8 +44,10 @@ async function createTestDb() {
 describe("POST /api/subscribe", () => {
   beforeEach(async () => {
     testDb = await createTestDb();
+    resendSendMock.mockClear();
     vi.stubEnv("SUBSCRIBER_TOKEN_SECRET", "test-secret");
     vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://dear.example.test");
+    vi.stubEnv("RESEND_API_KEY", "re_test_mock_key");
     setBotIdCheckForTests(async () => ({ isBot: false }));
   });
 
@@ -52,6 +65,11 @@ describe("POST /api/subscribe", () => {
       }),
     );
   }
+
+  it("never calls the live Resend API even when RESEND_API_KEY is set", async () => {
+    await postSubscribe("resend-mock@example.test");
+    expect(resendSendMock).toHaveBeenCalledTimes(1);
+  });
 
   it("returns the same 200 body for new, pending, subscribed, unsubscribed, and bounced", async () => {
     const cases: { email: string; setup?: () => Promise<void> }[] = [

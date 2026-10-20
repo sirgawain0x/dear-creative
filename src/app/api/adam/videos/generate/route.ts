@@ -1,9 +1,17 @@
 import { NextResponse } from "next/server";
-import { generateVideoWithVeo } from "@/lib/adam/gemini-studio";
+import {
+  ADAM_VIDEO_DEFAULT_FETCH_TIMEOUT_MS,
+  ADAM_VIDEO_DEFAULT_POLL_INTERVAL_MS,
+  ADAM_VIDEO_ROUTE_BUDGET_MS,
+  generateVideoWithVeo,
+} from "@/lib/adam/gemini-studio";
 import { requireStudioOrAdamAuth } from "@/lib/adam/studio-auth";
 import { uploadToLensGrove } from "@/lib/storage/lens-grove";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
+
+const VIDEO_POLL_INTERVAL_MS = ADAM_VIDEO_DEFAULT_POLL_INTERVAL_MS;
+const VIDEO_FETCH_TIMEOUT_MS = ADAM_VIDEO_DEFAULT_FETCH_TIMEOUT_MS;
 
 const ALLOWED_VIDEO_TYPES = new Set([
   "video/mp4",
@@ -99,6 +107,9 @@ export async function POST(request: Request) {
       aspectRatio: body.aspectRatio || "16:9",
       imageBase64: body.imageBase64,
       imageMimeType: body.imageMimeType,
+      fetchTimeoutMs: VIDEO_FETCH_TIMEOUT_MS,
+      pollIntervalMs: VIDEO_POLL_INTERVAL_MS,
+      wallBudgetMs: ADAM_VIDEO_ROUTE_BUDGET_MS,
     });
 
     return NextResponse.json({

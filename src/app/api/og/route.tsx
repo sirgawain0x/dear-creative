@@ -1,12 +1,24 @@
 import { ImageResponse } from "next/og";
 import { connection, type NextRequest } from "next/server";
 
+export const MAX_OG_TITLE_LENGTH = 120;
+
+export function truncateOgTitleForImage(title: string): string {
+  const trimmed = title.trim();
+  if (trimmed.length <= MAX_OG_TITLE_LENGTH) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, MAX_OG_TITLE_LENGTH - 1)}…`;
+}
+
 export async function GET(request: NextRequest) {
   await connection();
   try {
     const { searchParams } = new URL(request.url);
 
-    const title = searchParams.get("title") || "Dear Creative";
+    const title = truncateOgTitleForImage(
+      searchParams.get("title") || "Dear Creative",
+    );
     const date = searchParams.get("date") || "Weekly Dispatch";
     const readTime = searchParams.get("readTime") || "3 min read • 2 min audio";
     const topic = searchParams.get("topic") || "Creator Economics";
