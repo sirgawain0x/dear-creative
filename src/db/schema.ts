@@ -638,4 +638,19 @@ export const postRepurposeOutputs = sqliteTable(
 
 export type PostRepurposeOutputRecord = typeof postRepurposeOutputs.$inferSelect;
 
+export const linkedinMemberCredentials = sqliteTable("linkedin_member_credentials", {
+  id: text("id").primaryKey(),
+  memberSub: text("member_sub").notNull(),
+  authorUrn: text("author_urn").notNull(),
+  accessTokenEnc: text("access_token_enc").notNull(),
+  refreshTokenEnc: text("refresh_token_enc"),
+  expiresAt: integer("expires_at", { mode: "timestamp_ms" }),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+    .notNull()
+    .default(sql`(unixepoch() * 1000)`),
+});
+
+export type LinkedInMemberCredentialRecord =
+  typeof linkedinMemberCredentials.$inferSelect;
+
 

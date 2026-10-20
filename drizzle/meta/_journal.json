@@ -120,6 +120,13 @@
       "when": 1792522000000,
       "tag": "0017_backfill_null_post_author_g2",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1792523000000,
+      "tag": "0018_linkedin_member_credentials",
+      "breakpoints": true
     }
   ]
 }

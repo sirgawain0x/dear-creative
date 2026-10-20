@@ -11,18 +11,22 @@ import * as schema from "@/db/schema";
 import { authors, posts } from "@/db/schema";
 
 const BACKFILL_JOURNAL_WHEN = 1792522000000;
+const LINKEDIN_JOURNAL_WHEN = 1792523000000;
 
 function createMigrationsFolderThrough0016(): string {
   const dir = mkdtempSync(join(tmpdir(), "dear-drizzle-through-0016-"));
   cpSync(join(process.cwd(), "drizzle"), dir, { recursive: true });
   rmSync(join(dir, "0017_backfill_null_post_author_g2.sql"));
+  rmSync(join(dir, "0018_linkedin_member_credentials.sql"));
   rmSync(join(dir, "meta/0017_snapshot.json"));
   const journalPath = join(dir, "meta/_journal.json");
   const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
     entries: Array<{ when: number }>;
   };
   journal.entries = journal.entries.filter(
-    (entry) => entry.when !== BACKFILL_JOURNAL_WHEN,
+    (entry) =>
+      entry.when !== BACKFILL_JOURNAL_WHEN &&
+      entry.when !== LINKEDIN_JOURNAL_WHEN,
   );
   writeFileSync(journalPath, `${JSON.stringify(journal, null, 2)}\n`);
   return dir;
