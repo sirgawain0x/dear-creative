@@ -67,7 +67,7 @@ describe("video overview PCM + ffmpeg integration", () => {
       synthesizeFn: async () => ({
         audioBase64: pcm.toString("base64"),
         mimeType: "audio/L16;rate=24000",
-        provider: "mock",
+        provider: "gemini-tts" as const,
       }),
     });
 
