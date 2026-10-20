@@ -5,6 +5,7 @@ import {
   OwnerEditPostButton,
   OwnerManagePostsButton,
 } from "@/components/auth/owner-edit-controls";
+import { formatPublishedDateEt } from "@/lib/posts/format-published-date";
 import { getCachedPublishedPostsPage } from "@/lib/posts/published-posts-cache";
 
 import {
@@ -102,12 +103,7 @@ async function PostsList({ searchParams }: PageProps) {
 
                     <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs font-medium text-zinc-500">
                       <span>
-                        {new Date(post.publishedAt).toLocaleDateString(
-                          "en-US",
-                          {
-                            dateStyle: "medium",
-                          },
-                        )}
+                        {formatPublishedDateEt(post.publishedAt)}
                       </span>
                       {post.readingTimeLabel ? (
                         <>
@@ -131,9 +127,9 @@ async function PostsList({ searchParams }: PageProps) {
                       ) : null}
                     </div>
 
-                    {post.excerpt ? (
+                    {post.teaser ? (
                       <p className="mt-2 line-clamp-2 text-sm text-zinc-600 dark:text-zinc-400">
-                        {post.excerpt}
+                        {post.teaser}
                       </p>
                     ) : null}
                   </div>

@@ -60,4 +60,53 @@ describe("buildAudioOverviewMp3", () => {
     );
     expect(mp3.length).toBeGreaterThan(0);
   });
+
+  it("encodes mislabeled Gemini PCM (audio/mp3) into valid MP3 bytes", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    const pcm = Buffer.alloc(4800);
+    for (let i = 0; i < pcm.length / 2; i++) {
+      pcm.writeInt16LE(100, i * 2);
+    }
+    const synthesizeMultiSpeakerFn = vi.fn().mockResolvedValue({
+      audioBase64: pcm.toString("base64"),
+      mimeType: "audio/mp3",
+      provider: "mock",
+    });
+
+    const { mp3 } = await buildAudioOverviewMp3({
+      source: {
+        id: "p1",
+        slug: "pod",
+        title: "Pod",
+        status: "published",
+        authorId: "author-1",
+        teaserText: null,
+        plainText: "Article body",
+      },
+      fetchFn: vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  parts: [
+                    {
+                      text: JSON.stringify({
+                        segments: [{ speaker: "host_a", text: "Hello." }],
+                      }),
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+      synthesizeMultiSpeakerFn,
+    });
+
+    expect(mp3[0]).toBe(0xff);
+    expect(mp3[1]! & 0xe0).toBe(0xe0);
+  });
 });

@@ -3,6 +3,8 @@ export type PostMeta = {
   title: string;
   publishedAt: string;
   excerpt?: string;
+  /** Public list/card copy: excerpt or free preview only (computed server-side). */
+  teaser?: string;
   coverImage?: string;
   readMinutes?: number;
   listenMinutes?: number;

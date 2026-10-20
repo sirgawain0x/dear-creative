@@ -1,11 +1,5 @@
-import {
-  encodePcmToMp3,
-  parseWav,
-} from "@/lib/audio/narration";
-import {
-  pcm16ToWavBuffer,
-  synthesizeSpeechWithGoogle,
-} from "@/lib/adam/gemini-studio";
+import { geminiTtsPayloadToMp3 } from "@/lib/audio/gemini-tts-audio";
+import { synthesizeSpeechWithGoogle } from "@/lib/adam/gemini-studio";
 import {
   uploadToLensGrove,
   type LensGroveUploadResult,
@@ -55,17 +49,7 @@ async function multiSpeakerSpeechToMp3(input: {
     fetchFn: input.fetchFn,
   });
   const buf = Buffer.from(speech.audioBase64, "base64");
-  if (speech.mimeType.includes("mp3") || speech.mimeType.includes("mpeg")) {
-    return buf;
-  }
-  let wav = parseWav(buf);
-  if (!wav && speech.mimeType.includes("L16")) {
-    wav = parseWav(pcm16ToWavBuffer(speech.audioBase64, 24000));
-  }
-  if (!wav) {
-    throw new Error(`Unsupported TTS audio format: ${speech.mimeType}`);
-  }
-  return encodePcmToMp3(wav.pcm, wav.sampleRate, wav.channels);
+  return geminiTtsPayloadToMp3(buf, speech.mimeType);
 }
 
 export async function buildAudioOverviewMp3(input: {
@@ -142,15 +126,5 @@ export async function synthesizeSlideNarrationMp3(input: {
     fetchFn: input.fetchFn,
   });
   const buf = Buffer.from(speech.audioBase64, "base64");
-  if (speech.mimeType.includes("mp3") || speech.mimeType.includes("mpeg")) {
-    return buf;
-  }
-  let wav = parseWav(buf);
-  if (!wav && speech.mimeType.includes("L16")) {
-    wav = parseWav(pcm16ToWavBuffer(speech.audioBase64, 24000));
-  }
-  if (!wav) {
-    throw new Error(`Unsupported TTS audio format: ${speech.mimeType}`);
-  }
-  return encodePcmToMp3(wav.pcm, wav.sampleRate, wav.channels);
+  return geminiTtsPayloadToMp3(buf, speech.mimeType);
 }
