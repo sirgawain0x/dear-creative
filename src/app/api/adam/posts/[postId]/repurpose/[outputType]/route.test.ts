@@ -90,4 +90,23 @@ describe("POST /api/adam/posts/[postId]/repurpose/[outputType]", () => {
     expect(body.output?.status).toBe("ready");
     expect(body.output?.outputType).toBe("mind_map");
   });
+
+  it("returns generic 500 body on unexpected failures", async () => {
+    vi.stubEnv("ADAM_API_TOKEN", "secret-token");
+    setRepurposeEnabledForTests(true);
+    getDbMock.mockImplementation(() => {
+      throw new Error("db unavailable");
+    });
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("http://localhost/api/adam/posts/x/repurpose/mind_map", {
+        method: "POST",
+        headers: { Authorization: "Bearer secret-token" },
+      }),
+      { params: Promise.resolve({ postId: "x", outputType: "mind_map" }) },
+    );
+    expect(response.status).toBe(500);
+    const body = (await response.json()) as { error?: string };
+    expect(body.error).toBe("Repurpose generation failed.");
+  });
 });

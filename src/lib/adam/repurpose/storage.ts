@@ -1,12 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
 import { ensurePostsSchema } from "@/db/ensure-schema";
-import {
-  postRepurposeOutputs,
-  type PostRepurposeOutputStatus,
-} from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { postRepurposeOutputs } from "@/db/schema";
+import { REPURPOSE_GENERATING_TTL_MS } from "./constants";
 import type {
   RepurposeOutputStatus,
   RepurposeOutputType,
@@ -68,51 +65,85 @@ export async function getRepurposeOutput(
   return row ? rowToStored(row) : null;
 }
 
-export async function markRepurposeGenerating(
-  db: DearCreativeDb,
-  postId: string,
-  outputType: RepurposeOutputType,
-): Promise<RepurposeStoredOutput> {
-  await ensurePostsSchema(db);
-  const existing = await getRepurposeOutput(db, postId, outputType);
-  const now = new Date();
+export type ClaimRepurposeLockResult =
+  | { outcome: "ready"; output: RepurposeStoredOutput }
+  | { outcome: "claimed"; rowId: string }
+  | { outcome: "conflict" };
+
+export async function claimRepurposeGenerationLock(input: {
+  db: DearCreativeDb;
+  postId: string;
+  outputType: RepurposeOutputType;
+  now?: Date;
+}): Promise<ClaimRepurposeLockResult> {
+  await ensurePostsSchema(input.db);
+  const now = input.now ?? new Date();
+  const nowMs = now.getTime();
+  const staleBeforeMs = nowMs - REPURPOSE_GENERATING_TTL_MS;
+
+  const existing = await getRepurposeOutput(input.db, input.postId, input.outputType);
   if (existing?.status === "ready") {
-    return existing;
+    return { outcome: "ready", output: existing };
   }
+
   if (existing) {
-    await db
-      .update(postRepurposeOutputs)
-      .set({
-        status: "generating" satisfies PostRepurposeOutputStatus,
-        errorMessage: null,
-        updatedAt: now,
-      })
-      .where(eq(postRepurposeOutputs.id, existing.id));
-    const updated = await getRepurposeOutput(db, postId, outputType);
-    if (!updated) {
-      throw new Error("Failed to update repurpose output row");
+    const reclaimed = await input.db.all<{ id: string }>(sql`
+      UPDATE post_repurpose_outputs
+      SET status = 'generating', error_message = NULL, updated_at = ${nowMs}
+      WHERE post_id = ${input.postId}
+        AND output_type = ${input.outputType}
+        AND (
+          status = 'failed'
+          OR (status = 'generating' AND updated_at < ${staleBeforeMs})
+        )
+      RETURNING id
+    `);
+    if (reclaimed[0]?.id) {
+      return { outcome: "claimed", rowId: reclaimed[0].id };
     }
-    return updated;
+    return { outcome: "conflict" };
   }
 
   const id = randomUUID();
-  await db.insert(postRepurposeOutputs).values({
-    id,
-    postId,
-    outputType,
-    status: "generating",
-    payloadJson: null,
-    mediaUrl: null,
-    mediaMimeType: null,
-    errorMessage: null,
-    createdAt: now,
-    updatedAt: now,
-  });
-  const created = await getRepurposeOutput(db, postId, outputType);
-  if (!created) {
-    throw new Error("Failed to create repurpose output row");
+  try {
+    await input.db.insert(postRepurposeOutputs).values({
+      id,
+      postId: input.postId,
+      outputType: input.outputType,
+      status: "generating",
+      payloadJson: null,
+      mediaUrl: null,
+      mediaMimeType: null,
+      errorMessage: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return { outcome: "claimed", rowId: id };
+  } catch {
+    const racedExisting = await getRepurposeOutput(
+      input.db,
+      input.postId,
+      input.outputType,
+    );
+    if (racedExisting?.status === "ready") {
+      return { outcome: "ready", output: racedExisting };
+    }
+    const reclaimed = await input.db.all<{ id: string }>(sql`
+      UPDATE post_repurpose_outputs
+      SET status = 'generating', error_message = NULL, updated_at = ${nowMs}
+      WHERE post_id = ${input.postId}
+        AND output_type = ${input.outputType}
+        AND (
+          status = 'failed'
+          OR (status = 'generating' AND updated_at < ${staleBeforeMs})
+        )
+      RETURNING id
+    `);
+    if (reclaimed[0]?.id) {
+      return { outcome: "claimed", rowId: reclaimed[0].id };
+    }
+    return { outcome: "conflict" };
   }
-  return created;
 }
 
 export async function saveRepurposeReady(input: {
@@ -167,24 +198,4 @@ export async function saveRepurposeFailed(input: {
         eq(postRepurposeOutputs.outputType, input.outputType),
       ),
     );
-}
-
-/** Ensures repurpose table exists even before formal migration is applied in prod. */
-export async function ensureRepurposeTable(db: DearCreativeDb): Promise<void> {
-  await ensurePostsSchema(db);
-  await db.run(sql.raw(`CREATE TABLE IF NOT EXISTS post_repurpose_outputs (
-    id text PRIMARY KEY NOT NULL,
-    post_id text NOT NULL,
-    output_type text NOT NULL,
-    status text NOT NULL,
-    payload_json text,
-    media_url text,
-    media_mime_type text,
-    error_message text,
-    created_at integer DEFAULT (unixepoch() * 1000) NOT NULL,
-    updated_at integer DEFAULT (unixepoch() * 1000) NOT NULL
-  )`));
-  await db.run(sql.raw(
-    `CREATE UNIQUE INDEX IF NOT EXISTS post_repurpose_outputs_post_type_unique ON post_repurpose_outputs (post_id, output_type)`,
-  ));
 }

@@ -11,7 +11,12 @@ import {
   type LensGroveUploadResult,
 } from "@/lib/storage/lens-grove";
 import { generateRepurposeStructuredJson } from "../gemini-json";
+import {
+  synthesizePodcastMultiSpeaker,
+  type PodcastSegment,
+} from "../gemini-tts";
 import type { RepurposePostSource } from "../post-source";
+import { validateRepurposeModelOutput } from "../validate-output";
 
 export type PodcastScript = {
   title?: string;
@@ -20,17 +25,55 @@ export type PodcastScript = {
   outro?: string;
 };
 
-const HOST_VOICES: Record<string, string> = {
-  host_a: "Puck",
-  host_b: "Aoede",
-};
+function scriptToPodcastSegments(script: PodcastScript): PodcastSegment[] {
+  const segments: PodcastSegment[] = [];
+  if (script.intro?.trim()) {
+    segments.push({ speaker: "host_a", text: script.intro.trim() });
+  }
+  for (const segment of script.segments ?? []) {
+    const text = segment.text?.trim();
+    if (!text) continue;
+    segments.push({
+      speaker: segment.speaker === "host_b" ? "host_b" : "host_a",
+      text,
+    });
+  }
+  if (script.outro?.trim()) {
+    segments.push({ speaker: "host_b", text: script.outro.trim() });
+  }
+  return segments;
+}
+
+async function multiSpeakerSpeechToMp3(input: {
+  segments: PodcastSegment[];
+  fetchFn?: typeof fetch;
+  synthesizeMultiSpeakerFn?: typeof synthesizePodcastMultiSpeaker;
+}): Promise<Buffer> {
+  const synth = input.synthesizeMultiSpeakerFn ?? synthesizePodcastMultiSpeaker;
+  const speech = await synth({
+    segments: input.segments,
+    fetchFn: input.fetchFn,
+  });
+  const buf = Buffer.from(speech.audioBase64, "base64");
+  if (speech.mimeType.includes("mp3") || speech.mimeType.includes("mpeg")) {
+    return buf;
+  }
+  let wav = parseWav(buf);
+  if (!wav && speech.mimeType.includes("L16")) {
+    wav = parseWav(pcm16ToWavBuffer(speech.audioBase64, 24000));
+  }
+  if (!wav) {
+    throw new Error(`Unsupported TTS audio format: ${speech.mimeType}`);
+  }
+  return encodePcmToMp3(wav.pcm, wav.sampleRate, wav.channels);
+}
 
 export async function buildAudioOverviewMp3(input: {
   source: RepurposePostSource;
   fetchFn?: typeof fetch;
-  synthesizeFn?: typeof synthesizeSpeechWithGoogle;
+  synthesizeMultiSpeakerFn?: typeof synthesizePodcastMultiSpeaker;
 }): Promise<{ script: PodcastScript; mp3: Buffer }> {
-  const script = (await generateRepurposeStructuredJson({
+  const rawScript = (await generateRepurposeStructuredJson({
     outputType: "audio_overview",
     source: {
       title: input.source.title,
@@ -39,60 +82,21 @@ export async function buildAudioOverviewMp3(input: {
     fetchFn: input.fetchFn,
   })) as PodcastScript;
 
-  const lines: Array<{ voice: string; text: string }> = [];
-  if (script.intro?.trim()) {
-    lines.push({ voice: HOST_VOICES.host_a!, text: script.intro.trim() });
-  }
-  for (const segment of script.segments ?? []) {
-    const text = segment.text?.trim();
-    if (!text) continue;
-    const speaker = segment.speaker === "host_b" ? "host_b" : "host_a";
-    lines.push({ voice: HOST_VOICES[speaker]!, text });
-  }
-  if (script.outro?.trim()) {
-    lines.push({ voice: HOST_VOICES.host_b!, text: script.outro.trim() });
-  }
-  if (lines.length === 0) {
+  const script = validateRepurposeModelOutput(
+    "audio_overview",
+    rawScript,
+  ) as PodcastScript;
+
+  const segments = scriptToPodcastSegments(script);
+  if (segments.length === 0) {
     throw new Error("Audio overview script has no speakable segments.");
   }
 
-  const synth = input.synthesizeFn ?? synthesizeSpeechWithGoogle;
-  const pcmParts: Buffer[] = [];
-  const mp3Parts: Buffer[] = [];
-  let sampleRate = 24000;
-  let channels = 1;
-
-  for (const line of lines) {
-    const speech = await synth({
-      text: line.text,
-      voiceName: line.voice,
-      fetchFn: input.fetchFn,
-    });
-    const buf = Buffer.from(speech.audioBase64, "base64");
-    if (speech.mimeType.includes("mp3") || speech.mimeType.includes("mpeg")) {
-      mp3Parts.push(buf);
-      continue;
-    }
-    let wav = parseWav(buf);
-    if (!wav && speech.mimeType.includes("L16")) {
-      wav = parseWav(pcm16ToWavBuffer(speech.audioBase64, sampleRate));
-    }
-    if (!wav) {
-      throw new Error(`Unsupported TTS audio format: ${speech.mimeType}`);
-    }
-    sampleRate = wav.sampleRate;
-    channels = wav.channels;
-    pcmParts.push(wav.pcm);
-  }
-
-  if (pcmParts.length > 0 && mp3Parts.length > 0) {
-    throw new Error("Mixed TTS formats in audio overview.");
-  }
-
-  const mp3 =
-    pcmParts.length > 0
-      ? encodePcmToMp3(Buffer.concat(pcmParts), sampleRate, channels)
-      : Buffer.concat(mp3Parts);
+  const mp3 = await multiSpeakerSpeechToMp3({
+    segments,
+    fetchFn: input.fetchFn,
+    synthesizeMultiSpeakerFn: input.synthesizeMultiSpeakerFn,
+  });
 
   return { script, mp3 };
 }
@@ -100,7 +104,7 @@ export async function buildAudioOverviewMp3(input: {
 export async function generateAudioOverview(input: {
   source: RepurposePostSource;
   fetchFn?: typeof fetch;
-  synthesizeFn?: typeof synthesizeSpeechWithGoogle;
+  synthesizeMultiSpeakerFn?: typeof synthesizePodcastMultiSpeaker;
   uploadFn?: (
     file: File | Blob,
     fileName?: string,
@@ -123,4 +127,30 @@ export async function generateAudioOverview(input: {
     mediaUrl: uploaded.gatewayUrl,
     mediaMimeType: "audio/mpeg",
   };
+}
+
+/** @internal Per-slide narration for video overview (inject synthesizeFn in tests). */
+export async function synthesizeSlideNarrationMp3(input: {
+  text: string;
+  fetchFn?: typeof fetch;
+  synthesizeFn?: typeof synthesizeSpeechWithGoogle;
+}): Promise<Buffer> {
+  const synth = input.synthesizeFn ?? synthesizeSpeechWithGoogle;
+  const speech = await synth({
+    text: input.text,
+    voiceName: "Puck",
+    fetchFn: input.fetchFn,
+  });
+  const buf = Buffer.from(speech.audioBase64, "base64");
+  if (speech.mimeType.includes("mp3") || speech.mimeType.includes("mpeg")) {
+    return buf;
+  }
+  let wav = parseWav(buf);
+  if (!wav && speech.mimeType.includes("L16")) {
+    wav = parseWav(pcm16ToWavBuffer(speech.audioBase64, 24000));
+  }
+  if (!wav) {
+    throw new Error(`Unsupported TTS audio format: ${speech.mimeType}`);
+  }
+  return encodePcmToMp3(wav.pcm, wav.sampleRate, wav.channels);
 }

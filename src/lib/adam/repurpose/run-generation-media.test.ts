@@ -50,6 +50,7 @@ describe("runRepurposeGeneration media outputs", () => {
       db,
       postIdOrSlug: "visual",
       outputType: "infographic",
+      auth: { ok: true, actor: "adam-token", mode: "adam_token" },
       deps: { fetchFn, uploadFn },
     });
 

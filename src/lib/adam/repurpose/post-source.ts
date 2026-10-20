@@ -1,4 +1,7 @@
+import { eq, sql } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
+import { ensurePostsSchema } from "@/db/ensure-schema";
+import { posts } from "@/db/schema";
 import { getAdminPostByIdOrSlug } from "@/lib/posts/manage-posts";
 import { stripHtmlTags } from "@/lib/posts/reading-time";
 
@@ -17,9 +20,25 @@ export type RepurposePostSource = {
   slug: string;
   title: string;
   status: "draft" | "published";
+  authorId: string | null;
   teaserText: string | null;
   plainText: string;
 };
+
+async function loadPostAuthorId(
+  db: DearCreativeDb,
+  postId: string,
+): Promise<string | null> {
+  await ensurePostsSchema(db);
+  try {
+    const rows = await db.all<{ author_id?: string | null }>(
+      sql`SELECT author_id FROM posts WHERE id = ${postId} LIMIT 1`,
+    );
+    return rows[0]?.author_id ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export async function loadRepurposePostSource(
   db: DearCreativeDb,
@@ -49,12 +68,28 @@ export async function loadRepurposePostSource(
     throw new RepurposePostError("ineligible", "Post has no text content to repurpose.");
   }
 
+  const authorId = await loadPostAuthorId(db, post.id);
+
   return {
     id: post.id,
     slug: post.slug,
     title: post.title,
     status: post.status,
+    authorId,
     teaserText: post.teaserText ?? null,
     plainText,
   };
+}
+
+/** @internal tests — set author_id on a post row */
+export async function setPostAuthorIdForTests(
+  db: DearCreativeDb,
+  postId: string,
+  authorId: string | null,
+): Promise<void> {
+  await ensurePostsSchema(db);
+  await db
+    .update(posts)
+    .set({ authorId })
+    .where(eq(posts.id, postId));
 }

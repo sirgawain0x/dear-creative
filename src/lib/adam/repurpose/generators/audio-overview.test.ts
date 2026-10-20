@@ -6,7 +6,7 @@ describe("buildAudioOverviewMp3", () => {
     vi.unstubAllEnvs();
   });
 
-  it("merges multi-speaker TTS segments into one MP3 buffer", async () => {
+  it("uses one multi-speaker TTS call for the full script", async () => {
     vi.stubEnv("GEMINI_API_KEY", "test-key");
     const fetchFn = vi.fn().mockResolvedValue(
       new Response(
@@ -33,7 +33,7 @@ describe("buildAudioOverviewMp3", () => {
       ),
     );
 
-    const synthesizeFn = vi.fn().mockResolvedValue({
+    const synthesizeMultiSpeakerFn = vi.fn().mockResolvedValue({
       audioBase64: Buffer.from("fake-mp3").toString("base64"),
       mimeType: "audio/mp3",
       provider: "mock",
@@ -45,15 +45,19 @@ describe("buildAudioOverviewMp3", () => {
         slug: "pod",
         title: "Pod",
         status: "published",
+        authorId: "author-1",
         teaserText: null,
         plainText: "Article body",
       },
       fetchFn,
-      synthesizeFn,
+      synthesizeMultiSpeakerFn,
     });
 
     expect(script.segments).toHaveLength(2);
-    expect(synthesizeFn).toHaveBeenCalledTimes(2);
+    expect(synthesizeMultiSpeakerFn).toHaveBeenCalledTimes(1);
+    expect(synthesizeMultiSpeakerFn.mock.calls[0]?.[0]?.segments).toHaveLength(
+      2,
+    );
     expect(mp3.length).toBeGreaterThan(0);
   });
 });

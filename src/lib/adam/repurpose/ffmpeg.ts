@@ -1,56 +1,143 @@
 import { execFile as execFileCb } from "node:child_process";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import ffmpegStatic from "ffmpeg-static";
 import { promisify } from "node:util";
+import { REPURPOSE_FFMPEG_EXEC_TIMEOUT_MS } from "./constants";
 
 const execFile = promisify(execFileCb);
 
 export type FfmpegRunner = (args: string[]) => Promise<void>;
 
-export async function defaultFfmpegRunner(args: string[]): Promise<void> {
-  await execFile("ffmpeg", args, { maxBuffer: 16 * 1024 * 1024 });
+export function resolveFfmpegBinaryPath(): string {
+  const bundled = ffmpegStatic;
+  if (typeof bundled === "string" && bundled.length > 0) {
+    return bundled;
+  }
+  return "ffmpeg";
 }
 
-/** Builds a narrated slide MP4 from per-slide durations and a narration audio file. */
+export function resolveRepurposeDrawtextFontPath(): string {
+  return join(process.cwd(), "src/assets/fonts/DejaVuSans.ttf");
+}
+
+export async function defaultFfmpegRunner(args: string[]): Promise<void> {
+  const binary = resolveFfmpegBinaryPath();
+  await execFile(binary, args, {
+    maxBuffer: 16 * 1024 * 1024,
+    timeout: REPURPOSE_FFMPEG_EXEC_TIMEOUT_MS,
+  });
+}
+
+const durationRe = /Duration:\s(\d+):(\d+):(\d+(?:\.\d+)?)/;
+
+/** Reads audio duration via ffmpeg -i (stderr). */
+export async function probeAudioDurationSeconds(input: {
+  audioPath: string;
+  ffmpeg?: FfmpegRunner;
+}): Promise<number> {
+  const binary = resolveFfmpegBinaryPath();
+  if (input.ffmpeg) {
+    try {
+      await input.ffmpeg(["-hide_banner", "-i", input.audioPath]);
+    } catch (error) {
+      const stderr =
+        error && typeof error === "object" && "stderr" in error
+          ? String((error as { stderr: string }).stderr)
+          : "";
+      const match = durationRe.exec(stderr);
+      if (match) {
+        const hours = Number(match[1]);
+        const minutes = Number(match[2]);
+        const seconds = Number(match[3]);
+        return hours * 3600 + minutes * 60 + seconds;
+      }
+    }
+    return 4;
+  }
+
+  try {
+    await execFile(binary, ["-hide_banner", "-i", input.audioPath], {
+      maxBuffer: 4 * 1024 * 1024,
+      timeout: 30_000,
+    });
+  } catch (error) {
+    const stderr =
+      error && typeof error === "object" && "stderr" in error
+        ? String((error as { stderr: string }).stderr)
+        : "";
+    const match = durationRe.exec(stderr);
+    if (match) {
+      const hours = Number(match[1]);
+      const minutes = Number(match[2]);
+      const seconds = Number(match[3]);
+      return hours * 3600 + minutes * 60 + seconds;
+    }
+    throw new Error("Could not probe audio duration");
+  }
+  throw new Error("Could not probe audio duration");
+}
+
+export type SlideNarrationSpec = {
+  title: string;
+  audioPath: string;
+  durationSeconds: number;
+};
+
+/** Builds a narrated slide MP4; one segment per slide timed to its narration. */
 export async function buildNarratedSlidesMp4(input: {
   workDir: string;
-  slideTitles: string[];
-  secondsPerSlide: number;
-  audioPath: string;
+  slides: SlideNarrationSpec[];
   outputPath: string;
   ffmpeg?: FfmpegRunner;
 }): Promise<void> {
-  const ffmpeg = input.ffmpeg ?? defaultFfmpegRunner;
-  const segmentPaths: string[] = [];
-
-  for (let i = 0; i < input.slideTitles.length; i++) {
-    const title = input.slideTitles[i] ?? `Slide ${i + 1}`;
-    const safe = title.replace(/'/g, "'\\''").slice(0, 120);
-    const segmentPath = `${input.workDir}/slide-${i}.mp4`;
-    segmentPaths.push(segmentPath);
-    await ffmpeg([
-      "-y",
-      "-f",
-      "lavfi",
-      "-i",
-      `color=c=0x1e1b4b:s=1280x720:d=${input.secondsPerSlide}`,
-      "-vf",
-      `drawtext=text='${safe}':fontsize=42:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2`,
-      "-c:v",
-      "libx264",
-      "-pix_fmt",
-      "yuv420p",
-      segmentPath,
-    ]);
+  if (input.slides.length === 0) {
+    throw new Error("No slides for video overview.");
   }
 
-  const listPath = `${input.workDir}/concat.txt`;
-  const { writeFile } = await import("node:fs/promises");
-  await writeFile(
-    listPath,
-    segmentPaths.map((p) => `file '${p}'`).join("\n"),
-    "utf8",
-  );
+  const ffmpeg = input.ffmpeg ?? defaultFfmpegRunner;
+  const fontfile = resolveRepurposeDrawtextFontPath();
+  const segmentPaths: string[] = [];
 
-  const silentVideo = `${input.workDir}/slides-combined.mp4`;
+  for (let i = 0; i < input.slides.length; i++) {
+      const slide = input.slides[i]!;
+      const duration = Math.max(0.5, slide.durationSeconds);
+      const textPath = join(input.workDir, `slide-${i}.txt`);
+      await writeFile(textPath, slide.title.slice(0, 200), "utf8");
+      const segmentPath = join(input.workDir, `slide-${i}.mp4`);
+      segmentPaths.push(segmentPath);
+
+      await ffmpeg([
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        `color=c=0x1e1b4b:s=1280x720:d=${duration}`,
+        "-i",
+        slide.audioPath,
+        "-vf",
+        `drawtext=fontfile=${fontfile}:textfile=${textPath}:fontsize=42:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2`,
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-map",
+        "0:v:0",
+        "-map",
+        "1:a:0",
+        segmentPath,
+      ]);
+    }
+
+    const listPath = join(input.workDir, "concat.txt");
+    await writeFile(
+      listPath,
+      segmentPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n"),
+      "utf8",
+    );
+
   await ffmpeg([
     "-y",
     "-f",
@@ -61,20 +148,6 @@ export async function buildNarratedSlidesMp4(input: {
     listPath,
     "-c",
     "copy",
-    silentVideo,
-  ]);
-
-  await ffmpeg([
-    "-y",
-    "-i",
-    silentVideo,
-    "-i",
-    input.audioPath,
-    "-c:v",
-    "copy",
-    "-c:a",
-    "aac",
-    "-shortest",
     input.outputPath,
   ]);
 }

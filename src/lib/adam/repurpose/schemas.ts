@@ -10,22 +10,45 @@ export function getRepurposeResponseSchema(
         type: "object",
         properties: {
           title: { type: "string" },
-          root: { $ref: "#/$defs/node" },
-        },
-        required: ["title", "root"],
-        $defs: {
-          node: {
+          root: {
             type: "object",
             properties: {
               label: { type: "string" },
               children: {
                 type: "array",
-                items: { $ref: "#/$defs/node" },
+                items: {
+                  type: "object",
+                  properties: {
+                    label: { type: "string" },
+                    children: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          label: { type: "string" },
+                          children: {
+                            type: "array",
+                            items: {
+                              type: "object",
+                              properties: {
+                                label: { type: "string" },
+                              },
+                              required: ["label"],
+                            },
+                          },
+                        },
+                        required: ["label"],
+                      },
+                    },
+                  },
+                  required: ["label"],
+                },
               },
             },
-            required: ["label", "children"],
+            required: ["label"],
           },
         },
+        required: ["title", "root"],
       };
     case "report":
       return {

@@ -6,6 +6,12 @@ const nextConfig: NextConfig = {
   pageExtensions: ["js", "jsx", "md", "mdx", "ts", "tsx"],
   cacheComponents: true,
   partialPrefetching: true,
+  outputFileTracingIncludes: {
+    "/api/adam/posts/*/repurpose/*": [
+      "./node_modules/ffmpeg-static/**/*",
+      "./src/assets/fonts/**/*",
+    ],
+  },
   turbopack: {
     rules: {
       "*.css": {

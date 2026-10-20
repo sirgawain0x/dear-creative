@@ -12,5 +12,4 @@ CREATE TABLE `post_repurpose_outputs` (
 	FOREIGN KEY (`post_id`) REFERENCES `posts`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `post_repurpose_outputs_post_type_unique` ON `post_repurpose_outputs` (`post_id`,`output_type`);--> statement-breakpoint
-CREATE INDEX `post_repurpose_outputs_post_id_idx` ON `post_repurpose_outputs` (`post_id`);
+CREATE UNIQUE INDEX `post_repurpose_outputs_post_type_unique` ON `post_repurpose_outputs` (`post_id`,`output_type`);
