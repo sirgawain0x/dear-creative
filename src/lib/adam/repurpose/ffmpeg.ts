@@ -1,6 +1,7 @@
 import { execFile as execFileCb } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import ffmpegStatic from "ffmpeg-static";
 import { promisify } from "node:util";
 import { REPURPOSE_FFMPEG_EXEC_TIMEOUT_MS } from "./constants";
@@ -12,6 +13,48 @@ import {
 const execFile = promisify(execFileCb);
 
 export type FfmpegRunner = (args: string[]) => Promise<void>;
+
+const FFMPEG_STDERR_TAIL_BYTES = 2048;
+
+export function tailFfmpegStderrForLog(stderr: string): string {
+  const bytes = Buffer.from(stderr, "utf8");
+  if (bytes.length <= FFMPEG_STDERR_TAIL_BYTES) {
+    return stderr;
+  }
+  return bytes.subarray(bytes.length - FFMPEG_STDERR_TAIL_BYTES).toString("utf8");
+}
+
+function rethrowFfmpegExecError(error: unknown): never {
+  if (error && typeof error === "object" && "stderr" in error) {
+    const stderr = tailFfmpegStderrForLog(String((error as { stderr: string }).stderr));
+    throw new Error(`ffmpeg failed: ${stderr}`);
+  }
+  throw error;
+}
+
+let repurposeFontconfigPath: string | null = null;
+
+/** Minimal fontconfig for Lambda (ffmpeg-static builds enable fontconfig). */
+export async function resolveRepurposeFfmpegEnv(): Promise<
+  Record<string, string>
+> {
+  const fontDir = join(process.cwd(), "src/assets/fonts");
+  if (!repurposeFontconfigPath) {
+    repurposeFontconfigPath = join(fontDir, "repurpose-fontconfig.conf");
+    const cacheDir = join(tmpdir(), "fontconfig-cache-dear-creative");
+    const xml = `<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+<fontconfig>
+  <dir>${fontDir}</dir>
+  <cachedir>${cacheDir}</cachedir>
+</fontconfig>
+`;
+    await writeFile(repurposeFontconfigPath, xml, "utf8");
+  }
+  return {
+    FONTCONFIG_FILE: repurposeFontconfigPath,
+  };
+}
 
 export function resolveFfmpegBinaryPath(): string {
   const bundled = ffmpegStatic;
@@ -25,12 +68,22 @@ export function resolveRepurposeDrawtextFontPath(): string {
   return join(process.cwd(), "src/assets/fonts/DejaVuSans.ttf");
 }
 
-export async function defaultFfmpegRunner(args: string[]): Promise<void> {
+async function execFfmpeg(args: string[], timeoutMs: number): Promise<void> {
   const binary = resolveFfmpegBinaryPath();
-  await execFile(binary, args, {
-    maxBuffer: 16 * 1024 * 1024,
-    timeout: REPURPOSE_FFMPEG_EXEC_TIMEOUT_MS,
-  });
+  const fontEnv = await resolveRepurposeFfmpegEnv();
+  try {
+    await execFile(binary, args, {
+      maxBuffer: 16 * 1024 * 1024,
+      timeout: timeoutMs,
+      env: { ...process.env, ...fontEnv },
+    });
+  } catch (error) {
+    rethrowFfmpegExecError(error);
+  }
+}
+
+export async function defaultFfmpegRunner(args: string[]): Promise<void> {
+  await execFfmpeg(args, REPURPOSE_FFMPEG_EXEC_TIMEOUT_MS);
 }
 
 const durationRe = /Duration:\s(\d+):(\d+):(\d+(?:\.\d+)?)/;
@@ -56,12 +109,19 @@ async function runFfmpegProbe(
     const stderr =
       error && typeof error === "object" && "stderr" in error
         ? String((error as { stderr: string }).stderr)
-        : "";
+        : error instanceof Error
+          ? error.message
+          : "";
     const duration = parseDurationSecondsFromProbeStderr(stderr);
     if (duration !== null) {
       return duration;
     }
-    throw new Error("Could not probe audio duration");
+    if (error instanceof Error && error.message.startsWith("ffmpeg failed:")) {
+      throw error;
+    }
+    throw new Error(
+      `Could not probe audio duration: ${tailFfmpegStderrForLog(stderr)}`,
+    );
   }
   throw new Error("Could not probe audio duration");
 }
@@ -98,11 +158,7 @@ export function createDeadlineAwareFfmpegRunner(input: {
       REPURPOSE_FFMPEG_EXEC_TIMEOUT_MS,
       Math.max(1_000, remaining),
     );
-    const binary = resolveFfmpegBinaryPath();
-    await execFile(binary, args, {
-      maxBuffer: 16 * 1024 * 1024,
-      timeout: timeoutMs,
-    });
+    await execFfmpeg(args, timeoutMs);
   };
 }
 
