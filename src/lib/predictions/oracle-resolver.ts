@@ -7,7 +7,6 @@ import {
   http,
   type Hex,
 } from "viem";
-import { base, baseSepolia } from "viem/chains";
 import {
   buildSocialPost,
   parseRealityQuestion,
@@ -17,6 +16,11 @@ import {
   broadcastOracleResolution,
   type BroadcastOracleResolutionResult,
 } from "@/lib/social";
+import { isOracleEnabled } from "@/lib/predictions/feature-flag";
+import {
+  resolveOracleChain,
+  resolveOracleRpcUrl,
+} from "@/lib/predictions/oracle-chain";
 
 export const REALITY_ETH_BASE_MAINNET =
   "0x446e545A6d0429718429B57c9135061413a2F44a" as const;
@@ -44,17 +48,12 @@ export interface OracleContractReader {
 }
 
 export function createDefaultOracleReader(): OracleContractReader {
-  const isSepolia = process.env.X402_NETWORK === "base-sepolia";
-  const chain = isSepolia ? baseSepolia : base;
+  const chain = resolveOracleChain();
   const contractAddress = (
     process.env.REALITY_ETH_ADDRESS || REALITY_ETH_BASE_MAINNET
   ) as Address;
 
-  const rpcUrl = process.env.ALCHEMY_API_KEY?.trim()
-    ? `https://${isSepolia ? "base-sepolia" : "base-mainnet"}.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY.trim()}`
-    : isSepolia
-      ? "https://sepolia.base.org"
-      : "https://mainnet.base.org";
+  const rpcUrl = resolveOracleRpcUrl();
 
   const client = createPublicClient({
     chain,
@@ -101,7 +100,17 @@ export async function resolvePendingPredictions(
   totalPending: number;
   finalizedCount: number;
   results: ProcessedPredictionResult[];
+  disabled?: boolean;
 }> {
+  if (!isOracleEnabled()) {
+    return {
+      totalPending: 0,
+      finalizedCount: 0,
+      results: [],
+      disabled: true,
+    };
+  }
+
   const reader = options?.reader ?? createDefaultOracleReader();
   const broadcaster = options?.broadcaster ?? broadcastOracleResolution;
 

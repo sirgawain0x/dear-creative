@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/db/client";
 import { requireAdamAuth } from "@/lib/adam/require-auth";
+import { isOracleEnabled } from "@/lib/predictions/feature-flag";
 import { resolvePendingPredictions } from "@/lib/predictions/oracle-resolver";
 
 function isAuthorized(request: Request): boolean {
@@ -19,6 +20,17 @@ function isAuthorized(request: Request): boolean {
 export async function GET(request: Request) {
   if (!isAuthorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!isOracleEnabled()) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "oracle_disabled",
+        error: "Oracle resolver is disabled (set ORACLE_ENABLED=true to run)",
+      },
+      { status: 503 },
+    );
   }
 
   try {

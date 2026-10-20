@@ -7,6 +7,7 @@ import { MicroTippingWidget } from "@/components/monetization/micro-tipping-widg
 import { PredictionCard } from "@/components/predictions/prediction-card";
 import { PostFeedbackWidget } from "@/components/posts/post-feedback-widget";
 import { PostKeyTakeaways } from "@/components/posts/post-key-takeaways";
+import { AuthorByline } from "@/components/posts/author-byline";
 import { PostShareButton } from "@/components/posts/post-share-button";
 import { splitArticleAtParagraph } from "@/lib/posts/post-takeaway-inline";
 import { publishedPostBodyForDisplay } from "@/lib/posts/published-post-render";
@@ -103,6 +104,18 @@ function PostArticle({
           <p className="mt-4 text-lg text-zinc-600 dark:text-zinc-400">
             {post.excerpt}
           </p>
+        ) : null}
+
+        {post.author ? (
+          <div className="mt-6">
+            <AuthorByline
+              author={post.author}
+              publishedDate={new Date(post.publishedAt).toLocaleDateString(
+                "en-US",
+                { dateStyle: "medium" },
+              )}
+            />
+          </div>
         ) : null}
       </header>
 
