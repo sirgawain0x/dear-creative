@@ -3,7 +3,10 @@ import { getDb } from "@/db/client";
 import { assertRepurposeCallerAccess } from "@/lib/adam/repurpose/access";
 import { isRepurposeEnabled } from "@/lib/adam/repurpose/feature-flag";
 import { loadRepurposePostSource, RepurposePostError } from "@/lib/adam/repurpose/post-source";
-import { listRepurposeOutputsForPost } from "@/lib/adam/repurpose/storage";
+import {
+  listRepurposeOutputsForPost,
+  toClientRepurposeOutput,
+} from "@/lib/adam/repurpose/storage";
 import { requireStudioOrAdamAuth } from "@/lib/adam/studio-auth";
 
 type RouteContext = {
@@ -34,7 +37,7 @@ export async function GET(request: Request, context: RouteContext) {
     return NextResponse.json({
       postId: source.id,
       slug: source.slug,
-      outputs,
+      outputs: outputs.map(toClientRepurposeOutput),
     });
   } catch (error) {
     if (error instanceof RepurposePostError) {

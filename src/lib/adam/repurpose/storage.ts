@@ -3,6 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
 import { ensurePostsSchema } from "@/db/ensure-schema";
 import { postRepurposeOutputs } from "@/db/schema";
+import { isSqliteUniqueConstraintError } from "@/lib/db/sqlite-errors";
 import { REPURPOSE_GENERATING_TTL_MS } from "./constants";
 import type {
   RepurposeOutputStatus,
@@ -30,6 +31,19 @@ function rowToStored(row: typeof postRepurposeOutputs.$inferSelect): RepurposeSt
     errorMessage: row.errorMessage ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/** Strips internal failure details from API responses. */
+export function toClientRepurposeOutput(
+  output: RepurposeStoredOutput,
+): RepurposeStoredOutput {
+  if (output.status !== "failed") {
+    return output;
+  }
+  return {
+    ...output,
+    errorMessage: "Generation failed.",
   };
 }
 
@@ -70,6 +84,27 @@ export type ClaimRepurposeLockResult =
   | { outcome: "claimed"; rowId: string }
   | { outcome: "conflict" };
 
+async function tryReclaimGeneratingLock(input: {
+  db: DearCreativeDb;
+  postId: string;
+  outputType: RepurposeOutputType;
+  nowMs: number;
+  staleBeforeMs: number;
+}): Promise<string | null> {
+  const reclaimed = await input.db.all<{ id: string }>(sql`
+    UPDATE post_repurpose_outputs
+    SET status = 'generating', error_message = NULL, updated_at = ${input.nowMs}
+    WHERE post_id = ${input.postId}
+      AND output_type = ${input.outputType}
+      AND (
+        status = 'failed'
+        OR (status = 'generating' AND updated_at < ${input.staleBeforeMs})
+      )
+    RETURNING id
+  `);
+  return reclaimed[0]?.id ?? null;
+}
+
 export async function claimRepurposeGenerationLock(input: {
   db: DearCreativeDb;
   postId: string;
@@ -87,19 +122,15 @@ export async function claimRepurposeGenerationLock(input: {
   }
 
   if (existing) {
-    const reclaimed = await input.db.all<{ id: string }>(sql`
-      UPDATE post_repurpose_outputs
-      SET status = 'generating', error_message = NULL, updated_at = ${nowMs}
-      WHERE post_id = ${input.postId}
-        AND output_type = ${input.outputType}
-        AND (
-          status = 'failed'
-          OR (status = 'generating' AND updated_at < ${staleBeforeMs})
-        )
-      RETURNING id
-    `);
-    if (reclaimed[0]?.id) {
-      return { outcome: "claimed", rowId: reclaimed[0].id };
+    const reclaimedId = await tryReclaimGeneratingLock({
+      db: input.db,
+      postId: input.postId,
+      outputType: input.outputType,
+      nowMs,
+      staleBeforeMs,
+    });
+    if (reclaimedId) {
+      return { outcome: "claimed", rowId: reclaimedId };
     }
     return { outcome: "conflict" };
   }
@@ -119,7 +150,10 @@ export async function claimRepurposeGenerationLock(input: {
       updatedAt: now,
     });
     return { outcome: "claimed", rowId: id };
-  } catch {
+  } catch (error) {
+    if (!isSqliteUniqueConstraintError(error)) {
+      throw error;
+    }
     const racedExisting = await getRepurposeOutput(
       input.db,
       input.postId,
@@ -128,26 +162,30 @@ export async function claimRepurposeGenerationLock(input: {
     if (racedExisting?.status === "ready") {
       return { outcome: "ready", output: racedExisting };
     }
-    const reclaimed = await input.db.all<{ id: string }>(sql`
-      UPDATE post_repurpose_outputs
-      SET status = 'generating', error_message = NULL, updated_at = ${nowMs}
-      WHERE post_id = ${input.postId}
-        AND output_type = ${input.outputType}
-        AND (
-          status = 'failed'
-          OR (status = 'generating' AND updated_at < ${staleBeforeMs})
-        )
-      RETURNING id
-    `);
-    if (reclaimed[0]?.id) {
-      return { outcome: "claimed", rowId: reclaimed[0].id };
+    const reclaimedId = await tryReclaimGeneratingLock({
+      db: input.db,
+      postId: input.postId,
+      outputType: input.outputType,
+      nowMs,
+      staleBeforeMs,
+    });
+    if (reclaimedId) {
+      return { outcome: "claimed", rowId: reclaimedId };
     }
     return { outcome: "conflict" };
   }
 }
 
+export class RepurposeStaleClaimError extends Error {
+  constructor() {
+    super("Repurpose claim is no longer active");
+    this.name = "RepurposeStaleClaimError";
+  }
+}
+
 export async function saveRepurposeReady(input: {
   db: DearCreativeDb;
+  rowId: string;
   postId: string;
   outputType: RepurposeOutputType;
   payload: unknown;
@@ -155,7 +193,7 @@ export async function saveRepurposeReady(input: {
   mediaMimeType?: string | null;
 }): Promise<RepurposeStoredOutput> {
   const now = new Date();
-  await input.db
+  const updated = await input.db
     .update(postRepurposeOutputs)
     .set({
       status: "ready",
@@ -167,19 +205,23 @@ export async function saveRepurposeReady(input: {
     })
     .where(
       and(
+        eq(postRepurposeOutputs.id, input.rowId),
         eq(postRepurposeOutputs.postId, input.postId),
         eq(postRepurposeOutputs.outputType, input.outputType),
+        eq(postRepurposeOutputs.status, "generating"),
       ),
-    );
-  const row = await getRepurposeOutput(input.db, input.postId, input.outputType);
-  if (!row) {
-    throw new Error("Repurpose output row missing after save");
+    )
+    .returning();
+
+  if (!updated[0]) {
+    throw new RepurposeStaleClaimError();
   }
-  return row;
+  return rowToStored(updated[0]);
 }
 
 export async function saveRepurposeFailed(input: {
   db: DearCreativeDb;
+  rowId: string;
   postId: string;
   outputType: RepurposeOutputType;
   errorMessage: string;
@@ -194,8 +236,10 @@ export async function saveRepurposeFailed(input: {
     })
     .where(
       and(
+        eq(postRepurposeOutputs.id, input.rowId),
         eq(postRepurposeOutputs.postId, input.postId),
         eq(postRepurposeOutputs.outputType, input.outputType),
+        eq(postRepurposeOutputs.status, "generating"),
       ),
     );
 }

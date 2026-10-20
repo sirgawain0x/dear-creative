@@ -5,7 +5,10 @@ import {
   RepurposeGenerationError,
   runRepurposeGeneration,
 } from "@/lib/adam/repurpose/run-generation";
-import { getRepurposeOutput } from "@/lib/adam/repurpose/storage";
+import {
+  getRepurposeOutput,
+  toClientRepurposeOutput,
+} from "@/lib/adam/repurpose/storage";
 import {
   isRepurposeOutputType,
   type RepurposeOutputType,
@@ -52,7 +55,7 @@ export async function GET(request: Request, context: RouteContext) {
     if (!output) {
       return NextResponse.json({ output: null });
     }
-    return NextResponse.json({ output });
+    return NextResponse.json({ output: toClientRepurposeOutput(output) });
   } catch (error) {
     if (error instanceof RepurposePostError) {
       return NextResponse.json(

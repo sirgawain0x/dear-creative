@@ -2,7 +2,7 @@
   "version": "6",
   "dialect": "sqlite",
   "id": "64a3bfa9-44cb-4a82-9d0d-46c29c63f89c",
-  "prevId": "49d5be69-41e9-483d-9626-af35cea25400",
+  "prevId": "2bb91bfd-d3b0-4c58-abd3-fa494d3fc288",
   "tables": {
     "adam_chat_messages": {
       "name": "adam_chat_messages",

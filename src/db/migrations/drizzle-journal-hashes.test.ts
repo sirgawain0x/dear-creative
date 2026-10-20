@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { readMigrationFiles } from "drizzle-orm/migrator";
@@ -43,18 +43,11 @@ const RECONCILE_0009_TO_0014 = [
   },
 ] as const;
 
-const RECONCILE_0015_TO_0016 = [
-  {
-    tag: "0015_cowriters",
-    when: 1792515477429,
-    hash: "83a8d452b6e3a89111c9ad2e2118063a49c035971255a7b7db99a5e5ce76df86",
-  },
-  {
-    tag: "0016_post_repurpose_outputs",
-    when: 1792521000000,
-    hash: "42acf1cb8c641a91f05948cb26b9b63f268e262d5346e801bd6fca801b89efc7",
-  },
-] as const;
+const RECONCILE_0016 = {
+  tag: "0016_post_repurpose_outputs",
+  when: 1792521000000,
+  hash: "42acf1cb8c641a91f05948cb26b9b63f268e262d5346e801bd6fca801b89efc7",
+} as const;
 
 describe("drizzle journal reconciliation hashes (0009–0014)", () => {
   it("matches drizzle-orm readMigrationFiles hash algorithm", () => {
@@ -67,13 +60,28 @@ describe("drizzle journal reconciliation hashes (0009–0014)", () => {
   });
 });
 
-describe("drizzle journal reconciliation hashes (0015–0016)", () => {
+describe("drizzle journal reconciliation hashes (0016 repurpose)", () => {
   it("matches drizzle-orm readMigrationFiles hash algorithm", () => {
     const migrations = readMigrationFiles({ migrationsFolder: "./drizzle" });
-    for (const expected of RECONCILE_0015_TO_0016) {
-      const fromLib = migrations.find((m) => m.folderMillis === expected.when);
-      expect(fromLib?.hash).toBe(expected.hash);
-      expect(hashMigrationSqlFile(expected.tag)).toBe(expected.hash);
-    }
+    const fromLib = migrations.find((m) => m.folderMillis === RECONCILE_0016.when);
+    expect(fromLib?.hash).toBe(RECONCILE_0016.hash);
+    expect(hashMigrationSqlFile(RECONCILE_0016.tag)).toBe(RECONCILE_0016.hash);
+  });
+
+  it("tolerates a gap at migration tag 0015 (journal idx 15 → 0016 sql)", () => {
+    expect(existsSync(join(process.cwd(), "drizzle", "0015_cowriters.sql"))).toBe(
+      false,
+    );
+    const journal = JSON.parse(
+      readFileSync(join(process.cwd(), "drizzle/meta/_journal.json"), "utf8"),
+    ) as { entries: Array<{ idx: number; tag: string }> };
+    const repurposeEntry = journal.entries.find(
+      (entry) => entry.tag === RECONCILE_0016.tag,
+    );
+    expect(repurposeEntry?.idx).toBe(15);
+    const migrations = readMigrationFiles({ migrationsFolder: "./drizzle" });
+    expect(migrations.some((m) => m.folderMillis === RECONCILE_0016.when)).toBe(
+      true,
+    );
   });
 });
