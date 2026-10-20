@@ -1,5 +1,5 @@
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
-import * as schema from "@/db/schema";
+import type * as schema from "@/db/schema";
 import { dearPlatformTreasuryAddress } from "@/lib/payments/subscription-config";
 import { formatChecksumAddress } from "@/lib/admin/payout-address";
 import { getOwnerWriter } from "@/lib/admin/owner-writer";

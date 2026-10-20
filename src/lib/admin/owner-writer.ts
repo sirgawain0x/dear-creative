@@ -1,6 +1,6 @@
 import { asc } from "drizzle-orm";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
-import * as schema from "@/db/schema";
+import type * as schema from "@/db/schema";
 import { writers } from "@/db/schema";
 
 type Db = LibSQLDatabase<typeof schema>;

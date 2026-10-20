@@ -8,9 +8,10 @@ import { migrate } from "drizzle-orm/libsql/migrator";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as schema from "@/db/schema";
 import { writers } from "@/db/schema";
+import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import { loadAdminPayoutsSnapshot } from "./admin-payouts";
 
-let testDb: ReturnType<typeof drizzle>;
+let testDb: LibSQLDatabase<typeof schema>;
 
 async function createTestDb() {
   const dir = mkdtempSync(join(tmpdir(), "dear-admin-payouts-"));
