@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as narrationDeadline from "./narration-deadline";
 import {
   GEMINI_NARRATION_FALLBACK_VOICE,
   synthesizeNarrationChunks,
@@ -63,6 +64,67 @@ describe("synthesizeNarrationChunks", () => {
       GEMINI_NARRATION_FALLBACK_VOICE,
     );
     expect(result.provider).toContain("kokoro-fallback");
+  });
+
+  it("builds a fresh abort signal per chunk from the narration deadline", async () => {
+    vi.stubEnv("NARRATION_PROVIDER", "kokoro");
+    const buildSpy = vi.spyOn(narrationDeadline, "buildNarrationFetchSignal");
+    buildSpy.mockReturnValue(new AbortController().signal);
+    kokoroMock.mockResolvedValue({
+      audioBase64: "aGk=",
+      mimeType: "audio/wav",
+      provider: "kokoro-cloud-run",
+    });
+
+    const deadlineAtMs = Date.now() + 60_000;
+    await synthesizeNarrationChunks({
+      chunks: ["One.", "Two.", "Three."],
+      voiceName: "af_heart",
+      deadlineAtMs,
+    });
+
+    expect(buildSpy).toHaveBeenCalledTimes(3);
+    expect(kokoroMock).toHaveBeenCalledTimes(3);
+    for (const call of kokoroMock.mock.calls) {
+      expect(call[0]?.signal).toBeDefined();
+    }
+    buildSpy.mockRestore();
+  });
+
+  it("skips Gemini fallback when the wall budget is too small", async () => {
+    vi.stubEnv("NARRATION_PROVIDER", "kokoro");
+    vi.stubEnv("NARRATION_GEMINI_FALLBACK", "true");
+    kokoroMock.mockRejectedValueOnce(new Error("503"));
+
+    await expect(
+      synthesizeNarrationChunks({
+        chunks: ["Only kokoro."],
+        voiceName: "af_heart",
+        deadlineAtMs: Date.now() + 1_000,
+      }),
+    ).rejects.toThrow("503");
+
+    expect(geminiMock).not.toHaveBeenCalled();
+  });
+
+  it("passes abort signal into Gemini when falling back", async () => {
+    vi.stubEnv("NARRATION_PROVIDER", "kokoro");
+    vi.stubEnv("NARRATION_GEMINI_FALLBACK", "true");
+    kokoroMock.mockRejectedValueOnce(new Error("503"));
+    geminiMock.mockResolvedValue({
+      audioBase64: "aGk=",
+      mimeType: "audio/wav",
+      provider: "gemini",
+    });
+
+    await synthesizeNarrationChunks({
+      chunks: ["Alpha."],
+      voiceName: "af_heart",
+      deadlineAtMs: Date.now() + 120_000,
+    });
+
+    expect(geminiMock).toHaveBeenCalledTimes(1);
+    expect(geminiMock.mock.calls[0]?.[0]?.signal).toBeDefined();
   });
 
   it("does not call Gemini when Kokoro fails and fallback is disabled", async () => {

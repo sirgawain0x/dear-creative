@@ -6,6 +6,16 @@ export const NARRATION_WALL_TIMEOUT_MESSAGE =
 
 export const NARRATION_DEFAULT_PER_FETCH_CAP_MS = 120_000;
 
+/** Minimum remaining budget before starting another chunk or Gemini fallback. */
+export const MIN_NARRATION_CHUNK_BUDGET_MS = 5_000;
+
+export function hasNarrationBudgetForChunk(
+  deadlineAtMs: number,
+  nowMs: number = Date.now(),
+): boolean {
+  return remainingNarrationBudgetMs(deadlineAtMs, nowMs) >= MIN_NARRATION_CHUNK_BUDGET_MS;
+}
+
 export function createNarrationDeadline(
   budgetMs: number = NARRATION_ROUTE_BUDGET_MS,
   nowMs: number = Date.now(),

@@ -118,9 +118,9 @@ After `docker build`, expect roughly **1.4–2.2 GiB** compressed in Artifact 
 POST /v1/synthesize
 Authorization: Bearer <KOKORO_TTS_TOKEN>
 Content-Type: application/json
-Accept: audio/mpeg
+Accept: audio/wav
 
-{"text":"Hello dispatch.","voice":"af_heart","format":"mp3"}
+{"text":"Hello dispatch.","voice":"af_heart","format":"wav"}
 ```
 
 Response: **`audio/wav`** (24 kHz PCM). Dear Creative concatenates chunk WAVs and encodes **one MP3 per article** with `@breezystack/lamejs` on Vercel (pure JS — no ffmpeg binary). Missing or invalid Bearer → **401 Unauthorized**.
@@ -128,7 +128,7 @@ Response: **`audio/wav`** (24 kHz PCM). Dear Creative concatenates chunk WAVs an
 ## Tests
 
 ```bash
-pip install fastapi pytest httpx numpy pydub
+pip install fastapi pytest httpx numpy soundfile
 cd services/kokoro-tts && pytest test_auth.py -q
 ```
 

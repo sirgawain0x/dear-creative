@@ -1,5 +1,10 @@
 import { synthesizeSpeechWithGoogle } from "@/lib/adam/gemini-studio";
 import {
+  buildNarrationFetchSignal,
+  hasNarrationBudgetForChunk,
+  throwIfNarrationDeadlineExceeded,
+} from "./narration-deadline";
+import {
   getNarrationProvider,
   isGeminiNarrationFallbackEnabled,
   KOKORO_NARRATION_VOICE,
@@ -38,11 +43,14 @@ export async function synthesizeNarrationSpeechChunkWithGemini(input: {
   voiceName?: string;
   fetchFn?: typeof fetch;
   signal?: AbortSignal;
+  deadlineAtMs?: number;
 }): Promise<NarrationSpeechChunk> {
   return synthesizeSpeechWithGoogle({
     text: input.text,
     voiceName: input.voiceName ?? GEMINI_NARRATION_FALLBACK_VOICE,
     fetchFn: input.fetchFn,
+    signal: input.signal,
+    deadlineAtMs: input.deadlineAtMs,
   });
 }
 
@@ -55,20 +63,45 @@ export async function synthesizeNarrationChunks(input: {
   chunks: string[];
   voiceName: string;
   fetchFn?: typeof fetch;
+  /** @deprecated Prefer deadlineAtMs — a fresh per-chunk signal is built from the deadline. */
   signal?: AbortSignal;
+  deadlineAtMs?: number;
   env?: NodeJS.ProcessEnv;
 }): Promise<{ parts: NarrationSpeechChunk[]; provider: string }> {
   const env = input.env ?? process.env;
   const provider = getNarrationProvider(env);
+  const deadlineAtMs = input.deadlineAtMs;
+
+  const chunkSignal = (): AbortSignal | undefined => {
+    if (deadlineAtMs !== undefined) {
+      throwIfNarrationDeadlineExceeded(deadlineAtMs);
+      return buildNarrationFetchSignal(deadlineAtMs);
+    }
+    return input.signal;
+  };
 
   const runGeminiAll = async (reason: string) => {
+    if (deadlineAtMs !== undefined && !hasNarrationBudgetForChunk(deadlineAtMs)) {
+      throw new Error(
+        "Post narration generation exceeded the 290s wall-clock budget",
+      );
+    }
     const parts: NarrationSpeechChunk[] = [];
     for (const text of input.chunks) {
+      if (deadlineAtMs !== undefined) {
+        throwIfNarrationDeadlineExceeded(deadlineAtMs);
+        if (!hasNarrationBudgetForChunk(deadlineAtMs)) {
+          throw new Error(
+            "Post narration generation exceeded the 290s wall-clock budget",
+          );
+        }
+      }
       const speech = await synthesizeNarrationSpeechChunkWithGemini({
         text,
         voiceName: GEMINI_NARRATION_FALLBACK_VOICE,
         fetchFn: input.fetchFn,
-        signal: input.signal,
+        signal: chunkSignal(),
+        deadlineAtMs,
       });
       parts.push({
         ...speech,
@@ -101,11 +134,14 @@ export async function synthesizeNarrationChunks(input: {
   try {
     const parts: NarrationSpeechChunk[] = [];
     for (const text of input.chunks) {
+      if (deadlineAtMs !== undefined) {
+        throwIfNarrationDeadlineExceeded(deadlineAtMs);
+      }
       const speech = await synthesizeNarrationSpeechChunkWithKokoro({
         text,
         voiceName: input.voiceName || KOKORO_NARRATION_VOICE,
         fetchFn: input.fetchFn,
-        signal: input.signal,
+        signal: chunkSignal(),
         env,
       });
       parts.push(speech);
@@ -113,6 +149,9 @@ export async function synthesizeNarrationChunks(input: {
     return { parts, provider: "kokoro-cloud-run" };
   } catch (error) {
     if (!isGeminiNarrationFallbackEnabled(env)) {
+      throw error;
+    }
+    if (deadlineAtMs !== undefined && !hasNarrationBudgetForChunk(deadlineAtMs)) {
       throw error;
     }
     return runGeminiAll("fallback");

@@ -1271,6 +1271,8 @@ export async function synthesizeSpeechWithGoogle(input: {
   text: string;
   voiceName?: string;
   fetchFn?: typeof fetch;
+  signal?: AbortSignal;
+  deadlineAtMs?: number;
 }): Promise<{
   audioBase64: string;
   mimeType: string;
@@ -1284,9 +1286,14 @@ export async function synthesizeSpeechWithGoogle(input: {
   }
 
   const fetchImpl = input.fetchFn ?? fetch;
+  const fetchInit = (init: RequestInit): RequestInit =>
+    input.signal ? { ...init, signal: input.signal } : init;
   const cleanText = input.text.trim().slice(0, 10000);
   if (!cleanText) {
     throw new Error("Text is required for speech synthesis");
+  }
+  if (input.deadlineAtMs !== undefined && input.deadlineAtMs <= Date.now()) {
+    throw new DOMException("Aborted", "AbortError");
   }
 
   // 1. Try Gemini 3.8 Flash TTS via Interactions API (default)
@@ -1303,23 +1310,26 @@ export async function synthesizeSpeechWithGoogle(input: {
       apiKey,
     )}`;
     try {
-      const interactionsRes = await fetchImpl(interactionsUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: ttsModel,
-          input: [
-            {
-              type: "user_input",
-              content: [{ type: "text", text: cleanText }],
+      const interactionsRes = await fetchImpl(
+        interactionsUrl,
+        fetchInit({
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: ttsModel,
+            input: [
+              {
+                type: "user_input",
+                content: [{ type: "text", text: cleanText }],
+              },
+            ],
+            response_format: { type: "audio" },
+            generation_config: {
+              speech_config: [{ voice: voiceName }],
             },
-          ],
-          response_format: { type: "audio" },
-          generation_config: {
-            speech_config: [{ voice: voiceName }],
-          },
+          }),
         }),
-      });
+      );
 
       if (interactionsRes.ok) {
         const json = await interactionsRes.json();
@@ -1342,28 +1352,31 @@ export async function synthesizeSpeechWithGoogle(input: {
   )}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
   try {
-    const geminiRes = await fetchImpl(geminiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: cleanText }],
-          },
-        ],
-        generationConfig: {
-          responseModalities: ["AUDIO"],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: {
-                voiceName,
+    const geminiRes = await fetchImpl(
+      geminiUrl,
+      fetchInit({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: cleanText }],
+            },
+          ],
+          generationConfig: {
+            responseModalities: ["AUDIO"],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: {
+                  voiceName,
+                },
               },
             },
           },
-        },
+        }),
       }),
-    });
+    );
 
     if (geminiRes.ok) {
       const geminiData = await geminiRes.json();
@@ -1387,21 +1400,24 @@ export async function synthesizeSpeechWithGoogle(input: {
   const cloudVoiceName = isAoede ? "en-US-Journey-F" : "en-US-Journey-D";
   const cloudSsmlGender = isAoede ? "FEMALE" : "MALE";
 
-  const cloudRes = await fetchImpl(cloudTtsUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      input: { text: cleanText.slice(0, 5000) },
-      voice: {
-        languageCode: "en-US",
-        name: cloudVoiceName,
-        ssmlGender: cloudSsmlGender,
-      },
-      audioConfig: {
-        audioEncoding: "MP3",
-      },
+  const cloudRes = await fetchImpl(
+    cloudTtsUrl,
+    fetchInit({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        input: { text: cleanText.slice(0, 5000) },
+        voice: {
+          languageCode: "en-US",
+          name: cloudVoiceName,
+          ssmlGender: cloudSsmlGender,
+        },
+        audioConfig: {
+          audioEncoding: "MP3",
+        },
+      }),
     }),
-  });
+  );
 
   if (!cloudRes.ok) {
     throw new Error(`Google TTS request failed (${cloudRes.status})`);

@@ -6,7 +6,6 @@ import {
 } from "@/lib/storage/lens-grove";
 import { NARRATION_CHUNK_MAX_CHARS } from "./narration-chunk-limits";
 import {
-  buildNarrationFetchSignal,
   createNarrationDeadline,
   rethrowNarrationFetchError,
   throwIfNarrationDeadlineExceeded,
@@ -195,7 +194,7 @@ export async function generatePostNarrationMp3(
       chunks,
       voiceName: input.voice,
       fetchFn: input.fetchFn,
-      signal: buildNarrationFetchSignal(deadlineAtMs),
+      deadlineAtMs,
     });
   } catch (err) {
     rethrowNarrationFetchError(err);

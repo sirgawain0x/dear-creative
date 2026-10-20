@@ -94,4 +94,33 @@ describe("publishDraftToTurso narration scheduling", () => {
     const audio = await getPostAudioColumns(db, result.postId);
     expect(audio.audioUrl).toBe("https://cdn.example/publish-draft.mp3");
   });
+
+  it("still publishes when background narration fails (Kokoro unset / TTS error)", async () => {
+    const db = await createTestDb();
+    generatePostNarrationMp3Mock.mockRejectedValue(
+      new Error(
+        "Kokoro TTS is not configured and Gemini narration fallback is disabled.",
+      ),
+    );
+
+    const result = await publishDraftToTurso(db, {
+      slug: "published-no-tts",
+      title: "Ship without audio",
+      bodyHtml: "<p>Body</p>",
+      status: "published",
+    });
+
+    expect(result.postId).not.toBe("dry-run");
+    expect(pendingTasks).toHaveLength(1);
+    await flushBackgroundTasks();
+
+    const [row] = await db
+      .select({ status: posts.status })
+      .from(posts)
+      .where(eq(posts.id, result.postId));
+    expect(row?.status).toBe("published");
+    const audio = await getPostAudioColumns(db, result.postId);
+    expect(audio.audioUrl).toBeNull();
+    expect(generatePostNarrationMp3Mock).toHaveBeenCalledTimes(1);
+  });
 });

@@ -2,6 +2,8 @@
 
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { stripHtmlTags } from "@/lib/posts/reading-time";
+import { handleDispatchAudioDocumentClick } from "./dispatch-audio-player-navigation";
+import { readerStoredNarrationLabel } from "./dispatch-audio-reader-label";
 import {
   SEEK_SKIP_SECONDS,
   clampSeekTime,
@@ -105,9 +107,7 @@ export function DispatchAudioPlayer({
   audioVoice,
 }: DispatchAudioPlayerProps) {
   const staticAudioSrc = audioUrl?.trim() || null;
-  const narratorName =
-    audioVoice?.trim() ||
-    (staticAudioSrc ? "Stored narration" : BROWSER_SPEECH_VOICE);
+  const storedNarratorLabel = readerStoredNarrationLabel(audioVoice);
 
   const plainText = stripHtmlTags(
     `${title}. ${excerpt ? `${excerpt}. ` : ""}${bodyHtml ?? ""}`,
@@ -146,8 +146,31 @@ export function DispatchAudioPlayer({
 
   useLayoutEffect(() => {
     isActiveRef.current = true;
+
+    const handlePageLeave = () => {
+      isActiveRef.current = false;
+      stopAllPlayback();
+    };
+
+    const handleDocumentClick = (event: MouseEvent) => {
+      handleDispatchAudioDocumentClick(
+        event,
+        window.location.href,
+        handlePageLeave,
+      );
+    };
+
+    window.addEventListener("pagehide", handlePageLeave);
+    window.addEventListener("beforeunload", handlePageLeave);
+    window.addEventListener("popstate", handlePageLeave);
+    document.addEventListener("click", handleDocumentClick, true);
+
     return () => {
       isActiveRef.current = false;
+      window.removeEventListener("pagehide", handlePageLeave);
+      window.removeEventListener("beforeunload", handlePageLeave);
+      window.removeEventListener("popstate", handlePageLeave);
+      document.removeEventListener("click", handleDocumentClick, true);
       stopAllPlayback();
     };
   }, [stopAllPlayback, slug]);
@@ -436,16 +459,21 @@ export function DispatchAudioPlayer({
             <button
               type="button"
               onClick={() => void handleTogglePlay()}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white shadow-sm transition hover:scale-105 hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              disabled={isLoading}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white shadow-sm transition hover:scale-105 hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
               aria-label={
-                isPlaying
-                  ? "Pause audio narration"
-                  : staticAudioSrc
-                    ? "Play audio narration"
-                    : "Play audio narration with browser speech"
+                isLoading
+                  ? "Loading audio narration"
+                  : isPlaying
+                    ? "Pause audio narration"
+                    : staticAudioSrc
+                      ? "Play audio narration"
+                      : "Play audio narration with browser speech"
               }
             >
-              {isPlaying ? (
+              {isLoading ? (
+                <span className="h-4 w-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
+              ) : isPlaying ? (
                 <span className="text-sm">⏸</span>
               ) : (
                 <span className="ml-0.5 text-sm">▶</span>
@@ -473,12 +501,22 @@ export function DispatchAudioPlayer({
             ) : null}
           </div>
           <div>
-            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-              Listen to Dispatch
-            </p>
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                Listen to Dispatch
+              </p>
+              {isPlaying ? (
+                <div className="flex items-center gap-0.5" aria-hidden="true">
+                  <span className="h-2.5 w-0.5 animate-pulse rounded-full bg-emerald-500" />
+                  <span className="h-4 w-0.5 animate-pulse rounded-full bg-emerald-500 [animation-delay:150ms]" />
+                  <span className="h-1.5 w-0.5 animate-pulse rounded-full bg-emerald-500 [animation-delay:300ms]" />
+                  <span className="h-3 w-0.5 animate-pulse rounded-full bg-emerald-500 [animation-delay:450ms]" />
+                </div>
+              ) : null}
+            </div>
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
               {staticAudioSrc
-                ? `${narratorName} • ~${listenMinutes} min listen`
+                ? `${storedNarratorLabel} • ~${listenMinutes} min listen`
                 : `Browser speech (${BROWSER_SPEECH_VOICE}) • ~${listenMinutes} min listen`}
             </p>
           </div>
