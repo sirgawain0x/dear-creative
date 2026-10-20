@@ -620,6 +620,7 @@ export const postRepurposeOutputs = sqliteTable(
     mediaUrl: text("media_url"),
     mediaMimeType: text("media_mime_type"),
     errorMessage: text("error_message"),
+    claimToken: text("claim_token"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
