@@ -1,14 +1,15 @@
-export type XPostPayload = {
-  text: string;
-};
+import { readXOAuth2Credentials } from "./credentials";
+import { isXLiveEnabled } from "./feature-flag";
+import { OAuth2UserContextXClient } from "./live-client";
+import { loggingMockXClient } from "./mock-client";
+import type { FetchLike } from "./oauth2";
 
-export type XPostResult = { tweetId: string };
-
-export interface XClient {
-  postTweet(payload: XPostPayload): Promise<XPostResult>;
-}
+export type { XClient, XPostPayload, XPostResult } from "./types";
+import type { XClient } from "./types";
 
 let clientOverride: XClient | null | undefined;
+let liveClientSingleton: XClient | null | undefined;
+let fetchOverride: FetchLike | undefined;
 
 export function setXClientForTests(client: XClient | null): void {
   clientOverride = client;
@@ -16,18 +17,35 @@ export function setXClientForTests(client: XClient | null): void {
 
 export function resetXClientForTests(): void {
   clientOverride = undefined;
+  liveClientSingleton = undefined;
+  fetchOverride = undefined;
+}
+
+export function setXFetchForTests(fetchFn: FetchLike | undefined): void {
+  fetchOverride = fetchFn;
+  liveClientSingleton = undefined;
+}
+
+function getFetchFn(): FetchLike {
+  return fetchOverride ?? fetch;
 }
 
 export function getXClient(): XClient | null {
   if (clientOverride !== undefined) {
     return clientOverride;
   }
-  if (
-    !process.env.X_CLIENT_ID?.trim() ||
-    !process.env.X_CLIENT_SECRET?.trim() ||
-    !process.env.X_REFRESH_TOKEN?.trim()
-  ) {
+
+  const creds = readXOAuth2Credentials();
+  if (!creds) {
     return null;
   }
-  return null;
+
+  if (!isXLiveEnabled()) {
+    return loggingMockXClient;
+  }
+
+  if (!liveClientSingleton) {
+    liveClientSingleton = new OAuth2UserContextXClient(creds, getFetchFn());
+  }
+  return liveClientSingleton;
 }

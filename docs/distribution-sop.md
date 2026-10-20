@@ -297,7 +297,7 @@ export const DISTRIBUTION_CHANNELS = {
 
 | Variable | Channel | Required | Source |
 |----------|---------|----------|--------|
-| `X_CLIENT_ID`, `X_CLIENT_SECRET`, `X_REFRESH_TOKEN` | X | Yes | X Developer Portal |
+| `X_CLIENT_ID`, `X_CLIENT_SECRET`, `X_REFRESH_TOKEN`, `X_LIVE` | X | Yes (tokens); `X_LIVE=true` for live posts | X Developer Portal |
 | `FARCASTER_SIGNER_UUID` (Neynar) OR `FARCASTER_HUB_URL` + `FARCASTER_PRIVATE_KEY` | Farcaster | Yes | Neynar / Self-hosted Hub |
 | `DISCORD_WEBHOOK_URL` | Discord | Yes | Discord Server Settings → Integrations |
 | `ORB_API_TOKEN`, `ORB_PUBLICATION_ID` | Orb | Yes | Orb Club Dashboard |
