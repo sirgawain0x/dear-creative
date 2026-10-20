@@ -47,6 +47,7 @@ function mapListRow(row: {
   teaserText: string | null;
   canonicalUrl: string | null;
   freeContent: string | null;
+  bodyHtml?: string | null;
 }): PublishedPostListItem {
   const coverImage = resolvePublicPostCoverImage({
     slug: row.slug,
@@ -59,11 +60,11 @@ function mapListRow(row: {
     publicPreview: row.freeContent,
   });
 
-  const metrics = calculateReadingTime(row.freeContent ?? row.teaserText);
+  const metrics = calculateReadingTime(row.bodyHtml ?? row.teaserText);
   const topic = classifyArticleTopic({
     title: row.title,
     excerpt: row.teaserText,
-    bodyHtml: row.freeContent,
+    bodyHtml: row.bodyHtml,
   });
 
   return {
@@ -117,6 +118,7 @@ export async function listPublishedPosts(
       teaserText: posts.teaserText,
       canonicalUrl: posts.canonicalUrl,
       freeContent: posts.freeContent,
+      bodyHtml: posts.bodyHtml,
     })
     .from(posts)
     .where(publishedVisibilityFilter(asOf))
@@ -148,6 +150,7 @@ export async function listRecentPublishedPosts(
       teaserText: posts.teaserText,
       canonicalUrl: posts.canonicalUrl,
       freeContent: posts.freeContent,
+      bodyHtml: posts.bodyHtml,
     })
     .from(posts)
     .where(publishedVisibilityFilter(asOf))
@@ -191,6 +194,7 @@ export async function getPublishedPostBySlug(
       teaserText: row.teaserText,
       canonicalUrl: row.canonicalUrl,
       freeContent: row.freeContent,
+      bodyHtml: row.bodyHtml,
     }),
     bodyHtml: row.bodyHtml,
     audioUrl: audio.audioUrl,

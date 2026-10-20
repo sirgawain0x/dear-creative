@@ -69,6 +69,25 @@ describe("published posts queries", () => {
     expect(recent.map((p) => p.slug)).toEqual(["live-now"]);
   });
 
+  it("derives reading time from full bodyHtml without exposing it on list items", async () => {
+    const db = await createPostsTestDb();
+    const longBody = `<p>${"word ".repeat(400)}</p>`;
+    await insertPost(db, {
+      slug: "long-paid-body",
+      title: "Long paid",
+      status: "published",
+      publishedAt: new Date("2024-06-01T00:00:00.000Z"),
+      teaserText: null,
+      freeContent: null,
+      bodyHtml: longBody,
+    });
+
+    const [item] = await listRecentPublishedPosts(db, 1);
+    expect(item).toBeDefined();
+    expect(item).not.toHaveProperty("bodyHtml");
+    expect(item?.readMinutes).toBeGreaterThan(1);
+  });
+
   it("does not expose bodyHtml on list items", async () => {
     const db = await createPostsTestDb();
     await insertPost(db, {

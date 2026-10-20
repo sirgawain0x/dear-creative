@@ -10,6 +10,13 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns: optimizedImageRemotePatterns,
   },
+  serverExternalPackages: ["ffmpeg-static"],
+  outputFileTracingIncludes: {
+    "/api/adam/posts/*/repurpose/*": [
+      "./node_modules/ffmpeg-static/**/*",
+      "./src/assets/fonts/**/*",
+    ],
+  },
   turbopack: {
     rules: {
       "*.css": {
