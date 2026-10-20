@@ -4,6 +4,29 @@ import Link from "next/link";
 import { useCallback, useState } from "react";
 import { useAuthSession } from "@/components/providers/app-providers";
 
+export const ADMIN_OWNER_TOOL_LINKS = [
+  {
+    href: "/adam",
+    title: "Studio →",
+    description: "Multimodal agent & drafts",
+  },
+  {
+    href: "/approvals",
+    title: "Approvals Queue →",
+    description: "Review before dispatching",
+  },
+  {
+    href: "/adam?tab=posts",
+    title: "Manage Posts →",
+    description: "Edit & Lens Grove banners",
+  },
+  {
+    href: "/admin/metrics",
+    title: "Metrics →",
+    description: "Subscribers, delivery, and tips",
+  },
+] as const;
+
 export function AdminConsole() {
   const {
     ready,
@@ -154,34 +177,19 @@ export function AdminConsole() {
           <p className="mt-1 text-xs text-zinc-500">
             Access private editorial tools unlocked by your active session.
           </p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <Link
-              href="/adam"
-              className="flex flex-col rounded-xl border border-zinc-200 p-3.5 hover:border-zinc-400 hover:bg-zinc-50 transition dark:border-zinc-800 dark:hover:bg-zinc-800/60"
-            >
-              <span className="text-sm font-semibold">Studio →</span>
-              <span className="mt-1 text-[11px] text-zinc-500">
-                Multimodal agent &amp; drafts
-              </span>
-            </Link>
-            <Link
-              href="/approvals"
-              className="flex flex-col rounded-xl border border-zinc-200 p-3.5 hover:border-zinc-400 hover:bg-zinc-50 transition dark:border-zinc-800 dark:hover:bg-zinc-800/60"
-            >
-              <span className="text-sm font-semibold">Approvals Queue →</span>
-              <span className="mt-1 text-[11px] text-zinc-500">
-                Review before dispatching
-              </span>
-            </Link>
-            <Link
-              href="/adam?tab=posts"
-              className="flex flex-col rounded-xl border border-zinc-200 p-3.5 hover:border-zinc-400 hover:bg-zinc-50 transition dark:border-zinc-800 dark:hover:bg-zinc-800/60"
-            >
-              <span className="text-sm font-semibold">Manage Posts →</span>
-              <span className="mt-1 text-[11px] text-zinc-500">
-                Edit &amp; Lens Grove banners
-              </span>
-            </Link>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {ADMIN_OWNER_TOOL_LINKS.map((tool) => (
+              <Link
+                key={tool.href}
+                href={tool.href}
+                className="flex flex-col rounded-xl border border-zinc-200 p-3.5 hover:border-zinc-400 hover:bg-zinc-50 transition dark:border-zinc-800 dark:hover:bg-zinc-800/60"
+              >
+                <span className="text-sm font-semibold">{tool.title}</span>
+                <span className="mt-1 text-[11px] text-zinc-500">
+                  {tool.description}
+                </span>
+              </Link>
+            ))}
           </div>
         </div>
       ) : null}
