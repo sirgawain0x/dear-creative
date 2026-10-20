@@ -102,7 +102,6 @@ export function AdminMetricsClient() {
     ready,
     authenticated,
     getAccessToken,
-    isSignedIn,
   } = useAuthSession();
   const [data, setData] = useState<MetricsData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -174,7 +173,7 @@ export function AdminMetricsClient() {
     return () => {
       cancelled = true;
     };
-  }, [ready, authenticated, getAccessToken, isSignedIn]);
+  }, [ready, authenticated, getAccessToken]);
 
   if (!ready || loading) {
     return (
