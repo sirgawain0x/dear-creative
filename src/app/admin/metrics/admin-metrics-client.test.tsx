@@ -32,6 +32,27 @@ describe("AdminMetricsClient", () => {
     vi.restoreAllMocks();
   });
 
+  it("does not fetch metrics while auth session is not ready", async () => {
+    mockUseAuthSession.mockReturnValue({
+      ready: false,
+      isSignedIn: true,
+      authenticated: true,
+      getAccessToken: vi.fn(async () => "privy-metrics-token"),
+      privyConfigured: true,
+    });
+
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+
+    const { container } = render(<AdminMetricsClient />);
+
+    expect(container.querySelector(".animate-pulse")).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
   it("fetches metrics with Authorization bearer header", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify(MOCK_METRICS_DATA), { status: 200 }),

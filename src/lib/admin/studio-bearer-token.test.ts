@@ -53,6 +53,21 @@ describe("resolveStudioBearerToken", () => {
     expect(getAccessToken).toHaveBeenCalledOnce();
   });
 
+  it("falls back to localStorage studio token when getAccessToken throws", async () => {
+    store[STUDIO_TOKEN_STORAGE_KEY] = "studio-key";
+
+    const token = await resolveStudioBearerToken({
+      privyConfigured: true,
+      authenticated: true,
+      getAccessToken: async () => {
+        throw new Error("privy unavailable");
+      },
+      studioTokenFromStorage: readStudioTokenFromStorage(),
+    });
+
+    expect(token).toBe("studio-key");
+  });
+
   it("falls back to localStorage studio token when Privy token is missing", async () => {
     store[STUDIO_TOKEN_STORAGE_KEY] = "studio-key";
 
