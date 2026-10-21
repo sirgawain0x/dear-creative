@@ -11,6 +11,7 @@ vi.mock("@/db/client", () => ({
 
 import { getDb } from "@/db/client";
 import * as publishedPosts from "@/lib/posts/published-posts";
+import * as publishedPostExistsProxy from "@/lib/posts/published-post-exists-proxy";
 import {
   NOT_FOUND_DOCUMENT_PATH,
   pageNotFoundProxyResponse,
@@ -39,6 +40,12 @@ describe("resolvePageNotFoundProxy", () => {
     const client = createClient({ url: ":memory:" });
     const db = drizzle(client, { schema });
     vi.mocked(getDb).mockReturnValue(db);
+    vi.spyOn(
+      publishedPostExistsProxy,
+      "existsPublishedPostBySlugForProxy",
+    ).mockImplementation((slug) =>
+      publishedPosts.existsPublishedPostBySlug(db, slug),
+    );
     await client.execute(`
       CREATE TABLE authors (
         id text PRIMARY KEY NOT NULL,
@@ -105,13 +112,15 @@ describe("resolvePageNotFoundProxy", () => {
 
   afterEach(() => {
     setAuthorProfilesEnabledForTests(undefined);
+    vi.restoreAllMocks();
     vi.unstubAllEnvs();
   });
 
   it("returns next when the published-post lookup throws (fail open)", async () => {
-    vi.spyOn(publishedPosts, "existsPublishedPostBySlug").mockRejectedValueOnce(
-      new Error("db unavailable"),
-    );
+    vi.spyOn(
+      publishedPostExistsProxy,
+      "existsPublishedPostBySlugForProxy",
+    ).mockRejectedValueOnce(new Error("db unavailable"));
     const result = await resolvePageNotFoundProxy("/posts/any-slug");
     expect(result).toEqual({ action: "next" });
   });
@@ -159,7 +168,10 @@ describe("resolvePageNotFoundProxy", () => {
   });
 
   it("returns not_found for malformed post slugs without hitting the database", async () => {
-    const existsSpy = vi.spyOn(publishedPosts, "existsPublishedPostBySlug");
+    const existsSpy = vi.spyOn(
+      publishedPostExistsProxy,
+      "existsPublishedPostBySlugForProxy",
+    );
     const result = await resolvePageNotFoundProxy("/posts/NOT-VALID");
     expect(result).toEqual({ action: "not_found" });
     expect(existsSpy).not.toHaveBeenCalled();

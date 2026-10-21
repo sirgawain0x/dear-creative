@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/db/client";
 import { existsAuthorProfileById } from "@/lib/authors/author-profile";
 import { isAuthorProfilesEnabled } from "@/lib/authors/feature-flag";
-import { existsPublishedPostBySlug } from "@/lib/posts/published-posts";
+import { existsPublishedPostBySlugForProxy } from "@/lib/posts/published-post-exists-proxy";
 import { isWellFormedPostSlug } from "@/lib/posts/post-slug-format";
 
 export type PageNotFoundProxyResult =
@@ -70,9 +70,8 @@ export async function resolvePageNotFoundProxy(
   return { action: "next" };
 }
 
-/** Proxy must not call `"use cache"` helpers — they throw outside RSC. */
 async function lookupPublishedPostExists(slug: string): Promise<boolean> {
-  return existsPublishedPostBySlug(getDb(), slug);
+  return existsPublishedPostBySlugForProxy(slug);
 }
 
 export function pageNotFoundProxyResponse(
