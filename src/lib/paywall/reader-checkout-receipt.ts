@@ -7,7 +7,9 @@ import {
   type Address,
   type Hash,
   type TransactionReceipt,
+  TransactionReceiptNotFoundError,
 } from "viem";
+import { predictSmartAccountForSigner } from "@/lib/payments/smart-account";
 import { base } from "viem/chains";
 import {
   BASE_CHAIN_ID,
@@ -98,12 +100,16 @@ export function parseUsdcTransferFromReceipt(
   }
 
   const payeeNormalized = getAddress(expectedRecipient).toLowerCase();
-  const payerNormalized = getAddress(payerAddress).toLowerCase();
+  const signerNormalized = getAddress(payerAddress).toLowerCase();
+  const smartAccountNormalized = predictSmartAccountForSigner(
+    payerAddress,
+  ).toLowerCase();
+  const allowedFrom = new Set([signerNormalized, smartAccountNormalized]);
 
   const matching = tokenLogs.filter(
     (log) =>
       getAddress(log.args.to).toLowerCase() === payeeNormalized &&
-      getAddress(log.args.from).toLowerCase() === payerNormalized,
+      allowedFrom.has(getAddress(log.args.from).toLowerCase()),
   );
 
   if (matching.length === 0) {
@@ -119,7 +125,7 @@ export function parseUsdcTransferFromReceipt(
     }
     throw new ReaderCheckoutError(
       "payer_mismatch",
-      "Payment must come from your linked wallet.",
+      "Payment must come from your linked wallet or its smart account.",
       402,
     );
   }
@@ -196,6 +202,14 @@ async function fetchTransferLive(input: {
   } catch (error) {
     if (error instanceof ReaderCheckoutError) {
       throw error;
+    }
+    if (error instanceof TransactionReceiptNotFoundError) {
+      throw new ReaderCheckoutError(
+        "tx_not_confirmed",
+        "Transaction is not confirmed yet. Retry in a few seconds.",
+        409,
+        15,
+      );
     }
     throw new ReaderCheckoutError(
       "verification_unavailable",

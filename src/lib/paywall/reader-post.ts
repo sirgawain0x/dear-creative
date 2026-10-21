@@ -11,6 +11,7 @@ import {
   resolvePublicReaderBodyHtml,
   type PostBodySource,
 } from "./public-body";
+import { resolveReaderFacingAudioUrl } from "./reader-gated-audio-url";
 import { resolvePostPaywallCheckoutProps } from "./reader-post-checkout";
 import { resolvePostViewerFromCookies } from "./viewer-from-cookies";
 
@@ -61,6 +62,11 @@ export function applyReaderBodyToPost(
   return {
     ...publicPost,
     bodyHtml: nextBody,
+    audioUrl: resolveReaderFacingAudioUrl({
+      slug: row.slug,
+      isGated: row.isGated,
+      storedAudioUrl: row.audioUrl,
+    }),
   };
 }
 

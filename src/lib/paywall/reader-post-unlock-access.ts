@@ -52,12 +52,19 @@ export async function hasLegacyUnlock(
 export async function findPostUnlockPurchaseByTxHash(
   db: DearCreativeDb,
   txHash: string,
-): Promise<{ id: string; postId: string } | null> {
+): Promise<{
+  id: string;
+  postId: string;
+  walletAddress: string;
+  privyUserId: string;
+} | null> {
   const normalized = txHash.trim().toLowerCase();
   const [row] = await db
     .select({
       id: readerPostUnlockPurchases.id,
       postId: readerPostUnlockPurchases.postId,
+      walletAddress: readerPostUnlockPurchases.walletAddress,
+      privyUserId: readerPostUnlockPurchases.privyUserId,
     })
     .from(readerPostUnlockPurchases)
     .where(

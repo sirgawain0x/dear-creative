@@ -14,6 +14,7 @@ import {
   normalizeReaderCheckoutTxHash,
   verifyReaderCheckoutTransfer,
 } from "./reader-checkout-receipt";
+import { isSqliteUniqueConstraintError } from "@/lib/db/sqlite-errors";
 import { postUnlockAmountRaw } from "./unlock-config";
 import { writerHasGatedPosts } from "./writer-gated-posts";
 
@@ -122,6 +123,17 @@ export async function verifyAndRecordPostUnlock(
         402,
       );
     }
+    const walletMatch =
+      existing.walletAddress.toLowerCase() ===
+      input.walletAddress.toLowerCase();
+    const privyMatch = existing.privyUserId === input.privyUserId;
+    if (!walletMatch || !privyMatch) {
+      throw new ReaderCheckoutError(
+        "tx_hash_reused",
+        "This transaction was already used.",
+        402,
+      );
+    }
     return { recordId: existing.id, idempotent: true };
   }
 
@@ -134,17 +146,45 @@ export async function verifyAndRecordPostUnlock(
   });
 
   const recordId = randomUUID();
-  await db.insert(readerPostUnlockPurchases).values({
-    id: recordId,
-    privyUserId: input.privyUserId,
-    walletAddress: input.walletAddress.toLowerCase(),
-    writerId: context.writerId,
-    postId: context.postId,
-    txHash,
-    chainId: BASE_CHAIN_ID,
-    tokenAddress: BASE_USDC_ADDRESS.toLowerCase(),
-    amountRaw: amountRaw.toString(),
-  });
+  try {
+    await db.insert(readerPostUnlockPurchases).values({
+      id: recordId,
+      privyUserId: input.privyUserId,
+      walletAddress: input.walletAddress.toLowerCase(),
+      writerId: context.writerId,
+      postId: context.postId,
+      txHash,
+      chainId: BASE_CHAIN_ID,
+      tokenAddress: BASE_USDC_ADDRESS.toLowerCase(),
+      amountRaw: amountRaw.toString(),
+    });
+  } catch (error) {
+    if (!isSqliteUniqueConstraintError(error)) {
+      throw error;
+    }
+    const raced = await findPostUnlockPurchaseByTxHash(db, txHash);
+    if (!raced) {
+      throw error;
+    }
+    if (raced.postId !== context.postId) {
+      throw new ReaderCheckoutError(
+        "tx_hash_reused",
+        "This transaction was already used.",
+        402,
+      );
+    }
+    const walletMatch =
+      raced.walletAddress.toLowerCase() === input.walletAddress.toLowerCase();
+    const privyMatch = raced.privyUserId === input.privyUserId;
+    if (!walletMatch || !privyMatch) {
+      throw new ReaderCheckoutError(
+        "tx_hash_reused",
+        "This transaction was already used.",
+        402,
+      );
+    }
+    return { recordId: raced.id, idempotent: true };
+  }
 
   return { recordId, idempotent: false };
 }

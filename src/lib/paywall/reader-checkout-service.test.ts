@@ -149,4 +149,88 @@ describe("reader post unlock service", () => {
       }),
     ).rejects.toMatchObject({ code: "tx_hash_reused" });
   });
+
+  it("rejects reused tx hash for the same post from a different wallet", async () => {
+    const writerId = "g2";
+    await seedWriterAndGatedPost(writerId, "paid-one");
+    const postId = (
+      await testDb.query.posts.findFirst({
+        where: (postsTable, { eq }) => eq(postsTable.slug, "paid-one"),
+      })
+    )!.id;
+
+    await testDb.insert(readerPostUnlockPurchases).values({
+      id: randomUUID(),
+      privyUserId: "did:privy:u1",
+      walletAddress: PAYER,
+      writerId,
+      postId,
+      txHash: TX1,
+      chainId: 8453,
+      tokenAddress: BASE_USDC_ADDRESS.toLowerCase(),
+      amountRaw: "1000000",
+    });
+
+    const otherWallet = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    await expect(
+      verifyAndRecordPostUnlock(testDb, {
+        slug: "paid-one",
+        txHash: TX1,
+        walletAddress: otherWallet,
+        privyUserId: "did:privy:u1",
+      }),
+    ).rejects.toMatchObject({ code: "tx_hash_reused" });
+  });
+
+  it("returns idempotent ok when the same wallet retries the same tx", async () => {
+    const writerId = "g2";
+    await seedWriterAndGatedPost(writerId, "paid-one");
+    const postId = (
+      await testDb.query.posts.findFirst({
+        where: (postsTable, { eq }) => eq(postsTable.slug, "paid-one"),
+      })
+    )!.id;
+
+    const recordId = randomUUID();
+    await testDb.insert(readerPostUnlockPurchases).values({
+      id: recordId,
+      privyUserId: "did:privy:u1",
+      walletAddress: PAYER,
+      writerId,
+      postId,
+      txHash: TX1,
+      chainId: 8453,
+      tokenAddress: BASE_USDC_ADDRESS.toLowerCase(),
+      amountRaw: "1000000",
+    });
+
+    const result = await verifyAndRecordPostUnlock(testDb, {
+      slug: "paid-one",
+      txHash: TX1,
+      walletAddress: PAYER,
+      privyUserId: "did:privy:u1",
+    });
+    expect(result).toEqual({ recordId, idempotent: true });
+  });
+
+  it("returns idempotent ok when concurrent inserts race on tx_hash unique", async () => {
+    const writerId = "g2";
+    await seedWriterAndGatedPost(writerId, "paid-one");
+
+    const input = {
+      slug: "paid-one",
+      txHash: TX1,
+      walletAddress: PAYER,
+      privyUserId: "did:privy:u1",
+    };
+
+    const [first, second] = await Promise.all([
+      verifyAndRecordPostUnlock(testDb, input),
+      verifyAndRecordPostUnlock(testDb, input),
+    ]);
+
+    const idempotentFlags = [first.idempotent, second.idempotent].sort();
+    expect(idempotentFlags).toEqual([false, true]);
+    expect(first.recordId).toBe(second.recordId);
+  });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import type { Address, Hash, TransactionReceipt } from "viem";
+import { predictSmartAccountForSigner } from "@/lib/payments/smart-account";
 import { ReaderCheckoutError } from "./reader-checkout-errors";
 import {
   parseUsdcTransferFromReceipt,
@@ -133,6 +134,18 @@ describe("parseUsdcTransferFromReceipt", () => {
     }
   });
 
+  it("accepts USDC sent from the signer smart account", () => {
+    const smartAccount = predictSmartAccountForSigner(PAYER);
+    const result = parseUsdcTransferFromReceipt(
+      receipt({ logs: [transferLog({ from: smartAccount })] }),
+      PAYEE,
+      BigInt(8_000000),
+      PAYER,
+      3,
+    );
+    expect(result.value).toBe(BigInt(8_000000));
+  });
+
   it("rejects unsuccessful transactions", () => {
     try {
       parseUsdcTransferFromReceipt(
@@ -187,7 +200,7 @@ describe("verifyReaderCheckoutTransfer (mocked RPC)", () => {
     ).rejects.toMatchObject({ code: "tx_not_confirmed" });
   });
 
-  it("rejects reused hash at service layer via unique constraint (mock success path)", async () => {
+  it("returns transfer details from the mocked receipt reader", async () => {
     setReaderCheckoutReceiptReaderForTests({
       fetchTransfer: vi.fn().mockResolvedValue({
         from: PAYER,
