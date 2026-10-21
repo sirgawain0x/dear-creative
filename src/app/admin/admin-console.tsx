@@ -52,6 +52,7 @@ export function AdminConsole() {
   const [isVerifying, setIsVerifying] = useState(false);
   const [walletEnabled, setWalletEnabled] = useState(false);
   const [walletSendEnabled, setWalletSendEnabled] = useState(false);
+  const [walletSwapEnabled, setWalletSwapEnabled] = useState(false);
   const [earnEnabled, setEarnEnabled] = useState(false);
   const [earnActionsEnabled, setEarnActionsEnabled] = useState(false);
 
@@ -66,6 +67,9 @@ export function AdminConsole() {
           }
           if (typeof json.walletSendEnabled === "boolean") {
             setWalletSendEnabled(json.walletSendEnabled);
+          }
+          if (typeof json.walletSwapEnabled === "boolean") {
+            setWalletSwapEnabled(json.walletSwapEnabled);
           }
           if (typeof json.earnEnabled === "boolean") {
             setEarnEnabled(json.earnEnabled);
@@ -214,6 +218,7 @@ export function AdminConsole() {
           <AdminWalletPanel
             walletEnabled={walletEnabled}
             walletSendEnabled={walletSendEnabled}
+            walletSwapEnabled={walletSwapEnabled}
             isAdmin={Boolean(session?.isAdmin)}
           />
           <AdminEarnPanel

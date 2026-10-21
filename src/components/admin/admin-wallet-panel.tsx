@@ -7,6 +7,8 @@ import { adminPrivyAuthorizationHeaders } from "@/lib/admin/admin-api-auth";
 import { buildEip681BaseUsdcReceiveUri } from "@/lib/wallet/eip681-receive-uri";
 import { AdminWalletSendForm } from "./admin-wallet-send-form";
 import { AdminWalletSendEmbeddedBridge } from "./admin-wallet-send-embedded-bridge";
+import { AdminWalletSwapForm } from "./admin-wallet-swap-form";
+import { AdminWalletSwapEmbeddedBridge } from "./admin-wallet-swap-embedded-bridge";
 import {
   resolveWalletPanelLoadErrors,
   WALLET_HISTORY_ERROR_MESSAGE,
@@ -55,16 +57,20 @@ export type AdminWalletPreviewData = {
 type AdminWalletPanelProps = {
   walletEnabled: boolean;
   walletSendEnabled?: boolean;
+  walletSwapEnabled?: boolean;
   isAdmin?: boolean;
   previewSendEnabled?: boolean;
+  previewSwapEnabled?: boolean;
   previewData?: AdminWalletPreviewData;
 };
 
 export function AdminWalletPanel({
   walletEnabled,
   walletSendEnabled = false,
+  walletSwapEnabled = false,
   isAdmin = false,
   previewSendEnabled = false,
+  previewSwapEnabled = false,
   previewData,
 }: AdminWalletPanelProps) {
   const {
@@ -321,7 +327,7 @@ export function AdminWalletPanel({
                 </div>
               ) : null}
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 space-y-3">
               {previewSendEnabled ? (
                 <AdminWalletSendForm
                   walletAddress={summary.address}
@@ -352,6 +358,31 @@ export function AdminWalletPanel({
                     />
                   )}
                 </AdminWalletSendEmbeddedBridge>
+              )}
+              {previewSwapEnabled ? (
+                <AdminWalletSwapForm
+                  walletAddress={summary.address}
+                  isAdmin={true}
+                  walletSwapEnabled={true}
+                  getAccessToken={getAccessToken}
+                  privyConfigured={privyConfigured}
+                  authenticated={authenticated}
+                  previewMode
+                />
+              ) : (
+                <AdminWalletSwapEmbeddedBridge adminWalletAddress={summary.address}>
+                  {(signer) => (
+                    <AdminWalletSwapForm
+                      walletAddress={summary.address}
+                      isAdmin={isAdmin}
+                      walletSwapEnabled={walletSwapEnabled}
+                      getAccessToken={getAccessToken}
+                      privyConfigured={privyConfigured}
+                      authenticated={authenticated}
+                      signPreparedSwap={signer?.signPreparedSwap}
+                    />
+                  )}
+                </AdminWalletSwapEmbeddedBridge>
               )}
             </div>
           </div>
