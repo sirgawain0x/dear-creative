@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setPaymentsEnabledForTests } from "@/lib/payments/feature-flag";
 import {
+  BASE_SEPOLIA_USDC_ADDRESS,
   resetX402PaymentVerifierForTests,
   setX402PaymentVerifierForTests,
 } from "@/lib/payments/x402-agent";
@@ -75,6 +76,7 @@ describe("GET /api/posts/[slug]/full", () => {
       scheme: "exact",
       network: "base-sepolia",
       resource: "https://news.example.com/api/posts/hello-dear-creative/full",
+      asset: BASE_SEPOLIA_USDC_ADDRESS,
     });
   });
 

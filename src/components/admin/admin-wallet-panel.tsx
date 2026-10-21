@@ -5,6 +5,8 @@ import { QRCodeSVG } from "qrcode.react";
 import { useAuthSession } from "@/components/providers/app-providers";
 import { adminPrivyAuthorizationHeaders } from "@/lib/admin/admin-api-auth";
 import { buildEip681BaseReceiveUri } from "@/lib/wallet/eip681-receive-uri";
+import { AdminWalletSendForm } from "./admin-wallet-send-form";
+import { AdminWalletSendEmbeddedBridge } from "./admin-wallet-send-embedded-bridge";
 import {
   resolveWalletPanelLoadErrors,
   WALLET_HISTORY_ERROR_MESSAGE,
@@ -52,11 +54,17 @@ export type AdminWalletPreviewData = {
 
 type AdminWalletPanelProps = {
   walletEnabled: boolean;
+  walletSendEnabled?: boolean;
+  isAdmin?: boolean;
+  previewSendEnabled?: boolean;
   previewData?: AdminWalletPreviewData;
 };
 
 export function AdminWalletPanel({
   walletEnabled,
+  walletSendEnabled = false,
+  isAdmin = false,
+  previewSendEnabled = false,
   previewData,
 }: AdminWalletPanelProps) {
   const {
@@ -285,32 +293,67 @@ export function AdminWalletPanel({
             </div>
           </div>
 
-          <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-              Receive on Base
-            </p>
-            <code className="mt-2 block break-all text-xs font-mono text-emerald-700 dark:text-emerald-400">
-              {summary.address}
-            </code>
-            {receiveUri ? (
-              <div className="mt-3 inline-flex flex-col items-start gap-2">
-                <span
-                  className="rounded-full border border-sky-300 bg-sky-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-sky-900 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-200"
-                  data-testid="admin-wallet-receive-network-label"
-                >
-                  Base network only
-                </span>
-                <QRCodeSVG
-                  value={receiveUri}
-                  size={200}
-                  level="M"
-                  marginSize={1}
-                  className="rounded-lg border border-zinc-200 dark:border-zinc-700"
-                  data-testid="admin-wallet-receive-qr"
-                  title="QR code for Base receive address (EIP-681)"
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div className="min-w-0 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Receive on Base
+              </p>
+              <code className="mt-2 block break-all text-xs font-mono text-emerald-700 dark:text-emerald-400">
+                {summary.address}
+              </code>
+              {receiveUri ? (
+                <div className="mt-3 inline-flex max-w-full flex-col items-start gap-2">
+                  <span
+                    className="rounded-full border border-sky-300 bg-sky-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-sky-900 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-200"
+                    data-testid="admin-wallet-receive-network-label"
+                  >
+                    Base network only
+                  </span>
+                  <QRCodeSVG
+                    value={receiveUri}
+                    size={200}
+                    level="M"
+                    marginSize={1}
+                    className="max-w-full rounded-lg border border-zinc-200 dark:border-zinc-700"
+                    data-testid="admin-wallet-receive-qr"
+                    title="QR code for Base receive address (EIP-681)"
+                  />
+                </div>
+              ) : null}
+            </div>
+            <div className="min-w-0">
+              {previewSendEnabled ? (
+                <AdminWalletSendForm
+                  walletAddress={summary.address}
+                  balances={summary.balances}
+                  chainId={summary.chainId}
+                  network={summary.network}
+                  isAdmin={true}
+                  walletSendEnabled={true}
+                  getAccessToken={getAccessToken}
+                  privyConfigured={privyConfigured}
+                  authenticated={authenticated}
+                  previewMode
                 />
-              </div>
-            ) : null}
+              ) : (
+                <AdminWalletSendEmbeddedBridge adminWalletAddress={summary.address}>
+                  {(embeddedSend) => (
+                    <AdminWalletSendForm
+                      walletAddress={summary.address}
+                      balances={summary.balances}
+                      chainId={summary.chainId}
+                      network={summary.network}
+                      isAdmin={isAdmin}
+                      walletSendEnabled={walletSendEnabled}
+                      getAccessToken={getAccessToken}
+                      privyConfigured={privyConfigured}
+                      authenticated={authenticated}
+                      embeddedSend={embeddedSend}
+                    />
+                  )}
+                </AdminWalletSendEmbeddedBridge>
+              )}
+            </div>
           </div>
 
           <div>
