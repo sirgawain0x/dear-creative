@@ -24,6 +24,8 @@ jobs:
       - name: Build with local database
         env:
           LOCAL_DATABASE_URL: file:./data/ci-dear-creative.db
+          READER_WALLET_ENABLED: "true"
+          READER_WALLET_FIXTURE: "true"
         run: |
           npm run db:migrate:local
           npx next build
