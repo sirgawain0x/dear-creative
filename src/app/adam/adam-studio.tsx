@@ -11,7 +11,10 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react";
-import { useSafePrivy } from "@/components/providers/app-providers";
+import {
+  useAuthSession,
+  useSafePrivy,
+} from "@/components/providers/app-providers";
 import { useToast } from "@/components/ui/toast";
 import type {
   StudioAttachmentInput,
@@ -147,8 +150,6 @@ async function readFileAsAttachment(file: File): Promise<ClientAttachment> {
     previewUrl,
   };
 }
-
-const STUDIO_TOKEN_STORAGE_KEY = "dear_creative_studio_token";
 
 const SCHEDULE_PRESETS = [
   { label: "Every Monday at 9:00 AM", cron: "0 9 * * 1" },
@@ -292,16 +293,10 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
   const {
     ready,
     authenticated,
-    login,
-    logout,
     getAccessToken,
     privyConfigured,
-    privyTimedOut,
   } = useSafePrivy();
-  const [studioToken, setStudioToken] = useState<string>(() => {
-    if (typeof window === "undefined") return "";
-    return window.localStorage.getItem(STUDIO_TOKEN_STORAGE_KEY)?.trim() ?? "";
-  });
+  const { studioToken, setStudioToken } = useAuthSession();
   const [studioTokenInput, setStudioTokenInput] = useState("");
   const [showTokenPrompt, setShowTokenPrompt] = useState(false);
   const [activeTab, setActiveTab] = useState<StudioTab>(() => {
@@ -765,9 +760,6 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
       e.preventDefault();
       const trimmed = studioTokenInput.trim();
       if (!trimmed) return;
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(STUDIO_TOKEN_STORAGE_KEY, trimmed);
-      }
       setStudioToken(trimmed);
       setStudioTokenInput("");
       setShowTokenPrompt(false);
@@ -778,17 +770,6 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
     },
     [studioTokenInput],
   );
-
-  const handleSignOut = useCallback(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem(STUDIO_TOKEN_STORAGE_KEY);
-    }
-    setStudioToken("");
-    setAdminStatus({ checked: false, isAdmin: false, userId: null });
-    if (authenticated) {
-      void logout();
-    }
-  }, [authenticated, logout]);
 
   // --- TTS (Text-to-Speech) ---
   const stopSpeaking = useCallback(() => {
@@ -2126,20 +2107,11 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
         </h1>
         <p className="mt-3 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
           Adam Studio, Approvals, and post editing are restricted to the owner of Dear Creative.
-          Please sign in with Privy or enter your Studio Key to continue.
+          Use <span className="font-semibold text-zinc-800 dark:text-zinc-200">Sign In</span> in the
+          site header, or enter your Studio Key below to continue.
         </p>
 
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          {privyConfigured && !privyTimedOut ? (
-            <button
-              type="button"
-              onClick={login}
-              className="w-full sm:w-auto rounded-full bg-zinc-900 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-            >
-              Sign In
-            </button>
-          ) : null}
-
           <button
             type="button"
             onClick={() => setShowTokenPrompt(true)}
@@ -2252,56 +2224,32 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          {!isSignedIn ? (
-            <>
-              {privyConfigured && !privyTimedOut ? (
-                <button
-                  type="button"
-                  onClick={login}
-                  className="rounded-full bg-zinc-900 px-5 py-2 text-xs font-semibold text-white shadow-2xs transition hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                >
-                  Sign In
-                </button>
-              ) : null}
-
-              <button
-                type="button"
-                onClick={() => setShowTokenPrompt(true)}
-                className="inline-flex items-center gap-1.5 rounded-full border border-zinc-300 bg-white px-3.5 py-2 text-xs font-medium text-zinc-700 shadow-2xs hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                title="Connect with ADAM_API_TOKEN"
-              >
-                <span>🔑</span>
-                <span>Studio Key</span>
-              </button>
-            </>
-          ) : (
-            <>
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-800 dark:text-emerald-300">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                {adminStatus.isAdmin
-                  ? studioToken && !authenticated
-                    ? "Verified Admin (Studio Key)"
-                    : "Verified Admin"
-                  : adminStatus.checked
-                    ? "Invalid Token / Admin Required"
-                    : "Verifying session…"}
-              </span>
-              <button
-                type="button"
-                onClick={() => void loadStudioData()}
-                className="rounded-full border border-zinc-300 px-3.5 py-1.5 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-              >
-                Refresh
-              </button>
-              <button
-                type="button"
-                onClick={handleSignOut}
-                className="rounded-full px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
-              >
-                Sign Out
-              </button>
-            </>
-          )}
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-800 dark:text-emerald-300">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            {adminStatus.isAdmin
+              ? studioToken && !authenticated
+                ? "Verified Admin (Studio Key)"
+                : "Verified Admin"
+              : adminStatus.checked
+                ? "Invalid Token / Admin Required"
+                : "Verifying session…"}
+          </span>
+          <button
+            type="button"
+            onClick={() => void loadStudioData()}
+            className="rounded-full border border-zinc-300 px-3.5 py-1.5 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          >
+            Refresh
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowTokenPrompt(true)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-zinc-300 bg-white px-3.5 py-2 text-xs font-medium text-zinc-700 shadow-2xs hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            title="Connect with ADAM_API_TOKEN"
+          >
+            <span>🔑</span>
+            <span>Studio Key</span>
+          </button>
         </div>
       </header>
 
