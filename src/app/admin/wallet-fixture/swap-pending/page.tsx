@@ -1,20 +1,15 @@
-"use client";
-
-import { AdminWalletSwapForm } from "@/components/admin/admin-wallet-swap-form";
+import { notFound } from "next/navigation";
+import { isAdminWalletFixturePageEnabled } from "@/lib/wallet/admin-wallet-fixture-page";
+import { AdminWalletSwapPendingFixtureClient } from "./swap-pending-fixture-client";
 
 export default function AdminWalletSwapPendingFixturePage() {
+  if (!isAdminWalletFixturePageEnabled()) {
+    notFound();
+  }
+
   return (
     <main className="mx-auto max-w-3xl p-6">
-      <AdminWalletSwapForm
-        walletAddress="0xAE48B6dB64772b9CC24e33A79c809896776a20f6"
-        isAdmin
-        walletSwapEnabled
-        getAccessToken={async () => null}
-        privyConfigured={false}
-        authenticated={false}
-        previewMode
-        fixtureInitialStep="pending"
-      />
+      <AdminWalletSwapPendingFixtureClient />
     </main>
   );
 }

@@ -11,7 +11,7 @@ test.describe("admin wallet swap fixture screenshots", () => {
   test("capture swap confirm, pending, and success at 390px and 1440px", async ({
     page,
   }) => {
-    const prNumber = process.env.PR_ASSETS_NUMBER ?? "swap-draft";
+    const prNumber = process.env.PR_ASSETS_NUMBER ?? "93";
     const outDir = `docs/pr-assets/${prNumber}`;
 
     for (const { width, height, name, path } of [
