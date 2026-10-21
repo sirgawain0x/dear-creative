@@ -1,33 +1,93 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { AdminEarnPanel } from "@/components/admin/admin-earn-panel";
+import { AdminWalletPanel } from "@/components/admin/admin-wallet-panel";
+import { OracleIngestForm } from "@/components/admin/oracle-ingest-form";
 import { useAuthSession } from "@/components/providers/app-providers";
+import { AdminLinkedInConnect } from "./admin-linkedin-connect";
+
+import type { AdminMeSession } from "./admin-session";
+import { AdminPayoutsSection } from "./admin-payouts-section";
+import { resolveStudioBearerToken } from "@/lib/admin/studio-bearer-token";
+
+export { ADMIN_PAYOUTS_PRIVY_SIGN_IN_NOTE } from "./admin-payouts-section";
+
+export const ADMIN_OWNER_TOOL_LINKS = [
+  {
+    href: "/adam",
+    title: "Studio →",
+    description: "Multimodal agent & drafts",
+  },
+  {
+    href: "/approvals",
+    title: "Approvals Queue →",
+    description: "Review before dispatching",
+  },
+  {
+    href: "/adam?tab=posts",
+    title: "Manage Posts →",
+    description: "Edit & Lens Grove banners",
+  },
+  {
+    href: "/admin/metrics",
+    title: "Metrics →",
+    description: "Subscribers, delivery, and tips",
+  },
+] as const;
 
 export function AdminConsole() {
   const {
     ready,
     isSignedIn,
     user,
-    login,
-    signOut,
     getAccessToken,
     privyConfigured,
-    privyTimedOut,
+    authenticated,
   } = useAuthSession();
 
-  const [session, setSession] = useState<{
-    userId: string;
-    isAdmin: boolean;
-  } | null>(null);
+  const [session, setSession] = useState<AdminMeSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [walletEnabled, setWalletEnabled] = useState(false);
+  const [walletSendEnabled, setWalletSendEnabled] = useState(false);
+  const [earnEnabled, setEarnEnabled] = useState(false);
 
-  const refreshSession = useCallback(async () => {
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/admin/config")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (!cancelled && json) {
+          if (typeof json.walletEnabled === "boolean") {
+            setWalletEnabled(json.walletEnabled);
+          }
+          if (typeof json.walletSendEnabled === "boolean") {
+            setWalletSendEnabled(json.walletSendEnabled);
+          }
+          if (typeof json.earnEnabled === "boolean") {
+            setEarnEnabled(json.earnEnabled);
+          }
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const refreshSession = useCallback(async (options?: { silent?: boolean }) => {
     setError(null);
-    setIsVerifying(true);
+    if (!options?.silent) {
+      setIsVerifying(true);
+    }
     try {
-      const token = await getAccessToken();
+      const token = await resolveStudioBearerToken({
+        privyConfigured,
+        authenticated,
+        getAccessToken,
+      });
       if (!token) {
         setSession(null);
         setError("No access token available. Please sign in first.");
@@ -41,13 +101,27 @@ export function AdminConsole() {
         setError("Could not verify admin session. Ensure your Privy DID is in PRIVY_ADMIN_USER_IDS.");
         return;
       }
-      setSession(await response.json());
+      setSession((await response.json()) as AdminMeSession);
     } catch {
       setError("Failed to verify session with server.");
     } finally {
-      setIsVerifying(false);
+      if (!options?.silent) {
+        setIsVerifying(false);
+      }
     }
-  }, [getAccessToken]);
+  }, [authenticated, getAccessToken, privyConfigured]);
+
+  useEffect(() => {
+    if (!ready || !authenticated) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      void refreshSession({ silent: true });
+    }, 0);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [ready, authenticated, refreshSession]);
 
   if (!ready) {
     return <p className="text-zinc-500">Loading authentication status…</p>;
@@ -97,19 +171,10 @@ export function AdminConsole() {
               </p>
             </div>
           ) : !isSignedIn ? (
-            <div className="space-y-3">
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                Click below to sign in with Privy (email, wallet, or social).
-              </p>
-              <button
-                type="button"
-                onClick={login}
-                disabled={privyTimedOut}
-                className="rounded-full bg-zinc-900 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-              >
-                Sign in with Privy
-              </button>
-            </div>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              Use <span className="font-semibold text-zinc-900 dark:text-zinc-100">Sign In</span> in
+              the site header to authenticate with Privy (email, wallet, or social).
+            </p>
           ) : (
             <div className="space-y-4">
               {user ? (
@@ -126,13 +191,6 @@ export function AdminConsole() {
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => void signOut()}
-                  className="rounded-full bg-red-600 px-5 py-2 text-xs font-semibold text-white shadow-2xs hover:bg-red-700"
-                >
-                  Sign Out
-                </button>
-                <button
-                  type="button"
                   onClick={() => {
                     void refreshSession();
                   }}
@@ -147,6 +205,17 @@ export function AdminConsole() {
         </div>
       </div>
 
+      {isSignedIn ? (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <AdminWalletPanel
+            walletEnabled={walletEnabled}
+            walletSendEnabled={walletSendEnabled}
+            isAdmin={Boolean(session?.isAdmin)}
+          />
+          <AdminEarnPanel earnEnabled={earnEnabled} />
+        </div>
+      ) : null}
+
       {/* Owner Navigation Links (Gated) */}
       {isSignedIn ? (
         <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs dark:border-zinc-800 dark:bg-zinc-900/60">
@@ -154,35 +223,37 @@ export function AdminConsole() {
           <p className="mt-1 text-xs text-zinc-500">
             Access private editorial tools unlocked by your active session.
           </p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <Link
-              href="/adam"
-              className="flex flex-col rounded-xl border border-zinc-200 p-3.5 hover:border-zinc-400 hover:bg-zinc-50 transition dark:border-zinc-800 dark:hover:bg-zinc-800/60"
-            >
-              <span className="text-sm font-semibold">Studio →</span>
-              <span className="mt-1 text-[11px] text-zinc-500">
-                Multimodal agent &amp; drafts
-              </span>
-            </Link>
-            <Link
-              href="/approvals"
-              className="flex flex-col rounded-xl border border-zinc-200 p-3.5 hover:border-zinc-400 hover:bg-zinc-50 transition dark:border-zinc-800 dark:hover:bg-zinc-800/60"
-            >
-              <span className="text-sm font-semibold">Approvals Queue →</span>
-              <span className="mt-1 text-[11px] text-zinc-500">
-                Review before dispatching
-              </span>
-            </Link>
-            <Link
-              href="/adam?tab=posts"
-              className="flex flex-col rounded-xl border border-zinc-200 p-3.5 hover:border-zinc-400 hover:bg-zinc-50 transition dark:border-zinc-800 dark:hover:bg-zinc-800/60"
-            >
-              <span className="text-sm font-semibold">Manage Posts →</span>
-              <span className="mt-1 text-[11px] text-zinc-500">
-                Edit &amp; Lens Grove banners
-              </span>
-            </Link>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {ADMIN_OWNER_TOOL_LINKS.map((tool) => (
+              <Link
+                key={tool.href}
+                href={tool.href}
+                className="flex flex-col rounded-xl border border-zinc-200 p-3.5 hover:border-zinc-400 hover:bg-zinc-50 transition dark:border-zinc-800 dark:hover:bg-zinc-800/60"
+              >
+                <span className="text-sm font-semibold">{tool.title}</span>
+                <span className="mt-1 text-[11px] text-zinc-500">
+                  {tool.description}
+                </span>
+              </Link>
+            ))}
           </div>
+        </div>
+      ) : null}
+      <AdminPayoutsSection
+        session={session}
+        isSignedIn={isSignedIn}
+        authenticated={authenticated}
+      />
+      {session?.isAdmin ? (
+        <AdminLinkedInConnect
+          isAdmin={session.isAdmin}
+          getAccessToken={getAccessToken}
+        />
+      ) : null}
+      {session?.isAdmin ? (
+        <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs dark:border-zinc-800 dark:bg-zinc-900/60">
+          <h3 className="text-sm font-semibold">Oracle ingest</h3>
+          <OracleIngestForm getAccessToken={getAccessToken} />
         </div>
       ) : null}
       {session ? (

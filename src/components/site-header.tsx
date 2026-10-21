@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useId, useState } from "react";
 import { useAuthSession } from "./providers/app-providers";
+import { ReaderWalletSheet } from "./wallet/reader-wallet-sheet";
 
 export type SiteNavLink = {
   href: string;
@@ -18,7 +19,7 @@ export const SITE_NAV_LINKS: readonly SiteNavLink[] = [
   { href: "/subscribe", label: "Subscribe", matchPrefix: true },
   { href: "/adam", label: "Studio", matchPrefix: true, requiresAuth: true },
   { href: "/approvals", label: "Approvals", matchPrefix: true, requiresAuth: true },
-  { href: "/admin", label: "Sign-In/Sign-Out", matchPrefix: true },
+  { href: "/admin", label: "Sign In", matchPrefix: true },
 ] as const;
 
 export function isNavLinkActive(pathname: string | null, link: SiteNavLink): boolean {
@@ -38,11 +39,24 @@ export function getVisibleNavLinks(isSignedIn: boolean): readonly SiteNavLink[] 
   });
 }
 
-export function SiteHeader() {
+export type SiteHeaderProps = {
+  readerWalletEnabled?: boolean;
+};
+
+export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [walletSheetOpen, setWalletSheetOpen] = useState(false);
   const mobileMenuId = useId();
-  const { isSignedIn, signOut } = useAuthSession();
+  const {
+    isSignedIn,
+    authenticated,
+    signOut,
+    login,
+    privyConfigured,
+    privyTimedOut,
+  } = useAuthSession();
+  const showReaderWallet = readerWalletEnabled && authenticated;
 
   const visibleLinks = getVisibleNavLinks(isSignedIn);
 
@@ -67,11 +81,11 @@ export function SiteHeader() {
         </div>
 
         {/* Desktop navigation */}
-        <nav aria-label="Main navigation" className="hidden items-center gap-1 md:flex">
+        <nav aria-label="Main navigation" className="hidden items-center gap-1 lg:flex">
           {visibleLinks.map((link) => {
             const active = isNavLinkActive(pathname, link);
             const isAuthAction = link.href === "/admin";
-            const label = isAuthAction && isSignedIn ? "Sign-Out" : link.label;
+            const label = isAuthAction && isSignedIn ? "Sign Out" : link.label;
 
             if (isAuthAction && isSignedIn) {
               return (
@@ -94,9 +108,23 @@ export function SiteHeader() {
                     className="rounded-full border border-zinc-200 px-3 py-1 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 hover:text-red-600 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-red-400"
                     title="Sign Out"
                   >
-                    Sign-Out
+                    Sign Out
                   </button>
                 </div>
+              );
+            }
+
+            if (isAuthAction && !isSignedIn && privyConfigured && !privyTimedOut) {
+              return (
+                <button
+                  key={link.href}
+                  type="button"
+                  onClick={login}
+                  disabled={privyTimedOut}
+                  className="rounded-full border border-zinc-300 bg-zinc-900 px-3.5 py-1.5 text-sm font-medium text-white shadow-2xs transition-colors hover:bg-zinc-800 dark:border-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                >
+                  {label}
+                </button>
               );
             }
 
@@ -117,6 +145,16 @@ export function SiteHeader() {
               </Link>
             );
           })}
+          {showReaderWallet ? (
+            <button
+              type="button"
+              data-testid="reader-wallet-header-button"
+              onClick={() => setWalletSheetOpen(true)}
+              className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-800 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+            >
+              Wallet
+            </button>
+          ) : null}
           <a
             href={process.env.NEXT_PUBLIC_X_URL || "https://x.com/CreativeCrtv"}
             target="_blank"
@@ -136,7 +174,7 @@ export function SiteHeader() {
           aria-controls={mobileMenuId}
           aria-label="Toggle navigation menu"
           onClick={() => setMobileMenuOpen((prev) => !prev)}
-          className="inline-flex items-center justify-center rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 md:hidden dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900"
+          className="inline-flex items-center justify-center rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 lg:hidden dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900"
         >
           {mobileMenuOpen ? "Close ✕" : "Menu ☰"}
         </button>
@@ -147,13 +185,13 @@ export function SiteHeader() {
         <nav
           id={mobileMenuId}
           aria-label="Mobile navigation"
-          className="border-t border-zinc-200 bg-white px-6 py-3 md:hidden dark:border-zinc-800 dark:bg-zinc-950"
+          className="border-t border-zinc-200 bg-white px-6 py-3 lg:hidden dark:border-zinc-800 dark:bg-zinc-950"
         >
           <ul className="flex flex-col gap-1">
             {visibleLinks.map((link) => {
               const active = isNavLinkActive(pathname, link);
               const isAuthAction = link.href === "/admin";
-              const label = isAuthAction && isSignedIn ? "Sign-Out" : link.label;
+              const label = isAuthAction && isSignedIn ? "Sign Out" : link.label;
 
               if (isAuthAction && isSignedIn) {
                 return (
@@ -178,7 +216,25 @@ export function SiteHeader() {
                       }}
                       className="block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
                     >
-                      Sign-Out
+                      Sign Out
+                    </button>
+                  </li>
+                );
+              }
+
+              if (isAuthAction && !isSignedIn && privyConfigured && !privyTimedOut) {
+                return (
+                  <li key={link.href}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        login();
+                      }}
+                      disabled={privyTimedOut}
+                      className="block w-full rounded-lg bg-zinc-900 px-3 py-2 text-left text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+                    >
+                      {label}
                     </button>
                   </li>
                 );
@@ -201,6 +257,21 @@ export function SiteHeader() {
                 </li>
               );
             })}
+            {showReaderWallet ? (
+              <li>
+                <button
+                  type="button"
+                  data-testid="reader-wallet-header-button-mobile"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    setWalletSheetOpen(true);
+                  }}
+                  className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                >
+                  Wallet
+                </button>
+              </li>
+            ) : null}
             <li className="pt-2 border-t border-zinc-100 dark:border-zinc-800">
               <a
                 href={process.env.NEXT_PUBLIC_X_URL || "https://x.com/CreativeCrtv"}
@@ -219,6 +290,10 @@ export function SiteHeader() {
           </ul>
         </nav>
       ) : null}
+      <ReaderWalletSheet
+        open={walletSheetOpen}
+        onOpenChange={setWalletSheetOpen}
+      />
     </header>
   );
 }

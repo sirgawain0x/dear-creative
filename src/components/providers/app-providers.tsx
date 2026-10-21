@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -11,6 +12,67 @@ import { PrivyBridgeContext, PrivyRootProvider } from "./privy-root-provider";
 import { ToastProvider } from "@/components/ui/toast";
 
 export const STUDIO_TOKEN_STORAGE_KEY = "dear_creative_studio_token";
+
+function readStudioTokenFromStorage(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  return window.localStorage.getItem(STUDIO_TOKEN_STORAGE_KEY)?.trim() ?? "";
+}
+
+type StudioTokenContextValue = {
+  studioToken: string;
+  setStudioToken: (token: string) => void;
+  clearStudioToken: () => void;
+};
+
+const StudioTokenContext = createContext<StudioTokenContextValue | null>(null);
+
+export function useStudioToken(): StudioTokenContextValue {
+  const value = useContext(StudioTokenContext);
+  if (!value) {
+    throw new Error("useStudioToken must be used within AppProviders");
+  }
+  return value;
+}
+
+export function StudioTokenProvider({ children }: { children: React.ReactNode }) {
+  const [studioToken, setStudioTokenState] = useState("");
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setStudioTokenState(readStudioTokenFromStorage());
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const setStudioToken = useCallback((token: string) => {
+    const trimmed = token.trim();
+    if (typeof window !== "undefined") {
+      if (trimmed) {
+        window.localStorage.setItem(STUDIO_TOKEN_STORAGE_KEY, trimmed);
+      } else {
+        window.localStorage.removeItem(STUDIO_TOKEN_STORAGE_KEY);
+      }
+    }
+    setStudioTokenState(trimmed);
+  }, []);
+
+  const clearStudioToken = useCallback(() => {
+    setStudioToken("");
+  }, [setStudioToken]);
+
+  const value = useMemo(
+    () => ({ studioToken, setStudioToken, clearStudioToken }),
+    [studioToken, setStudioToken, clearStudioToken],
+  );
+
+  return (
+    <StudioTokenContext.Provider value={value}>
+      {children}
+    </StudioTokenContext.Provider>
+  );
+}
 
 export function useSafePrivy() {
   const privy = useContext(PrivyBridgeContext);
@@ -37,13 +99,17 @@ export function useSafePrivy() {
     ? isPrivyReady || isTimedOut
     : configLoaded || true;
 
+  const noopLogin = useCallback(() => {}, []);
+  const noopLogout = useCallback(async () => {}, []);
+  const nullAccessToken = useCallback(async () => null, []);
+
   return {
     ready,
     authenticated: privy?.authenticated ?? false,
     user: privy?.user ?? null,
-    login: privy?.login ?? (() => {}),
-    logout: privy?.logout ?? (async () => {}),
-    getAccessToken: privy?.getAccessToken ?? (async () => null),
+    login: privy?.login ?? noopLogin,
+    logout: privy?.logout ?? noopLogout,
+    getAccessToken: privy?.getAccessToken ?? nullAccessToken,
     privyConfigured,
     adamTokenConfigured,
     configLoaded,
@@ -56,26 +122,13 @@ export function useSafePrivy() {
  */
 export function useAuthSession() {
   const privy = useSafePrivy();
-  const [hasStudioToken, setHasStudioToken] = useState(false);
+  const { studioToken, setStudioToken, clearStudioToken } = useStudioToken();
 
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const token = window.localStorage.getItem(STUDIO_TOKEN_STORAGE_KEY);
-      const timer = setTimeout(
-        () => setHasStudioToken(Boolean(token?.trim())),
-        0,
-      );
-      return () => clearTimeout(timer);
-    }
-  }, []);
-
+  const hasStudioToken = Boolean(studioToken.trim());
   const isSignedIn = privy.authenticated || hasStudioToken;
 
   const handleSignOut = async () => {
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem(STUDIO_TOKEN_STORAGE_KEY);
-    }
-    setHasStudioToken(false);
+    clearStudioToken();
     if (privy.authenticated) {
       await privy.logout();
     }
@@ -85,6 +138,9 @@ export function useAuthSession() {
     ...privy,
     isSignedIn,
     hasStudioToken,
+    studioToken,
+    setStudioToken,
+    clearStudioToken,
     signOut: handleSignOut,
   };
 }
@@ -156,16 +212,20 @@ export function AppProviders({ privyAppId, children }: AppProvidersProps) {
   if (!resolvedAppId) {
     return (
       <AuthRuntimeConfigContext.Provider value={contextValue}>
-        <ToastProvider>{children}</ToastProvider>
+        <StudioTokenProvider>
+          <ToastProvider>{children}</ToastProvider>
+        </StudioTokenProvider>
       </AuthRuntimeConfigContext.Provider>
     );
   }
 
   return (
     <AuthRuntimeConfigContext.Provider value={contextValue}>
-      <PrivyRootProvider appId={resolvedAppId}>
-        <ToastProvider>{children}</ToastProvider>
-      </PrivyRootProvider>
+      <StudioTokenProvider>
+        <PrivyRootProvider appId={resolvedAppId}>
+          <ToastProvider>{children}</ToastProvider>
+        </PrivyRootProvider>
+      </StudioTokenProvider>
     </AuthRuntimeConfigContext.Provider>
   );
 }

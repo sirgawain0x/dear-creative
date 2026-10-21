@@ -110,8 +110,43 @@
     {
       "idx": 15,
       "version": "6",
-      "when": 1792515477429,
-      "tag": "0015_cowriters",
+      "when": 1792521000000,
+      "tag": "0016_post_repurpose_outputs",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1792522000000,
+      "tag": "0017_backfill_null_post_author_g2",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1792523000000,
+      "tag": "0018_linkedin_member_credentials",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1792524500000,
+      "tag": "0019_earn_audit_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1792525000000,
+      "tag": "0020_reader_post_unlock_purchases",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1792602394384,
+      "tag": "0021_cowriters",
       "breakpoints": true
     }
   ]

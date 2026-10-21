@@ -1,63 +1,53 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/db/client";
-import { synthesizeSpeechWithGoogle } from "@/lib/adam/gemini-studio";
-import { getPublishedPostBySlug } from "@/lib/posts/published-posts";
-import { stripHtmlTags } from "@/lib/posts/reading-time";
-
-export const maxDuration = 60;
+import { getPublishedPostRowBySlug } from "@/lib/posts/published-posts";
+import { isPaywallEnabled } from "@/lib/paywall/feature-flag";
+import { canReadFull } from "@/lib/paywall/can-read-full";
+import { resolvePostViewerFromCookies } from "@/lib/paywall/viewer-from-cookies";
+import { cookies } from "next/headers";
 
 export async function GET(
-  request: Request,
+  _request: Request,
   props: { params: Promise<{ slug: string }> },
 ) {
   const { slug } = await props.params;
-  const url = new URL(request.url);
-  const voice = url.searchParams.get("voice") || "Puck";
+  const db = getDb();
 
-  const post = await getPublishedPostBySlug(getDb(), slug);
+  const row = await getPublishedPostRowBySlug(db, slug);
 
-  if (!post) {
+  if (!row) {
     return NextResponse.json({ error: "Post not found" }, { status: 404 });
   }
 
-  // If the post already has a pre-generated static audio MP3 on Lens Grove, serve it directly
-  if (post.audioUrl) {
-    return NextResponse.json({
-      ok: true,
-      audioUrl: post.audioUrl,
-      voice: post.audioVoice || voice,
-      preGenerated: true,
-      mimeType: "audio/mpeg",
-    });
-  }
-
-  // Compose narration script: Title, excerpt, and main text
-  const cleanBody = stripHtmlTags(post.bodyHtml ?? post.excerpt ?? "");
-  const narration = `${post.title}. ${post.excerpt ? post.excerpt + ". " : ""}${cleanBody}`;
-
-  try {
-    const speech = await synthesizeSpeechWithGoogle({
-      text: narration,
-      voiceName: voice,
-    });
-
-    return NextResponse.json({
-      ok: true,
-      audioBase64: speech.audioBase64,
-      mimeType: speech.mimeType,
-      provider: speech.provider,
-      voice,
-    });
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "TTS synthesis unavailable";
-    return NextResponse.json(
+  if (isPaywallEnabled() && row.isGated) {
+    const cookieStore = await cookies();
+    const readCookie = (name: string) => cookieStore.get(name)?.value;
+    const viewer = await resolvePostViewerFromCookies(db, readCookie);
+    const entitled = await canReadFull(
+      db,
       {
-        fallbackToLocalWebSpeech: true,
-        text: narration,
-        error: message,
+        isGated: row.isGated,
+        authorId: row.authorId,
+        postId: row.postId,
       },
-      { status: 200 },
+      viewer,
     );
+    if (!entitled) {
+      return NextResponse.json(
+        { error: "Audio not available for this post" },
+        { status: 403 },
+      );
+    }
   }
+
+  const audioUrl = row.audioUrl?.trim();
+
+  if (audioUrl) {
+    return NextResponse.redirect(audioUrl, 302);
+  }
+
+  return NextResponse.json(
+    { error: "Audio not available for this post" },
+    { status: 404 },
+  );
 }

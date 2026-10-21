@@ -393,6 +393,40 @@ export const subscriptionQuotes = sqliteTable(
   ],
 );
 
+/** Per-post USDC unlock purchases (PR C reader checkout). */
+export const readerPostUnlockPurchases = sqliteTable(
+  "reader_post_unlock_purchases",
+  {
+    id: text("id").primaryKey(),
+    privyUserId: text("privy_user_id").notNull(),
+    walletAddress: text("wallet_address").notNull(),
+    writerId: text("writer_id")
+      .notNull()
+      .references(() => writers.id),
+    postId: text("post_id")
+      .notNull()
+      .references(() => posts.id),
+    txHash: text("tx_hash").notNull(),
+    chainId: integer("chain_id").notNull(),
+    tokenAddress: text("token_address").notNull(),
+    amountRaw: text("amount_raw").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("reader_post_unlock_tx_hash_unique").on(table.txHash),
+    index("reader_post_unlock_post_wallet_idx").on(
+      table.postId,
+      table.walletAddress,
+    ),
+    index("reader_post_unlock_privy_writer_idx").on(
+      table.privyUserId,
+      table.writerId,
+    ),
+  ],
+);
+
 export const approvals = sqliteTable(
   "approvals",
   {
@@ -586,6 +620,101 @@ export const predictions = sqliteTable(
 
 export type PredictionRecord = typeof predictions.$inferSelect;
 export type NewPredictionRecord = typeof predictions.$inferInsert;
+
+export const postRepurposeOutputStatusEnum = [
+  "generating",
+  "ready",
+  "failed",
+] as const;
+export type PostRepurposeOutputStatus =
+  (typeof postRepurposeOutputStatusEnum)[number];
+
+export const postRepurposeOutputTypeEnum = [
+  "audio_overview",
+  "slide_deck",
+  "video_overview",
+  "mind_map",
+  "report",
+  "flashcards",
+  "quiz",
+  "data_table",
+  "infographic",
+] as const;
+
+export const postRepurposeOutputs = sqliteTable(
+  "post_repurpose_outputs",
+  {
+    id: text("id").primaryKey(),
+    postId: text("post_id")
+      .notNull()
+      .references(() => posts.id, { onDelete: "cascade" }),
+    outputType: text("output_type", {
+      enum: postRepurposeOutputTypeEnum,
+    }).notNull(),
+    status: text("status", { enum: postRepurposeOutputStatusEnum }).notNull(),
+    payloadJson: text("payload_json"),
+    mediaUrl: text("media_url"),
+    mediaMimeType: text("media_mime_type"),
+    errorMessage: text("error_message"),
+    claimToken: text("claim_token"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("post_repurpose_outputs_post_type_unique").on(
+      table.postId,
+      table.outputType,
+    ),
+  ],
+);
+
+export type PostRepurposeOutputRecord = typeof postRepurposeOutputs.$inferSelect;
+
+export const linkedinMemberCredentials = sqliteTable("linkedin_member_credentials", {
+  id: text("id").primaryKey(),
+  memberSub: text("member_sub").notNull(),
+  authorUrn: text("author_urn").notNull(),
+  accessTokenEnc: text("access_token_enc").notNull(),
+  refreshTokenEnc: text("refresh_token_enc"),
+  expiresAt: integer("expires_at", { mode: "timestamp_ms" }),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+    .notNull()
+    .default(sql`(unixepoch() * 1000)`),
+});
+
+export type LinkedInMemberCredentialRecord =
+  typeof linkedinMemberCredentials.$inferSelect;
+
+export const earnAuditActionEnum = ["deposit", "withdraw"] as const;
+
+/** Append-only audit trail for Privy Earn admin actions (written by actions PR). */
+export const earnAuditLog = sqliteTable(
+  "earn_audit_log",
+  {
+    id: text("id").primaryKey(),
+    adminPrivyUserId: text("admin_privy_user_id").notNull(),
+    adminWalletId: text("admin_wallet_id").notNull(),
+    action: text("action", { enum: earnAuditActionEnum }).notNull(),
+    vaultId: text("vault_id").notNull(),
+    asset: text("asset").notNull(),
+    amount: text("amount").notNull(),
+    txHash: text("tx_hash"),
+    status: text("status").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("earn_audit_log_created_at_idx").on(table.createdAt),
+    index("earn_audit_log_vault_id_idx").on(table.vaultId),
+  ],
+);
+
+export type EarnAuditLogRecord = typeof earnAuditLog.$inferSelect;
 
 export const postWriterRoleEnum = ["author", "cowriter"] as const;
 export type PostWriterRole = (typeof postWriterRoleEnum)[number];

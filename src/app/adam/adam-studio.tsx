@@ -11,7 +11,10 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react";
-import { useSafePrivy } from "@/components/providers/app-providers";
+import {
+  useAuthSession,
+  useSafePrivy,
+} from "@/components/providers/app-providers";
 import { useToast } from "@/components/ui/toast";
 import type {
   StudioAttachmentInput,
@@ -25,7 +28,16 @@ import {
   ensureArticleHtml,
   renderMarkdownToSafeHtml,
 } from "@/lib/html/markdown-to-html";
+import {
+  EditorPaywallSidebar,
+  type PaywallSettings,
+} from "@/components/admin/EditorPaywallSidebar";
 import type { AdminPostRecord } from "@/lib/posts/manage-posts";
+import { DEFAULT_PAYWALL_SETTINGS } from "@/lib/posts/paywall-editor-defaults";
+import {
+  PAYWALL_GATE_END_TAG,
+  PAYWALL_GATE_START_TAG,
+} from "@/lib/posts/paywall-split";
 import {
   removeLeadingBannerFromHtml,
   removeLeadingBannerFromMarkdown,
@@ -37,7 +49,11 @@ import {
   resolvePostCoverImage,
 } from "@/lib/posts/post-cover-image";
 import { resolveGroveOrIpfsUrl } from "@/lib/storage/lens-grove";
+import { useStopAudioOnLeave } from "@/hooks/use-stop-audio-on-leave";
 import { NARRATION_VOICES, voiceLabel } from "@/lib/audio/narration-voices";
+import { playAdamGoogleTts } from "@/app/adam/adam-message-tts";
+import { stopDispatchAudioResources } from "@/lib/audio/stop-active-audio";
+import { RepurposePanel } from "@/app/adam/repurpose-panel";
 
 export type StudioTab = "chat" | "ideas" | "posts" | "approvals" | "schedule";
 type VoiceEngineMode = "google" | "browser";
@@ -134,8 +150,6 @@ async function readFileAsAttachment(file: File): Promise<ClientAttachment> {
     previewUrl,
   };
 }
-
-const STUDIO_TOKEN_STORAGE_KEY = "dear_creative_studio_token";
 
 const SCHEDULE_PRESETS = [
   { label: "Every Monday at 9:00 AM", cron: "0 9 * * 1" },
@@ -279,16 +293,10 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
   const {
     ready,
     authenticated,
-    login,
-    logout,
     getAccessToken,
     privyConfigured,
-    privyTimedOut,
   } = useSafePrivy();
-  const [studioToken, setStudioToken] = useState<string>(() => {
-    if (typeof window === "undefined") return "";
-    return window.localStorage.getItem(STUDIO_TOKEN_STORAGE_KEY)?.trim() ?? "";
-  });
+  const { studioToken, setStudioToken } = useAuthSession();
   const [studioTokenInput, setStudioTokenInput] = useState("");
   const [showTokenPrompt, setShowTokenPrompt] = useState(false);
   const [activeTab, setActiveTab] = useState<StudioTab>(() => {
@@ -375,6 +383,9 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
   const browserRecognitionRef =
     useRef<BrowserSpeechRecognitionInstance | null>(null);
   const activeAudioRef = useRef<HTMLAudioElement | null>(null);
+  const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const ttsAbortRef = useRef<AbortController | null>(null);
+  const ttsSessionActiveRef = useRef(false);
 
   // Ideas & Rough Drafts state
   const [ideas, setIdeas] = useState<AdamIdeaRecord[]>([]);
@@ -424,7 +435,6 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
   >("16:9");
   const [isGeneratingBanner, setIsGeneratingBanner] = useState(false);
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
-  const [isExportingNotebook, setIsExportingNotebook] = useState(false);
   // Pre-generated narration (static MP3 on Lens Grove)
   const [editPostAudioUrl, setEditPostAudioUrl] = useState("");
   const [editPostAudioVoice, setEditPostAudioVoice] = useState("");
@@ -433,6 +443,8 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
   const bannerFileInputRef = useRef<HTMLInputElement>(null);
   const videoFileInputRef = useRef<HTMLInputElement>(null);
   const [editPostMode, setEditPostMode] = useState<PostEditorMode>("markdown");
+  const [editPaywallSettings, setEditPaywallSettings] =
+    useState<PaywallSettings>(DEFAULT_PAYWALL_SETTINGS);
   const [isSavingPost, setIsSavingPost] = useState(false);
   const [isPolishingPost, setIsPolishingPost] = useState(false);
 
@@ -496,6 +508,13 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
     if (post.audioVoice) {
       setNarrationVoice(post.audioVoice);
     }
+    setEditPaywallSettings({
+      isGated: post.isGated ?? false,
+      gatePriceUsdc: post.gatePriceUsdc ?? 1.0,
+      payoutAddress: "",
+      freeContent: post.freeContent ?? "",
+      gatedContent: post.gatedContent ?? "",
+    });
   }, []);
 
   const authFetch = useCallback(
@@ -741,9 +760,6 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
       e.preventDefault();
       const trimmed = studioTokenInput.trim();
       if (!trimmed) return;
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(STUDIO_TOKEN_STORAGE_KEY, trimmed);
-      }
       setStudioToken(trimmed);
       setStudioTokenInput("");
       setShowTokenPrompt(false);
@@ -755,52 +771,28 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
     [studioTokenInput],
   );
 
-  const handleSignOut = useCallback(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem(STUDIO_TOKEN_STORAGE_KEY);
-    }
-    setStudioToken("");
-    setAdminStatus({ checked: false, isAdmin: false, userId: null });
-    if (authenticated) {
-      void logout();
-    }
-  }, [authenticated, logout]);
-
-  // Stop any playing speech on unmount
-  useEffect(() => {
-    return () => {
-      if (activeAudioRef.current) {
-        activeAudioRef.current.onended = null;
-        activeAudioRef.current.onerror = null;
-        activeAudioRef.current.pause();
-        activeAudioRef.current.removeAttribute?.("src");
-        activeAudioRef.current.load?.();
-        activeAudioRef.current = null;
-      }
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-      }
-    };
-  }, []);
-
   // --- TTS (Text-to-Speech) ---
   const stopSpeaking = useCallback(() => {
-    if (activeAudioRef.current) {
-      activeAudioRef.current.onended = null;
-      activeAudioRef.current.onerror = null;
-      activeAudioRef.current.pause();
-      activeAudioRef.current.removeAttribute?.("src");
-      activeAudioRef.current.load?.();
-      activeAudioRef.current = null;
-    }
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
+    ttsSessionActiveRef.current = false;
+    const abort = ttsAbortRef.current;
+    ttsAbortRef.current = null;
+    stopDispatchAudioResources({
+      audio: activeAudioRef.current,
+      utterance: activeUtteranceRef.current,
+      abortController: abort,
+    });
+    activeAudioRef.current = null;
+    activeUtteranceRef.current = null;
     setSpeakingMessageIdx(null);
   }, []);
 
+  useStopAudioOnLeave(stopSpeaking);
+
   const speakWithBrowserFallback = useCallback(
     (text: string, messageIndex: number) => {
+      if (!ttsSessionActiveRef.current) {
+        return;
+      }
       if (typeof window === "undefined" || !("speechSynthesis" in window)) {
         setStatusBanner({
           kind: "error",
@@ -813,6 +805,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.onend = () => setSpeakingMessageIdx(null);
       utterance.onerror = () => setSpeakingMessageIdx(null);
+      activeUtteranceRef.current = utterance;
       setSpeakingMessageIdx(messageIndex);
       window.speechSynthesis.speak(utterance);
     },
@@ -827,52 +820,40 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
       }
       stopSpeaking();
       setSpeakingMessageIdx(messageIndex);
+      ttsSessionActiveRef.current = true;
 
       if (voiceEngine === "browser") {
         speakWithBrowserFallback(text, messageIndex);
         return;
       }
 
-      try {
-        const res = await authFetch("/api/adam/voice/tts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text,
-            voiceName: googleVoiceName,
+      await playAdamGoogleTts({
+        text,
+        messageIndex,
+        isSessionActive: () => ttsSessionActiveRef.current,
+        abortRef: ttsAbortRef,
+        fetchTts: (signal) =>
+          authFetch("/api/adam/voice/tts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text,
+              voiceName: googleVoiceName,
+            }),
+            signal,
           }),
-        });
-
-        if (!res.ok) {
-          speakWithBrowserFallback(text, messageIndex);
-          return;
-        }
-
-        const data = (await res.json()) as {
-          audioBase64?: string;
-          mimeType?: string;
-        };
-        if (!data.audioBase64) {
-          speakWithBrowserFallback(text, messageIndex);
-          return;
-        }
-
-        const audio = new Audio(
-          `data:${data.mimeType || "audio/wav"};base64,${data.audioBase64}`,
-        );
-        activeAudioRef.current = audio;
-        audio.onended = () => {
-          setSpeakingMessageIdx(null);
-          activeAudioRef.current = null;
-        };
-        audio.onerror = () => {
-          activeAudioRef.current = null;
-          speakWithBrowserFallback(text, messageIndex);
-        };
-        await audio.play();
-      } catch {
-        speakWithBrowserFallback(text, messageIndex);
-      }
+        speakBrowserFallback: speakWithBrowserFallback,
+        onAudioCreated: (audio) => {
+          activeAudioRef.current = audio;
+          audio.onended = () => {
+            setSpeakingMessageIdx(null);
+            activeAudioRef.current = null;
+          };
+          audio.onerror = () => {
+            activeAudioRef.current = null;
+          };
+        },
+      });
     },
     [
       authFetch,
@@ -1811,73 +1792,6 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
     setStatusBanner,
   ]);
 
-  // --- Export Google Colab (.ipynb) Asset Generator Notebook ---
-  const handleExportColabNotebook = useCallback(async () => {
-    setIsExportingNotebook(true);
-    setStatusBanner(null);
-    try {
-      const res = await authFetch("/api/adam/notebook", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          postId: selectedEditPostId || null,
-          title:
-            editPostTitle.trim() ||
-            ideaTitle.trim() ||
-            "Dear Creative Dispatch",
-          slug: editPostSlug.trim() || null,
-          teaserText: editPostTeaser.trim() || null,
-          markdown:
-            editPostMarkdown.trim() ||
-            ideaContent.trim() ||
-            chatInput.trim() ||
-            null,
-          voiceName: googleVoiceName || "Puck",
-          bannerPrompt: aiBannerPrompt.trim() || null,
-        }),
-      });
-      if (!res.ok) {
-        throw new Error(`Notebook export failed (${res.status})`);
-      }
-      const blob = await res.blob();
-      const fileSlug = (editPostSlug.trim() || "dear-creative")
-        .toLowerCase()
-        .replace(/[^a-z0-9-]+/g, "-");
-      const downloadUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = downloadUrl;
-      a.download = `dear-creative-${fileSlug}-assets.ipynb`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(downloadUrl);
-
-      setStatusBanner({
-        kind: "success",
-        text: `Downloaded Google Colab notebook (dear-creative-${fileSlug}-assets.ipynb) with Banner, TTS Audio, Veo Video & Lens Grove cells!`,
-      });
-    } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : "Failed to export Colab notebook";
-      setStatusBanner({ kind: "error", text: msg });
-    } finally {
-      setIsExportingNotebook(false);
-    }
-  }, [
-    aiBannerPrompt,
-    authFetch,
-    chatInput,
-    editPostMarkdown,
-    editPostSlug,
-    editPostTeaser,
-    editPostTitle,
-    googleVoiceName,
-    ideaContent,
-    ideaTitle,
-    selectedEditPostId,
-    setStatusBanner,
-  ]);
-
   // --- Generate / Remove Pre-Generated Narration MP3 (Lens Grove) ---
   const handleGenerateNarration = useCallback(async () => {
     if (!selectedEditPostId) return;
@@ -1994,6 +1908,12 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
       setStatusBanner(null);
 
       try {
+        const paywallPayload = {
+          isGated: editPaywallSettings.isGated,
+          freeContent: editPaywallSettings.freeContent.trim() || null,
+          gatedContent: editPaywallSettings.gatedContent.trim() || null,
+          gatePriceUsdc: editPaywallSettings.gatePriceUsdc,
+        };
         const payload =
           editPostMode === "html"
             ? {
@@ -2004,6 +1924,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                 emailSubject: editPostEmailSubject.trim() || null,
                 bodyHtml: editPostHtml,
                 syncEmailWithBody: true,
+                ...paywallPayload,
               }
             : {
                 title: editPostTitle.trim(),
@@ -2013,6 +1934,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                 emailSubject: editPostEmailSubject.trim() || null,
                 markdown: editPostMarkdown,
                 syncEmailWithBody: true,
+                ...paywallPayload,
               };
 
         const res = await authFetch(`/api/adam/posts/${selectedEditPostId}`, {
@@ -2059,10 +1981,27 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
       editPostStatus,
       editPostTeaser,
       editPostTitle,
+      editPaywallSettings,
       loadStudioData,
       selectPostForEditing,
       selectedEditPostId,
     ],
+  );
+
+  const handleInsertPaywallGateTag = useCallback(
+    (tagType: "wrapper" | "split") => {
+      const insertion =
+        tagType === "wrapper"
+          ? `\n\n${PAYWALL_GATE_START_TAG}\n\n${PAYWALL_GATE_END_TAG}\n\n`
+          : `\n\n${PAYWALL_GATE_START_TAG}\n\n`;
+      setEditPostMarkdown((prev) => `${prev}${insertion}`);
+      if (editPostMode === "html") {
+        setEditPostHtml((prev) =>
+          ensureArticleHtml(`${htmlToMarkdown(prev)}${insertion}`),
+        );
+      }
+    },
+    [editPostMode],
   );
 
   // --- Ask Adam to Fix Missing Headers & Formatting on Selected Post ---
@@ -2141,7 +2080,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
 
   if (!ready) {
     return (
-      <div className="mx-auto w-full max-w-[1800px] px-4 sm:px-6 lg:px-8 py-10">
+      <div className="min-w-0 w-full">
         <p className="text-zinc-500">Loading Adam Editorial Studio…</p>
       </div>
     );
@@ -2168,20 +2107,11 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
         </h1>
         <p className="mt-3 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
           Adam Studio, Approvals, and post editing are restricted to the owner of Dear Creative.
-          Please sign in with Privy or enter your Studio Key to continue.
+          Use <span className="font-semibold text-zinc-800 dark:text-zinc-200">Sign In</span> in the
+          site header, or enter your Studio Key below to continue.
         </p>
 
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          {privyConfigured && !privyTimedOut ? (
-            <button
-              type="button"
-              onClick={login}
-              className="w-full sm:w-auto rounded-full bg-zinc-900 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-            >
-              Sign in with Privy
-            </button>
-          ) : null}
-
           <button
             type="button"
             onClick={() => setShowTokenPrompt(true)}
@@ -2273,9 +2203,9 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1800px] px-4 sm:px-6 lg:px-8 py-10">
+    <div className="min-w-0 w-full max-w-full">
       {/* Studio Header */}
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-200 pb-6 dark:border-zinc-800">
+      <header className="flex min-w-0 flex-wrap items-center justify-between gap-4 border-b border-zinc-200 pb-6 dark:border-zinc-800">
         <div>
           <div className="flex items-center gap-2.5">
             <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
@@ -2294,56 +2224,32 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          {!isSignedIn ? (
-            <>
-              {privyConfigured && !privyTimedOut ? (
-                <button
-                  type="button"
-                  onClick={login}
-                  className="rounded-full bg-zinc-900 px-5 py-2 text-xs font-semibold text-white shadow-2xs transition hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                >
-                  Sign in with Privy
-                </button>
-              ) : null}
-
-              <button
-                type="button"
-                onClick={() => setShowTokenPrompt(true)}
-                className="inline-flex items-center gap-1.5 rounded-full border border-zinc-300 bg-white px-3.5 py-2 text-xs font-medium text-zinc-700 shadow-2xs hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                title="Connect with ADAM_API_TOKEN"
-              >
-                <span>🔑</span>
-                <span>Studio Key</span>
-              </button>
-            </>
-          ) : (
-            <>
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-800 dark:text-emerald-300">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                {adminStatus.isAdmin
-                  ? studioToken && !authenticated
-                    ? "Verified Admin (Studio Key)"
-                    : "Verified Admin"
-                  : adminStatus.checked
-                    ? "Invalid Token / Admin Required"
-                    : "Verifying session…"}
-              </span>
-              <button
-                type="button"
-                onClick={() => void loadStudioData()}
-                className="rounded-full border border-zinc-300 px-3.5 py-1.5 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
-              >
-                Refresh
-              </button>
-              <button
-                type="button"
-                onClick={handleSignOut}
-                className="rounded-full px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
-              >
-                Sign out
-              </button>
-            </>
-          )}
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-800 dark:text-emerald-300">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            {adminStatus.isAdmin
+              ? studioToken && !authenticated
+                ? "Verified Admin (Studio Key)"
+                : "Verified Admin"
+              : adminStatus.checked
+                ? "Invalid Token / Admin Required"
+                : "Verifying session…"}
+          </span>
+          <button
+            type="button"
+            onClick={() => void loadStudioData()}
+            className="rounded-full border border-zinc-300 px-3.5 py-1.5 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          >
+            Refresh
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowTokenPrompt(true)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-zinc-300 bg-white px-3.5 py-2 text-xs font-medium text-zinc-700 shadow-2xs hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            title="Connect with ADAM_API_TOKEN"
+          >
+            <span>🔑</span>
+            <span>Studio Key</span>
+          </button>
         </div>
       </header>
 
@@ -3111,27 +3017,6 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
               Images (PNG, JPG, WebP) · Docs (PDF) · Text &amp; Markdown
             </div>
 
-            <div className="border-t border-zinc-200 pt-3 space-y-2 dark:border-zinc-800">
-              <h3 className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                Google Colab Asset Notebook
-              </h3>
-              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                Export a ready-to-run <code>.ipynb</code> notebook for Imagen 3 banners, static MP3 TTS audio (&lt; $0.01/issue), Veo video clips, and Lens Grove uploads.
-              </p>
-              <button
-                type="button"
-                disabled={isExportingNotebook}
-                onClick={() => void handleExportColabNotebook()}
-                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-800"
-              >
-                <span aria-hidden="true">📓</span>
-                <span>
-                  {isExportingNotebook
-                    ? "Building Notebook…"
-                    : "Export Colab Notebook (.ipynb)"}
-                </span>
-              </button>
-            </div>
           </aside>
         </section>
       ) : null}
@@ -3585,21 +3470,23 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
 
       {/* TAB 2.5: EDIT PUBLISHED & DRAFT POSTS */}
       {activeTab === "posts" ? (
-        <section className="mt-6 grid gap-6 lg:grid-cols-12">
+        <section className="mt-6 grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-12 lg:items-stretch">
           {/* Left Column: Post Browser */}
-          <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-xs lg:col-span-4 xl:col-span-3 dark:border-zinc-800 dark:bg-zinc-900/60">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-base font-semibold">Posts &amp; Archive</h2>
-              <span className="text-xs text-zinc-500">
-                {adminPosts.length} total
-              </span>
+          <div className="flex h-full min-h-[400px] min-w-0 w-full max-w-full flex-col rounded-2xl border border-zinc-200 bg-white p-5 shadow-xs lg:col-span-4 lg:min-h-0 xl:col-span-3 dark:border-zinc-800 dark:bg-zinc-900/60">
+            <div className="shrink-0 min-w-0">
+              <div className="flex min-w-0 items-center justify-between gap-2">
+                <h2 className="text-base font-semibold">Posts &amp; Archive</h2>
+                <span className="text-xs text-zinc-500">
+                  {adminPosts.length} total
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+                Select any published post or draft to fix missing headers, clean
+                formatting, or update its title and body.
+              </p>
             </div>
-            <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
-              Select any published post or draft to fix missing headers, clean
-              formatting, or update its title and body.
-            </p>
 
-            <div className="mt-3 space-y-2">
+            <div className="mt-3 shrink-0 space-y-2">
               <input
                 type="search"
                 value={postSearchQuery}
@@ -3627,13 +3514,14 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
             </div>
 
             {adminPosts.length === 0 ? (
-              <p className="mt-6 text-xs text-zinc-500">
+              <p className="mt-4 text-xs text-zinc-500">
                 {authenticated
                   ? "No posts loaded yet."
-                  : "Sign in with Privy to load and edit posts."}
+                  : "Sign In to load and edit posts."}
               </p>
             ) : (
-              <ul className="mt-4 max-h-[600px] space-y-2 overflow-y-auto pr-1">
+              <div className="mt-4 min-h-48 max-h-[60vh] overflow-y-auto lg:relative lg:max-h-none lg:min-h-0 lg:flex-1 lg:overflow-hidden">
+              <ul className="space-y-2 pr-1 lg:absolute lg:inset-0 lg:overflow-y-auto">
                 {adminPosts
                   .filter((p) => {
                     if (
@@ -3656,13 +3544,13 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                         <button
                           type="button"
                           onClick={() => selectPostForEditing(post)}
-                          className={`w-full rounded-xl border p-3 text-left transition ${
+                          className={`min-w-0 w-full max-w-full rounded-xl border p-3 text-left transition ${
                             isSelected
                               ? "border-zinc-900 bg-zinc-100/90 dark:border-zinc-100 dark:bg-zinc-800/80"
                               : "border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:border-zinc-700 dark:hover:bg-zinc-900"
                           }`}
                         >
-                          <div className="flex items-center justify-between gap-2">
+                          <div className="flex min-w-0 items-center justify-between gap-2">
                             <span
                               className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
                                 post.status === "published"
@@ -3683,7 +3571,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                           <p className="mt-1.5 line-clamp-2 text-xs font-semibold">
                             {post.title}
                           </p>
-                          <code className="mt-1 block truncate text-[11px] text-zinc-500">
+                          <code className="mt-1 block min-w-0 truncate break-all text-[11px] text-zinc-500">
                             /posts/{post.slug}
                           </code>
                         </button>
@@ -3691,15 +3579,16 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                     );
                   })}
               </ul>
+              </div>
             )}
           </div>
 
           {/* Right Column: Post Editor */}
           <form
             onSubmit={(e) => void handleSaveEditedPost(e)}
-            className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs lg:col-span-8 xl:col-span-9 dark:border-zinc-800 dark:bg-zinc-900/60"
+            className="h-full min-h-[400px] min-w-0 w-full max-w-full rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs lg:col-span-8 lg:min-h-0 xl:col-span-9 dark:border-zinc-800 dark:bg-zinc-900/60"
           >
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 pb-4 dark:border-zinc-800">
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-zinc-200 pb-4 dark:border-zinc-800">
               <div>
                 <h2 className="text-lg font-semibold">
                   {selectedEditPostId ? "Edit Post" : "Select a Post to Edit"}
@@ -3775,7 +3664,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                     required
                     value={editPostSlug}
                     onChange={(e) => setEditPostSlug(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 font-mono text-xs dark:border-zinc-700 dark:bg-zinc-950"
+                    className="mt-1 w-full min-w-0 max-w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 font-mono text-xs dark:border-zinc-700 dark:bg-zinc-950"
                   />
                 </div>
 
@@ -3812,6 +3701,14 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                   className="mt-1 w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                 />
               </div>
+
+              {selectedEditPostId ? (
+                <EditorPaywallSidebar
+                  settings={editPaywallSettings}
+                  onChange={setEditPaywallSettings}
+                  onInsertGateTag={handleInsertPaywallGateTag}
+                />
+              ) : null}
 
               {/* Post Banner & Thumbnail (Lens Grove) */}
               <div className="rounded-xl border border-zinc-200 bg-zinc-50/70 p-4 dark:border-zinc-800 dark:bg-zinc-950/50">
@@ -3892,20 +3789,6 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                       <span>🎬</span>
                       <span>Veo AI Video</span>
                     </button>
-                    <button
-                      type="button"
-                      disabled={isExportingNotebook}
-                      onClick={() => void handleExportColabNotebook()}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-2xs hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                      title="Export a Google Colab (.ipynb) notebook pre-populated with this post's content for generating banners, static MP3 audio, Veo videos, and Lens Grove uploads"
-                    >
-                      <span>📓</span>
-                      <span>
-                        {isExportingNotebook
-                          ? "Exporting…"
-                          : "Colab Asset Notebook (.ipynb)"}
-                      </span>
-                    </button>
                   </div>
                 </div>
 
@@ -3917,7 +3800,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                     onChange={(e) => setAiBannerPrompt(e.target.value)}
                     placeholder="AI Banner prompt (optional — leave blank to generate from post title & teaser)…"
                     aria-label="AI Banner visual prompt"
-                    className="min-w-[220px] flex-1 rounded-md border border-zinc-300 bg-zinc-50 px-2.5 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-950"
+                    className="min-w-0 w-full flex-1 basis-full rounded-md border border-zinc-300 bg-zinc-50 px-2.5 py-1.5 text-xs sm:min-w-[12rem] sm:basis-auto dark:border-zinc-700 dark:bg-zinc-950"
                   />
                   <select
                     value={aiBannerAspectRatio}
@@ -4151,7 +4034,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                         href={editPostAudioUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="font-mono underline"
+                        className="break-all font-mono underline"
                       >
                         Lens Grove MP3 ↗
                       </a>
@@ -4171,6 +4054,11 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                   </p>
                 )}
               </div>
+
+              <RepurposePanel
+                postId={selectedEditPostId}
+                authFetch={authFetch}
+              />
 
               {/* Editor Mode & Formatting Toolbar */}
               <div>
@@ -4479,7 +4367,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                 )}
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 pt-2">
                 <button
                   type="submit"
                   disabled={isSavingPost || !selectedEditPostId}
@@ -4488,9 +4376,10 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                   {isSavingPost ? "Saving Changes…" : "Save & Update Post"}
                 </button>
                 {editPostSlug ? (
-                  <span className="text-xs text-zinc-500">
+                  <span className="min-w-0 max-w-full break-words text-xs text-zinc-500">
                     Saving immediately revalidates{" "}
-                    <code>/posts/{editPostSlug}</code> and <code>/posts</code>.
+                    <code className="break-all">/posts/{editPostSlug}</code> and{" "}
+                    <code>/posts</code>.
                   </span>
                 ) : null}
               </div>

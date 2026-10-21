@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { setOracleEnabledForTests } from "@/lib/predictions/feature-flag";
 import { GET } from "./route";
 
 vi.mock("@/db/client", () => ({
@@ -32,13 +33,30 @@ vi.mock("@/lib/predictions/oracle-resolver", () => ({
 }));
 
 describe("GET /api/cron/oracle-resolver", () => {
+  afterEach(() => {
+    setOracleEnabledForTests(undefined);
+  });
+
+  it("returns 503 when ORACLE_ENABLED is false", async () => {
+    setOracleEnabledForTests(false);
+    const req = new Request("http://localhost/api/cron/oracle-resolver", {
+      headers: { authorization: "Bearer test-adam-token" },
+    });
+    const res = await GET(req);
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { code?: string };
+    expect(body.code).toBe("oracle_disabled");
+  });
+
   it("rejects unauthorized calls", async () => {
+    setOracleEnabledForTests(true);
     const req = new Request("http://localhost/api/cron/oracle-resolver");
     const res = await GET(req);
     expect(res.status).toBe(401);
   });
 
   it("resolves predictions when authenticated with Bearer token", async () => {
+    setOracleEnabledForTests(true);
     const req = new Request("http://localhost/api/cron/oracle-resolver", {
       headers: {
         authorization: "Bearer test-adam-token",

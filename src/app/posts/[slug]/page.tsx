@@ -1,16 +1,32 @@
 import Link from "next/link";
 import Script from "next/script";
+import { Suspense, type ComponentProps } from "react";
+import { notFound } from "next/navigation";
+import type { Address } from "viem";
 import { DispatchAudioPlayer } from "@/components/audio/dispatch-audio-player";
 import { OwnerEditPostButton } from "@/components/auth/owner-edit-controls";
 import { MicroTippingWidget } from "@/components/monetization/micro-tipping-widget";
 import { PredictionCard } from "@/components/predictions/prediction-card";
 import { PostFeedbackWidget } from "@/components/posts/post-feedback-widget";
 import { PostKeyTakeaways } from "@/components/posts/post-key-takeaways";
+import { AuthorByline } from "@/components/posts/author-byline";
+import { PostPaywallCheckout } from "@/components/posts/post-paywall-checkout";
+import { PostShareButton } from "@/components/posts/post-share-button";
 import { splitArticleAtParagraph } from "@/lib/posts/post-takeaway-inline";
 import { publishedPostBodyForDisplay } from "@/lib/posts/published-post-render";
 import type { PublishedPostDetail } from "@/lib/posts/published-posts";
 import { calculateReadingTime } from "@/lib/posts/reading-time";
-import { requirePublishedPostBySlug } from "@/lib/posts/require-published-post";
+import { buildPostPageMetadata } from "@/lib/posts/post-page-metadata";
+import { resolvePostPublicUrl } from "@/lib/posts/post-public-url";
+import {
+  resolvePostTipPayToAddress,
+  shouldRenderPostTipCard,
+} from "@/lib/posts/post-tip-payee";
+import {
+  resolvePublicPostForMetadata,
+  resolveReaderPostView,
+} from "@/lib/paywall/reader-post";
+import { getDb } from "@/db/client";
 import {
   classifyArticleTopic,
   getTopicLabel,
@@ -22,7 +38,20 @@ type PageProps = {
   params: Promise<{ slug: string }>;
 };
 
-function PostArticle({ post }: { post: PublishedPostDetail }) {
+function PostArticle({
+  post,
+  payToAddress,
+  showPaywall,
+  paywallCheckout,
+}: {
+  post: PublishedPostDetail;
+  payToAddress: Address | null;
+  showPaywall: boolean;
+  paywallCheckout: Omit<
+    ComponentProps<typeof PostPaywallCheckout>,
+    "title"
+  > | null;
+}) {
   const bodyHtml = publishedPostBodyForDisplay(post.bodyHtml);
   const metrics = calculateReadingTime(post.bodyHtml ?? post.excerpt);
   const topic = classifyArticleTopic({
@@ -42,11 +71,9 @@ function PostArticle({ post }: { post: PublishedPostDetail }) {
         >
           ← All Posts
         </Link>
-        {/* Owner-only edit post button */}
         <OwnerEditPostButton slug={post.slug} label="✎ Edit Post" />
       </div>
 
-      {/* Hero Banner (matches the thumbnail on posts list) */}
       <div className="mb-8 overflow-hidden rounded-2xl border border-zinc-200/80 bg-zinc-100 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <img
           src={post.coverImage}
@@ -72,28 +99,49 @@ function PostArticle({ post }: { post: PublishedPostDetail }) {
           </span>
         </div>
 
-        <h1 className="mt-3 text-4xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
-          {post.title}
-        </h1>
+        <div className="mt-3 flex items-start justify-between gap-4">
+          <h1 className="text-4xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+            {post.title}
+          </h1>
+          <PostShareButton
+            title={post.title}
+            url={resolvePostPublicUrl({
+              slug: post.slug,
+              canonicalUrl: post.canonicalUrl,
+            })}
+          />
+        </div>
         {post.excerpt ? (
           <p className="mt-4 text-lg text-zinc-600 dark:text-zinc-400">
             {post.excerpt}
           </p>
         ) : null}
+
+        {post.author ? (
+          <div className="mt-6">
+            <AuthorByline
+              author={post.author}
+              publishedDate={new Date(post.publishedAt).toLocaleDateString(
+                "en-US",
+                { dateStyle: "medium" },
+              )}
+            />
+          </div>
+        ) : null}
       </header>
 
-      {/* Dispatch Audio Player (Listen Mode) */}
-      <DispatchAudioPlayer
-        slug={post.slug}
-        title={post.title}
-        excerpt={post.excerpt}
-        bodyHtml={bodyHtml}
-        listenMinutes={metrics.listenMinutes}
-        audioUrl={post.audioUrl}
-        audioVoice={post.audioVoice}
-      />
+      {!showPaywall ? (
+        <DispatchAudioPlayer
+          slug={post.slug}
+          title={post.title}
+          excerpt={post.excerpt}
+          bodyHtml={bodyHtml}
+          listenMinutes={metrics.listenMinutes}
+          audioUrl={post.audioUrl}
+          audioVoice={post.audioVoice}
+        />
+      ) : null}
 
-      {/* Article Content with Inline Key Takeaway Callout */}
       {bodyHtml ? (
         restHtml ? (
           <>
@@ -102,7 +150,6 @@ function PostArticle({ post }: { post: PublishedPostDetail }) {
               dangerouslySetInnerHTML={{ __html: introHtml }}
             />
 
-            {/* Inline Key Takeaway Callout after Paragraph 2 */}
             <PostKeyTakeaways
               takeaway={post.excerpt}
               title={post.title}
@@ -127,16 +174,22 @@ function PostArticle({ post }: { post: PublishedPostDetail }) {
         )
       ) : null}
 
-      {/* Monetization: One-Click Base USDC Micro-Tipping Widget */}
-      <MicroTippingWidget slug={post.slug} postTitle={post.title} />
+      {showPaywall && paywallCheckout ? (
+        <PostPaywallCheckout title={post.title} {...paywallCheckout} />
+      ) : null}
 
-      {/* Oracle Verification: reality.eth Prediction Card */}
+      {shouldRenderPostTipCard(payToAddress) ? (
+        <MicroTippingWidget
+          slug={post.slug}
+          postTitle={post.title}
+          payToAddress={payToAddress}
+        />
+      ) : null}
+
       <PredictionCard slug={post.slug} />
 
-      {/* Agent Feedback Loop: 2-Button Helpful/Skip Reader Sentiment */}
       <PostFeedbackWidget slug={post.slug} />
 
-      {/* Official X / Twitter Widget Script for dynamic embed hydration */}
       <Script
         src="https://platform.twitter.com/widgets.js"
         strategy="lazyOnload"
@@ -147,55 +200,43 @@ function PostArticle({ post }: { post: PublishedPostDetail }) {
 
 export async function generateMetadata({ params }: PageProps) {
   const { slug } = await params;
-  const post = await requirePublishedPostBySlug(slug);
-  const metrics = calculateReadingTime(post.bodyHtml ?? post.excerpt);
-  const topic = classifyArticleTopic({
-    title: post.title,
-    excerpt: post.excerpt,
-    bodyHtml: post.bodyHtml,
-  });
-  const dateStr = new Date(post.publishedAt).toLocaleDateString("en-US", {
-    dateStyle: "medium",
-  });
-
-  const ogImageUrl = `/api/og?title=${encodeURIComponent(
-    post.title,
-  )}&date=${encodeURIComponent(dateStr)}&readTime=${encodeURIComponent(
-    metrics.label,
-  )}&topic=${encodeURIComponent(getTopicLabel(topic))}`;
-
-  return {
-    title: `${post.title} — Dear Creative`,
-    description: post.excerpt,
-    openGraph: {
-      title: post.title,
-      description: post.excerpt,
-      type: "article",
-      publishedTime: post.publishedAt,
-      images: [
-        {
-          url: ogImageUrl,
-          width: 1200,
-          height: 630,
-          alt: post.title,
-        },
-      ],
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: post.title,
-      description: post.excerpt,
-      images: [ogImageUrl],
-    },
-    other: {
-      "fc:frame": "vNext",
-      "fc:frame:image": ogImageUrl,
-    },
-  };
+  const post = await resolvePublicPostForMetadata(slug);
+  if (!post) {
+    return {};
+  }
+  return buildPostPageMetadata(post);
 }
 
-export default async function PostPage(props: PageProps) {
-  const { slug } = await props.params;
-  const post = await requirePublishedPostBySlug(slug);
-  return <PostArticle post={post} />;
+async function PostPageReader({ params }: PageProps) {
+  const { slug } = await params;
+  const view = await resolveReaderPostView(slug);
+  if (!view) {
+    notFound();
+  }
+  const payToAddress = await resolvePostTipPayToAddress(getDb(), slug);
+  return (
+    <PostArticle
+      post={view.post}
+      payToAddress={payToAddress}
+      showPaywall={view.showPaywall}
+      paywallCheckout={view.paywallCheckout}
+    />
+  );
+}
+
+export default function PostPage(props: PageProps) {
+  return (
+    <Suspense
+      fallback={
+        <p
+          className="mx-auto max-w-3xl px-6 py-16 text-sm text-zinc-500"
+          aria-busy="true"
+        >
+          Loading dispatch…
+        </p>
+      }
+    >
+      <PostPageReader params={props.params} />
+    </Suspense>
+  );
 }

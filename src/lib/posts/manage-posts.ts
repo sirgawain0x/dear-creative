@@ -5,7 +5,9 @@ import {
   corePostColumns,
   ensurePostsSchema,
   getPostAudioColumns,
+  getPostPaywallColumns,
   setPostAudioColumns,
+  setPostPaywallColumns,
   type CorePostRow,
 } from "@/db/ensure-schema";
 import { approvals, posts, type PostStatus } from "@/db/schema";
@@ -14,6 +16,7 @@ import { computeApprovalContentHash } from "@/lib/approval/content-hash";
 import { writeAuditEvent } from "@/lib/audit/write-audit-event";
 import { htmlToMarkdown } from "@/lib/html/html-to-markdown";
 import { ensureArticleHtml } from "@/lib/html/markdown-to-html";
+import { maybeSchedulePublishedPostNarrationRegeneration } from "@/lib/audio/schedule-narration-regeneration";
 import { loadFullPostContent } from "@/lib/paywall/full-post-content";
 
 export type AdminPostRecord = {
@@ -29,6 +32,10 @@ export type AdminPostRecord = {
   markdown: string;
   audioUrl?: string | null;
   audioVoice?: string | null;
+  isGated: boolean;
+  freeContent: string | null;
+  gatedContent: string | null;
+  gatePriceUsdc: number | null;
   canonicalUrl: string | null;
   source: string | null;
   sponsorId: string | null;
@@ -47,12 +54,22 @@ export type UpdateAdminPostInput = {
   markdown?: string | null;
   audioUrl?: string | null;
   audioVoice?: string | null;
+  isGated?: boolean;
+  freeContent?: string | null;
+  gatedContent?: string | null;
+  gatePriceUsdc?: number | null;
   syncEmailWithBody?: boolean;
 };
 
 function toAdminPostRecord(
   row: CorePostRow,
   audio?: { audioUrl: string | null; audioVoice: string | null },
+  paywall?: {
+    isGated: boolean;
+    freeContent: string | null;
+    gatedContent: string | null;
+    gatePriceUsdc: number | null;
+  },
 ): AdminPostRecord {
   const effectiveBody = row.bodyHtml ?? row.emailHtml ?? "";
   const sanitizedBody = effectiveBody ? ensureArticleHtml(effectiveBody) : null;
@@ -69,6 +86,10 @@ function toAdminPostRecord(
     markdown: htmlToMarkdown(effectiveBody),
     audioUrl: audio?.audioUrl ?? null,
     audioVoice: audio?.audioVoice ?? null,
+    isGated: paywall?.isGated ?? false,
+    freeContent: paywall?.freeContent ?? null,
+    gatedContent: paywall?.gatedContent ?? null,
+    gatePriceUsdc: paywall?.gatePriceUsdc ?? null,
     canonicalUrl: row.canonicalUrl ?? null,
     source: row.source ?? null,
     sponsorId: row.sponsorId ?? null,
@@ -98,8 +119,11 @@ export async function listAdminPosts(
 
   return Promise.all(
     rows.map(async (row) => {
-      const audio = await getPostAudioColumns(db, row.id);
-      return toAdminPostRecord(row, audio);
+      const [audio, paywall] = await Promise.all([
+        getPostAudioColumns(db, row.id),
+        getPostPaywallColumns(db, row.id),
+      ]);
+      return toAdminPostRecord(row, audio, paywall);
     }),
   );
 }
@@ -120,8 +144,11 @@ export async function getAdminPostByIdOrSlug(
     .limit(1);
 
   if (row) {
-    const audio = await getPostAudioColumns(db, row.id);
-    return toAdminPostRecord(row, audio);
+    const [audio, paywall] = await Promise.all([
+      getPostAudioColumns(db, row.id),
+      getPostPaywallColumns(db, row.id),
+    ]);
+    return toAdminPostRecord(row, audio, paywall);
   }
 
   // Fallback to static MDX content (e.g. hello-dear-creative)
@@ -139,6 +166,10 @@ export async function getAdminPostByIdOrSlug(
       emailHtml: fullContent.bodyHtml ?? null,
       bodyHtml: fullContent.bodyHtml ?? null,
       markdown: fullContent.body,
+      isGated: false,
+      freeContent: null,
+      gatedContent: null,
+      gatePriceUsdc: null,
       canonicalUrl: `https://news.creativeplatform.xyz/posts/${fullContent.slug}`,
       source: "content-mdx",
       sponsorId: null,
@@ -218,6 +249,16 @@ export async function updateAdminPost(
       emailSubject: nextEmailSubject,
       emailHtml: nextBodyHtml,
       bodyHtml: nextBodyHtml,
+      isGated: input.isGated ?? false,
+      freeContent:
+        input.freeContent !== undefined
+          ? input.freeContent?.trim() || null
+          : null,
+      gatedContent:
+        input.gatedContent !== undefined
+          ? input.gatedContent?.trim() || null
+          : null,
+      gatePriceUsdc: input.gatePriceUsdc ?? 1.0,
       source: "paragraph",
     });
 
@@ -327,6 +368,29 @@ export async function updateAdminPost(
     })
     .where(eq(posts.id, existing.id));
 
+  if (
+    input.isGated !== undefined ||
+    input.freeContent !== undefined ||
+    input.gatedContent !== undefined ||
+    input.gatePriceUsdc !== undefined
+  ) {
+    await setPostPaywallColumns(db, existing.id, {
+      isGated: input.isGated,
+      freeContent:
+        input.freeContent !== undefined
+          ? input.freeContent?.trim() || null
+          : undefined,
+      gatedContent:
+        input.gatedContent !== undefined
+          ? input.gatedContent?.trim() || null
+          : undefined,
+      gatePriceUsdc: input.gatePriceUsdc,
+    });
+  }
+
+  const explicitAudioUpdate =
+    input.audioUrl !== undefined || input.audioVoice !== undefined;
+
   if (input.audioUrl !== undefined || input.audioVoice !== undefined) {
     await setPostAudioColumns(db, existing.id, {
       audioUrl:
@@ -337,6 +401,18 @@ export async function updateAdminPost(
           : undefined,
     });
   }
+
+  maybeSchedulePublishedPostNarrationRegeneration({
+    db,
+    postId: existing.id,
+    existing,
+    nextStatus,
+    nextTitle,
+    nextTeaserText,
+    nextBodyHtml,
+    explicitAudioUpdate,
+    actor,
+  });
 
   // Keep pending approval contentHash synchronized if a draft post is edited
   const [approvalRow] = await db

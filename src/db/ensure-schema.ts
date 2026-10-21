@@ -247,6 +247,81 @@ export async function getPostAudioColumns(
   }
 }
 
+export type PostPaywallColumns = {
+  isGated: boolean;
+  freeContent: string | null;
+  gatedContent: string | null;
+  gatePriceUsdc: number | null;
+};
+
+export async function getPostPaywallColumns(
+  db: DearCreativeDb,
+  postIdOrSlug: string,
+): Promise<PostPaywallColumns> {
+  await ensurePostsSchema(db);
+  try {
+    const rows = await db.all<{
+      is_gated?: number | boolean | null;
+      free_content?: string | null;
+      gated_content?: string | null;
+      gate_price_usdc?: number | null;
+    }>(
+      sql`SELECT is_gated, free_content, gated_content, gate_price_usdc FROM posts WHERE id = ${postIdOrSlug} OR slug = ${postIdOrSlug} LIMIT 1`,
+    );
+    const row = rows[0];
+    return {
+      isGated: Boolean(row?.is_gated),
+      freeContent: row?.free_content ?? null,
+      gatedContent: row?.gated_content ?? null,
+      gatePriceUsdc: row?.gate_price_usdc ?? null,
+    };
+  } catch {
+    return {
+      isGated: false,
+      freeContent: null,
+      gatedContent: null,
+      gatePriceUsdc: null,
+    };
+  }
+}
+
+export async function setPostPaywallColumns(
+  db: DearCreativeDb,
+  postId: string,
+  paywall: {
+    isGated?: boolean;
+    freeContent?: string | null;
+    gatedContent?: string | null;
+    gatePriceUsdc?: number | null;
+  },
+): Promise<void> {
+  await ensurePostsSchema(db);
+  try {
+    if (paywall.isGated !== undefined) {
+      await db.run(
+        sql`UPDATE posts SET is_gated = ${paywall.isGated ? 1 : 0} WHERE id = ${postId}`,
+      );
+    }
+    if (paywall.freeContent !== undefined) {
+      await db.run(
+        sql`UPDATE posts SET free_content = ${paywall.freeContent} WHERE id = ${postId}`,
+      );
+    }
+    if (paywall.gatedContent !== undefined) {
+      await db.run(
+        sql`UPDATE posts SET gated_content = ${paywall.gatedContent} WHERE id = ${postId}`,
+      );
+    }
+    if (paywall.gatePriceUsdc !== undefined) {
+      await db.run(
+        sql`UPDATE posts SET gate_price_usdc = ${paywall.gatePriceUsdc} WHERE id = ${postId}`,
+      );
+    }
+  } catch {
+    // Non-fatal if running against a read-only replica
+  }
+}
+
 export async function setPostAudioColumns(
   db: DearCreativeDb,
   postId: string,

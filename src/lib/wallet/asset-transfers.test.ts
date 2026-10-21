@@ -1,0 +1,203 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { getAddress } from "viem";
+import {
+  AlchemyTransfersError,
+  mergeWalletHistoryPages,
+  normalizeAlchemyTransfer,
+  normalizeTransferPage,
+  resetAssetTransfersFetcherForTests,
+  setAssetTransfersFetcherForTests,
+  fetchAlchemyAssetTransfersPage,
+  isWalletReadFixtureEnabled,
+} from "./asset-transfers";
+
+const WALLET = getAddress("0xAE48B6dB64772b9CC24e33A79c809896776a20f6");
+
+describe("isWalletReadFixtureEnabled", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("returns false in NODE_ENV production even when WALLET_READ_FIXTURE=true", () => {
+    vi.stubEnv("WALLET_READ_FIXTURE", "true");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VERCEL_ENV", "preview");
+    expect(isWalletReadFixtureEnabled()).toBe(false);
+  });
+
+  it("returns false when VERCEL_ENV is production even when WALLET_READ_FIXTURE=true", () => {
+    vi.stubEnv("WALLET_READ_FIXTURE", "true");
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("VERCEL_ENV", "production");
+    expect(isWalletReadFixtureEnabled()).toBe(false);
+  });
+
+  it("returns true when fixture env is true and not production", () => {
+    vi.stubEnv("WALLET_READ_FIXTURE", "true");
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("VERCEL_ENV", "preview");
+    expect(isWalletReadFixtureEnabled()).toBe(true);
+  });
+});
+
+describe("asset transfer normalizer", () => {
+  afterEach(() => {
+    resetAssetTransfersFetcherForTests();
+  });
+
+  it("normalizes incoming USDC erc20 transfers", () => {
+    const item = normalizeAlchemyTransfer(
+      {
+        uniqueId: "u1",
+        hash: "0xabc",
+        from: "0x0000000000000000000000000000000000000001",
+        to: WALLET,
+        category: "erc20",
+        asset: "USDC",
+        blockNum: "0x5",
+        metadata: { blockTimestamp: "2026-01-01T00:00:00Z" },
+        rawContract: {
+          address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          value: "0x5f5e100",
+          decimal: "0x6",
+        },
+        value: 100,
+      },
+      WALLET,
+      "in",
+    );
+    expect(item).toMatchObject({
+      direction: "in",
+      asset: "USDC",
+      value: "100",
+    });
+  });
+
+  it("filters non-USDC erc20 transfers", () => {
+    const item = normalizeAlchemyTransfer(
+      {
+        hash: "0xabc",
+        from: "0x0000000000000000000000000000000000000001",
+        to: WALLET,
+        category: "erc20",
+        rawContract: { address: "0x0000000000000000000000000000000000000002" },
+      },
+      WALLET,
+      "in",
+    );
+    expect(item).toBeNull();
+  });
+
+  it("merges and dedupes incoming/outgoing pages by id", () => {
+    const incoming = normalizeTransferPage(
+      {
+        transfers: [
+          {
+            uniqueId: "shared",
+            hash: "0x1",
+            from: "0x0000000000000000000000000000000000000001",
+            to: WALLET,
+            category: "external",
+            asset: "ETH",
+            blockNum: "0x2",
+            value: 1,
+          },
+        ],
+        pageKey: "in-key",
+      },
+      WALLET,
+      "in",
+    );
+    const outgoing = normalizeTransferPage(
+      {
+        transfers: [
+          {
+            uniqueId: "out-only",
+            hash: "0x2",
+            from: WALLET,
+            to: "0x0000000000000000000000000000000000000002",
+            category: "external",
+            asset: "ETH",
+            blockNum: "0x3",
+            value: 0.5,
+          },
+        ],
+        pageKey: "out-key",
+      },
+      WALLET,
+      "out",
+    );
+    const merged = mergeWalletHistoryPages(incoming.items, outgoing.items);
+    expect(merged).toHaveLength(2);
+    expect(incoming.pageKey).toBe("in-key");
+    expect(outgoing.pageKey).toBe("out-key");
+  });
+
+  it("logs HTTP status and Alchemy message on non-2xx without URL or key", async () => {
+    vi.stubEnv("ALCHEMY_API_KEY", "secret-key");
+    const logSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: { message: "Invalid API key" } }), {
+        status: 403,
+        statusText: "Forbidden",
+      }),
+    );
+
+    await expect(
+      fetchAlchemyAssetTransfersPage({ wallet: WALLET, direction: "in" }),
+    ).rejects.toBeInstanceOf(AlchemyTransfersError);
+
+    expect(logSpy).toHaveBeenCalledWith(
+      "[admin-wallet] alchemy_getAssetTransfers failed",
+      expect.objectContaining({
+        code: "http_error",
+        httpStatus: 403,
+        message: "Invalid API key",
+      }),
+    );
+    const logged = JSON.stringify(logSpy.mock.calls[0]);
+    expect(logged).not.toContain("secret-key");
+    expect(logged).not.toContain("base-mainnet.g.alchemy.com");
+
+    logSpy.mockRestore();
+    vi.unstubAllEnvs();
+  });
+
+  it("paginates via mocked Alchemy fetcher", async () => {
+    setAssetTransfersFetcherForTests(async ({ direction, pageKey }) => {
+      if (direction === "in") {
+        return pageKey
+          ? { transfers: [] }
+          : {
+              transfers: [
+                {
+                  uniqueId: "page1",
+                  hash: "0xaaa",
+                  from: "0x0000000000000000000000000000000000000001",
+                  to: WALLET,
+                  category: "external",
+                  asset: "ETH",
+                  blockNum: "0x10",
+                  value: 0.1,
+                },
+              ],
+              pageKey: "next-in",
+            };
+      }
+      return { transfers: [] };
+    });
+
+    const first = await fetchAlchemyAssetTransfersPage({
+      wallet: WALLET,
+      direction: "in",
+    });
+    expect(first.pageKey).toBe("next-in");
+
+    const second = await fetchAlchemyAssetTransfersPage({
+      wallet: WALLET,
+      direction: "in",
+      pageKey: "next-in",
+    });
+    expect(second.transfers).toHaveLength(0);
+  });
+});

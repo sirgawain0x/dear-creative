@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useAuthSession } from "@/components/providers/app-providers";
+import { adminApiAuthorizationHeaders } from "@/lib/admin/admin-api-auth";
 
-interface MetricsData {
+export interface MetricsData {
   subscribers: {
     total: number;
     delta7d: number;
@@ -94,29 +96,83 @@ function DeliveryMetricsCard({
 }
 
 export function AdminMetricsClient() {
+  const {
+    ready,
+    isSignedIn,
+    authenticated,
+    getAccessToken,
+    privyConfigured,
+  } = useAuthSession();
+
   const [data, setData] = useState<MetricsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [needsSignIn, setNeedsSignIn] = useState(false);
 
   useEffect(() => {
+    if (!ready) {
+      return;
+    }
+
+    let cancelled = false;
+
     async function fetchMetrics() {
+      setLoading(true);
+      setError(null);
+      setNeedsSignIn(false);
+      setData(null);
+
+      const headers = await adminApiAuthorizationHeaders({
+        privyConfigured,
+        authenticated,
+        getAccessToken,
+      });
+
+      if (!isSignedIn || !headers) {
+        if (!cancelled) {
+          setNeedsSignIn(true);
+          setLoading(false);
+        }
+        return;
+      }
+
       try {
-        const response = await fetch("/api/admin/metrics");
+        const response = await fetch("/api/admin/metrics", {
+          cache: "no-store",
+          headers,
+        });
         if (!response.ok) {
           throw new Error(`Failed to fetch metrics: ${response.status}`);
         }
-        const json = await response.json();
-        setData(json);
+        const json = (await response.json()) as MetricsData;
+        if (!cancelled) {
+          setData(json);
+        }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Unknown error");
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Unknown error");
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
-    fetchMetrics();
-  }, []);
 
-  if (loading) {
+    void fetchMetrics();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    ready,
+    isSignedIn,
+    authenticated,
+    getAccessToken,
+    privyConfigured,
+  ]);
+
+  if (!ready || loading) {
     return (
       <div className="space-y-6">
         <div className="grid gap-4 md:grid-cols-3">
@@ -128,6 +184,16 @@ export function AdminMetricsClient() {
           ))}
         </div>
       </div>
+    );
+  }
+
+  if (needsSignIn) {
+    return (
+      <p className="text-sm text-zinc-600 dark:text-zinc-400">
+        Use{" "}
+        <span className="font-semibold text-zinc-900 dark:text-zinc-100">Sign In</span> in the
+        site header to view metrics.
+      </p>
     );
   }
 

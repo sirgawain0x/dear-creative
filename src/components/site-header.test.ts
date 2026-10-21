@@ -18,9 +18,9 @@ describe("SiteHeader navigation config", () => {
     ]);
   });
 
-  it("labels the admin link as Sign-In/Sign-Out", () => {
+  it("labels the admin link as Sign In", () => {
     const adminLink = SITE_NAV_LINKS.find((l) => l.href === "/admin")!;
-    expect(adminLink.label).toBe("Sign-In/Sign-Out");
+    expect(adminLink.label).toBe("Sign In");
   });
 
   it("labels the adam link as Studio", () => {

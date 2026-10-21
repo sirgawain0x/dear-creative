@@ -1,0 +1,32 @@
+{
+  "adamPosts360": {
+    "scrollWidth": 360,
+    "innerWidth": 360,
+    "mainPaddingLeft": 16,
+    "noHorizontalOverflow": true
+  },
+  "adamPosts390": {
+    "scrollWidth": 390,
+    "innerWidth": 390,
+    "mainPaddingLeft": 16,
+    "noHorizontalOverflow": true
+  },
+  "adamPosts1440": {
+    "scrollWidth": 1440,
+    "innerWidth": 1440,
+    "mainPaddingLeft": 32,
+    "noHorizontalOverflow": true
+  },
+  "approvals390": {
+    "scrollWidth": 390,
+    "innerWidth": 390,
+    "mainPaddingLeft": 16,
+    "noHorizontalOverflow": true
+  },
+  "approvals1440": {
+    "scrollWidth": 1440,
+    "innerWidth": 1440,
+    "mainPaddingLeft": 32,
+    "noHorizontalOverflow": true
+  }
+}

@@ -257,7 +257,27 @@ for (const event of events) {
 }
 ```
 
-### 7.2 Enabling/Disabling Channels
+### 7.2 Cron: reality.eth oracle resolver
+
+**Endpoint:** `GET /api/cron/oracle-resolver` (also accepts `POST`)
+
+**Schedule (recommended):** Every 10 minutes (`*/10 * * * *`)
+
+**Auth:** `CRON_SECRET` Bearer token, or Adam API bearer (same as other cron routes)
+
+**Feature flag:** `ORACLE_ENABLED=true` (default off). When disabled, the endpoint returns HTTP 503 with `code: oracle_disabled`.
+
+**Chain:** `ORACLE_NETWORK` (`base` default mainnet, or `base-sepolia`). Independent of `X402_NETWORK`.
+
+**Behavior:** Reads pending rows from `predictions`, checks Reality `isFinalized` / `resultFor` on Base, updates DB, optionally syndicates to X/Mastodon.
+
+Example:
+```bash
+curl -sS -X GET "$SITE_URL/api/cron/oracle-resolver" \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
+
+### 7.3 Enabling/Disabling Channels
 
 Control via `src/config/distribution.ts`:
 ```typescript
@@ -277,7 +297,7 @@ export const DISTRIBUTION_CHANNELS = {
 
 | Variable | Channel | Required | Source |
 |----------|---------|----------|--------|
-| `X_CLIENT_ID`, `X_CLIENT_SECRET`, `X_REFRESH_TOKEN` | X | Yes | X Developer Portal |
+| `X_API_KEY`, `X_API_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET`, `X_LIVE` | X | Yes (tokens); exact `X_LIVE=true` for live Adam + oracle X posts | X Developer Portal |
 | `FARCASTER_SIGNER_UUID` (Neynar) OR `FARCASTER_HUB_URL` + `FARCASTER_PRIVATE_KEY` | Farcaster | Yes | Neynar / Self-hosted Hub |
 | `DISCORD_WEBHOOK_URL` | Discord | Yes | Discord Server Settings → Integrations |
 | `ORB_API_TOKEN`, `ORB_PUBLICATION_ID` | Orb | Yes | Orb Club Dashboard |
