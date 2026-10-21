@@ -37,8 +37,10 @@ describe("privy-earn client", () => {
     await fetchPrivyEarnVaultDetails("vault-1");
 
     expect(fetchMock).toHaveBeenCalledOnce();
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    const headers = init.headers as Record<string, string>;
+    const firstCall = fetchMock.mock.calls[0] as unknown as
+      | [string, RequestInit]
+      | undefined;
+    const headers = firstCall?.[1]?.headers as Record<string, string>;
     expect(headers["privy-app-id"]).toBe("app-id-test");
     expect(headers.Authorization).toMatch(/^Basic /);
     expect(headers.Authorization).not.toContain("super-secret-value");

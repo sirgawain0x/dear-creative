@@ -19,11 +19,11 @@ describe("earn format helpers", () => {
 
   it("computes earned yield in raw units", () => {
     const yieldRaw = computeEarnedYieldRaw(
-      850_000_000n,
-      1_000_000_000n,
-      200_000_000n,
+      BigInt(850_000_000),
+      BigInt(1_000_000_000),
+      BigInt(200_000_000),
     );
-    expect(yieldRaw).toBe(50_000_000n);
+    expect(yieldRaw).toBe(BigInt(50_000_000));
     expect(formatTokenAmountFromRaw(yieldRaw.toString(), 6)).toBe("50");
   });
 
