@@ -70,9 +70,13 @@ async function mockAdamStudioApis(page: Page) {
 
 async function installStudioFixtureSession(page: Page, width: number) {
   await page.setViewportSize({ width, height: 900 });
-  await page.addInitScript((token) => {
-    localStorage.setItem("dear_creative_studio_token", token);
-  }, STUDIO_TOKEN_FIXTURE);
+  await page.addInitScript(
+    ({ token, e2eKey }) => {
+      localStorage.removeItem(e2eKey);
+      localStorage.setItem("dear_creative_studio_token", token);
+    },
+    { token: STUDIO_TOKEN_FIXTURE, e2eKey: READER_WALLET_E2E_STORAGE_KEY },
+  );
   await mockAdamStudioApis(page);
 }
 
