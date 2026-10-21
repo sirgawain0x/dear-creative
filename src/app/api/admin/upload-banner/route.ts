@@ -1,17 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireStudioOrAdamAuth } from "@/lib/adam/studio-auth";
+import { validateProfileImageUpload } from "@/lib/storage/image-upload-validation";
 import { uploadToLensGrove } from "@/lib/storage/lens-grove";
 
 export const maxDuration = 60;
-
-const ALLOWED_IMAGE_TYPES = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/jpg",
-  "image/webp",
-  "image/gif",
-  "image/svg+xml",
-]);
 
 export async function POST(request: Request) {
   const auth = await requireStudioOrAdamAuth(request);
@@ -30,13 +22,9 @@ export async function POST(request: Request) {
       );
     }
 
-    if (file.type && !ALLOWED_IMAGE_TYPES.has(file.type)) {
-      return NextResponse.json(
-        {
-          error: `Unsupported file type: ${file.type}. Allowed: PNG, JPEG, WebP, GIF, SVG`,
-        },
-        { status: 400 },
-      );
+    const validation = validateProfileImageUpload(file);
+    if (!validation.ok) {
+      return NextResponse.json({ error: validation.error }, { status: validation.status });
     }
 
     const result = await uploadToLensGrove(file);
