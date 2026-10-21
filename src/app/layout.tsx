@@ -44,7 +44,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
         <AppProviders privyAppId={privyAppId}>
           <SiteHeader />
-          <div className="flex-1">{children}</div>
+          <div className="min-w-0 flex-1">{children}</div>
         </AppProviders>
         <SiteFooter />
       </body>
