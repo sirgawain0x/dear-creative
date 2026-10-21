@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useId, useState } from "react";
 import { useAuthSession } from "./providers/app-providers";
-import { ReaderWalletSheet } from "./wallet/reader-wallet-sheet";
+import { ReaderAccountDropdown } from "./wallet/reader-account-dropdown";
 
 export type SiteNavLink = {
   href: string;
@@ -46,33 +46,15 @@ export type SiteHeaderProps = {
 export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [walletSheetOpen, setWalletSheetOpen] = useState(false);
   const mobileMenuId = useId();
   const {
     isSignedIn,
-    authenticated,
     signOut,
     login,
     privyConfigured,
     privyTimedOut,
   } = useAuthSession();
   const showReaderWalletButton = readerWalletEnabled;
-
-  const handleReaderWalletClick = () => {
-    if (authenticated) {
-      setWalletSheetOpen(true);
-      return;
-    }
-    if (privyConfigured && !privyTimedOut) {
-      login();
-    }
-  };
-
-  const readerWalletButtonClassName =
-    "rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-800 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900";
-
-  const signedOutWalletLinksToAdmin =
-    !authenticated && (!privyConfigured || privyTimedOut);
 
   const visibleLinks = getVisibleNavLinks(isSignedIn);
 
@@ -149,24 +131,7 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
             );
           })}
           {showReaderWalletButton ? (
-            signedOutWalletLinksToAdmin ? (
-              <Link
-                href="/admin"
-                data-testid="reader-wallet-header-button"
-                className={readerWalletButtonClassName}
-              >
-                Wallet
-              </Link>
-            ) : (
-              <button
-                type="button"
-                data-testid="reader-wallet-header-button"
-                onClick={handleReaderWalletClick}
-                className={readerWalletButtonClassName}
-              >
-                Wallet
-              </button>
-            )
+            <ReaderAccountDropdown surface="desktop" className="ml-0.5" />
           ) : null}
           <a
             href={process.env.NEXT_PUBLIC_X_URL || "https://x.com/CreativeCrtv"}
@@ -180,17 +145,21 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
           </a>
         </nav>
 
-        {/* Mobile menu button */}
-        <button
-          type="button"
-          aria-expanded={mobileMenuOpen}
-          aria-controls={mobileMenuId}
-          aria-label="Toggle navigation menu"
-          onClick={() => setMobileMenuOpen((prev) => !prev)}
-          className="inline-flex items-center justify-center rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 lg:hidden dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900"
-        >
-          {mobileMenuOpen ? "Close ✕" : "Menu ☰"}
-        </button>
+        <div className="flex items-center gap-2 lg:hidden">
+          {showReaderWalletButton ? (
+            <ReaderAccountDropdown surface="mobile" />
+          ) : null}
+          <button
+            type="button"
+            aria-expanded={mobileMenuOpen}
+            aria-controls={mobileMenuId}
+            aria-label="Toggle navigation menu"
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            className="inline-flex items-center justify-center rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900"
+          >
+            {mobileMenuOpen ? "Close ✕" : "Menu ☰"}
+          </button>
+        </div>
       </div>
 
       {/* Mobile navigation drawer */}
@@ -258,32 +227,6 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
                 </li>
               );
             })}
-            {showReaderWalletButton ? (
-              <li>
-                {signedOutWalletLinksToAdmin ? (
-                  <Link
-                    href="/admin"
-                    data-testid="reader-wallet-header-button-mobile"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="block rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900"
-                  >
-                    Wallet
-                  </Link>
-                ) : (
-                  <button
-                    type="button"
-                    data-testid="reader-wallet-header-button-mobile"
-                    onClick={() => {
-                      setMobileMenuOpen(false);
-                      handleReaderWalletClick();
-                    }}
-                    className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900"
-                  >
-                    Wallet
-                  </button>
-                )}
-              </li>
-            ) : null}
             <li className="pt-2 border-t border-zinc-100 dark:border-zinc-800">
               <a
                 href={process.env.NEXT_PUBLIC_X_URL || "https://x.com/CreativeCrtv"}
@@ -302,10 +245,6 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
           </ul>
         </nav>
       ) : null}
-      <ReaderWalletSheet
-        open={walletSheetOpen}
-        onOpenChange={setWalletSheetOpen}
-      />
     </header>
   );
 }
