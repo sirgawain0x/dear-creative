@@ -27,6 +27,13 @@ jobs:
         run: |
           npm run db:migrate:local
           npx next build
+      - name: Playwright — /adam mobile overflow
+        env:
+          CI: true
+          LOCAL_DATABASE_URL: file:./data/ci-dear-creative.db
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e
       - name: Post slug not-found includes noindex meta
         env:
           LOCAL_DATABASE_URL: file:./data/ci-dear-creative.db
