@@ -34,7 +34,9 @@ describe("social syndication", () => {
     const result = await broadcastOracleResolution("Test post", "0x123");
     expect(result).toEqual({
       x: "skipped",
+      xSkipReason: "unconfigured",
       mastodon: "skipped",
+      mastodonSkipReason: "unconfigured",
     });
   });
 
@@ -96,11 +98,19 @@ describe("social syndication", () => {
 
     const result = await broadcastOracleResolution("Oracle dry run", "0xdry");
 
-    expect(result.x).toBe("posted");
+    expect(result).toEqual({
+      x: "skipped",
+      xSkipReason: "x_live_off",
+      mastodon: "skipped",
+      mastodonSkipReason: "unconfigured",
+    });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(info).toHaveBeenCalledWith(
       expect.stringContaining("X_LIVE is not true"),
-      expect.objectContaining({ textLength: expect.any(Number) }),
+      expect.objectContaining({
+        textLength: expect.any(Number),
+        reason: "x_live_off",
+      }),
     );
   });
 

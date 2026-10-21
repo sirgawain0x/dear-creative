@@ -39,10 +39,27 @@ export function getTwitterClient(): TwitterClientLike | null {
   });
 }
 
+export type OracleBroadcastXSkipReason = "unconfigured" | "x_live_off";
+
+export type OracleBroadcastMastodonSkipReason = "unconfigured";
+
 export interface BroadcastOracleResolutionResult {
   x: "posted" | "failed" | "skipped";
+  xSkipReason?: OracleBroadcastXSkipReason;
   mastodon: "posted" | "failed" | "skipped";
+  mastodonSkipReason?: OracleBroadcastMastodonSkipReason;
 }
+
+export function oracleSocialChannelsPublished(
+  result: BroadcastOracleResolutionResult,
+): boolean {
+  return result.x === "posted" || result.mastodon === "posted";
+}
+
+type XChannelOutcome =
+  | { status: "posted" }
+  | { status: "skipped"; skipReason: OracleBroadcastXSkipReason }
+  | { status: "failed" };
 
 /**
  * Syndicates reality.eth oracle resolutions to X (Twitter) and Mastodon.
@@ -63,29 +80,29 @@ export async function broadcastOracleResolution(
   const xConfigured = readXOAuth1UserCredentials() !== null;
   const twitterClient = getTwitterClient();
 
-  const xPostPromise = (async (): Promise<"posted" | "skipped"> => {
+  const xPostPromise = (async (): Promise<XChannelOutcome> => {
     if (twitterClientOverride !== undefined) {
       if (!twitterClient) {
-        return "skipped";
+        return { status: "skipped", skipReason: "unconfigured" };
       }
       await twitterClient.v2.tweet({ text: xText });
-      return "posted";
+      return { status: "posted" };
     }
     if (!xConfigured) {
-      return "skipped";
+      return { status: "skipped", skipReason: "unconfigured" };
     }
     if (!isXLiveEnabled()) {
       console.info(
         "[x-mock] oracle resolution tweet skipped (X_LIVE is not true)",
-        { textLength: xText.length },
+        { textLength: xText.length, reason: "x_live_off" },
       );
-      return "posted";
+      return { status: "skipped", skipReason: "x_live_off" };
     }
     if (!twitterClient) {
-      return "skipped";
+      return { status: "skipped", skipReason: "unconfigured" };
     }
     await twitterClient.v2.tweet({ text: xText });
-    return "posted";
+    return { status: "posted" };
   })();
 
   const [xResult, mastodonResult] = await Promise.allSettled([
@@ -112,9 +129,32 @@ export async function broadcastOracleResolution(
       : Promise.resolve("skipped" as const),
   ]);
 
+  let x: BroadcastOracleResolutionResult["x"] = "failed";
+  let xSkipReason: OracleBroadcastXSkipReason | undefined;
+
+  if (xResult.status === "fulfilled") {
+    if (xResult.value.status === "posted") {
+      x = "posted";
+    } else if (xResult.value.status === "skipped") {
+      x = "skipped";
+      xSkipReason = xResult.value.skipReason;
+    }
+  }
+
+  let mastodon: BroadcastOracleResolutionResult["mastodon"] = "failed";
+  let mastodonSkipReason: OracleBroadcastMastodonSkipReason | undefined;
+
+  if (mastodonResult.status === "fulfilled") {
+    mastodon = mastodonResult.value;
+    if (mastodon === "skipped" && !mastodonToken) {
+      mastodonSkipReason = "unconfigured";
+    }
+  }
+
   return {
-    x: xResult.status === "fulfilled" ? xResult.value : "failed",
-    mastodon:
-      mastodonResult.status === "fulfilled" ? mastodonResult.value : "failed",
+    x,
+    ...(xSkipReason ? { xSkipReason } : {}),
+    mastodon,
+    ...(mastodonSkipReason ? { mastodonSkipReason } : {}),
   };
 }
