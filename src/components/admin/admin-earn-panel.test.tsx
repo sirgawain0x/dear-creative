@@ -1,8 +1,15 @@
 /**
  * @vitest-environment jsdom
  */
-import { render, screen } from "@testing-library/react";
-import { vi } from "vitest";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { StudioTokenProvider } from "@/components/providers/app-providers";
+import { AdminEarnPanel } from "./admin-earn-panel";
+import {
+  EARN_VAULT_AAVE_ID,
+  EARN_VAULT_MORPHO_ID,
+} from "@/lib/earn/vaults";
 
 vi.mock("@privy-io/react-auth", () => ({
   useWallets: () => ({ wallets: [] }),
@@ -10,14 +17,6 @@ vi.mock("@privy-io/react-auth", () => ({
     generateAuthorizationSignature: vi.fn(),
   }),
 }));
-import type { ReactElement } from "react";
-import { describe, expect, it } from "vitest";
-import { StudioTokenProvider } from "@/components/providers/app-providers";
-import { AdminEarnPanel } from "./admin-earn-panel";
-import {
-  EARN_VAULT_AAVE_ID,
-  EARN_VAULT_MORPHO_ID,
-} from "@/lib/earn/vaults";
 
 const previewData = {
   vaults: [
@@ -64,9 +63,104 @@ const previewData = {
   },
 };
 
+const mockUseAuthSession = vi.fn();
+
+vi.mock("@/components/providers/app-providers", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/components/providers/app-providers")>();
+  return {
+    ...actual,
+    useAuthSession: () => mockUseAuthSession(),
+  };
+});
+
+function defaultSignedInSession() {
+  return {
+    ready: true,
+    isSignedIn: true,
+    authenticated: true,
+    getAccessToken: vi.fn(async () => "privy-access-token"),
+    privyConfigured: true,
+    privyTimedOut: false,
+    hasStudioToken: false,
+    user: { id: "did:privy:admin" },
+    login: vi.fn(),
+    signOut: vi.fn(),
+  };
+}
+
 function renderEarnPanel(ui: ReactElement) {
   return render(<StudioTokenProvider>{ui}</StudioTokenProvider>);
 }
+
+describe("AdminEarnPanel fetch errors", () => {
+  beforeEach(() => {
+    mockUseAuthSession.mockReturnValue(defaultSignedInSession());
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("shows Sign in with Privy when vaults API returns 401", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }),
+    );
+
+    await act(async () => {
+      renderEarnPanel(<AdminEarnPanel earnEnabled />);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Sign in with Privy")).toBeInTheDocument();
+    });
+  });
+
+  it("shows Admin access required when vaults API returns 403", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 }),
+    );
+
+    await act(async () => {
+      renderEarnPanel(<AdminEarnPanel earnEnabled />);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Admin access required.")).toBeInTheDocument();
+    });
+  });
+
+  it("shows disabled message when vaults API returns 404 with an empty body", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("", { status: 404 }),
+    );
+
+    await act(async () => {
+      renderEarnPanel(<AdminEarnPanel earnEnabled />);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Earn feature is disabled.")).toBeInTheDocument();
+    });
+  });
+
+  it("shows API error code when vaults API returns a non-empty error body", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: "earn_vault_not_found" }), {
+        status: 502,
+      }),
+    );
+
+    await act(async () => {
+      renderEarnPanel(<AdminEarnPanel earnEnabled />);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("earn_vault_not_found")).toBeInTheDocument();
+    });
+  });
+});
 
 describe("AdminEarnPanel", () => {
   it("renders vault metrics and yield from preview data", () => {

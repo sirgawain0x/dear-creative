@@ -8,6 +8,7 @@ import {
   deliveryChannelEnum,
   payMethodEnum,
   postSourceEnum,
+  postWriters,
   posts,
   postStatusEnum,
   predictions,
@@ -59,6 +60,11 @@ describe("schema enums", () => {
     expect(predictions).toBeDefined();
   });
 
+  it("links post_writers.writer_id to authors for payout resolution", () => {
+    expect(postWriters.writerId).toBeDefined();
+    expect(postWriters.writerId.name).toBe("writer_id");
+  });
+
   it("defines authors table and post paywall fields", () => {
     expect(authors).toBeDefined();
     expect(posts.authorId).toBeDefined();
@@ -66,6 +72,7 @@ describe("schema enums", () => {
     expect(posts.gatedContent).toBeDefined();
     expect(posts.isGated).toBeDefined();
     expect(posts.gatePriceUsdc).toBeDefined();
+    expect(posts.splitAddressOverride).toBeDefined();
   });
 });
 

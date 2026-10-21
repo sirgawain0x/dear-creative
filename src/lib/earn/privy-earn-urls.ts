@@ -1,4 +1,4 @@
-export const PRIVY_WALLET_API_BASE = "https://api.privy.io/api/v1";
+export const PRIVY_WALLET_API_BASE = "https://api.privy.io/v1";
 
 export function privyEarnDepositUrl(walletId: string): string {
   return `${PRIVY_WALLET_API_BASE}/wallets/${encodeURIComponent(walletId)}/earn/ethereum/deposit`;

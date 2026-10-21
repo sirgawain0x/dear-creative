@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { EARN_VAULT_AAVE_ID } from "./vaults";
+import { PRIVY_WALLET_API_BASE } from "./privy-earn-urls";
 import {
   fetchPrivyEarnVaultDetails,
   fetchPrivyEarnVaultPosition,
+  PrivyEarnRequestError,
 } from "./privy-earn";
 
 describe("privy-earn client", () => {
@@ -44,6 +47,49 @@ describe("privy-earn client", () => {
     expect(headers["privy-app-id"]).toBe("app-id-test");
     expect(headers.Authorization).toMatch(/^Basic /);
     expect(headers.Authorization).not.toContain("super-secret-value");
+    expect(firstCall?.[0]).toBe(
+      `${PRIVY_WALLET_API_BASE}/earn/ethereum/vaults/vault-1`,
+    );
+  });
+
+  it("maps upstream vault-details 404 to earn_vault_not_found (502) and logs host and path", async () => {
+    const logSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("not found", { status: 404 })),
+    );
+
+    await expect(
+      fetchPrivyEarnVaultDetails(EARN_VAULT_AAVE_ID),
+    ).rejects.toMatchObject({
+      code: "earn_vault_not_found",
+      status: 502,
+    } satisfies Partial<PrivyEarnRequestError>);
+
+    expect(logSpy).toHaveBeenCalledWith(
+      "[privy-earn] vault_not_found",
+      expect.objectContaining({
+        host: "api.privy.io",
+        path: `/v1/earn/ethereum/vaults/${EARN_VAULT_AAVE_ID}`,
+        vaultId: EARN_VAULT_AAVE_ID,
+        code: "earn_vault_not_found",
+      }),
+    );
+    logSpy.mockRestore();
+  });
+
+  it("keeps generic upstream handling for wallet position 404", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("not found", { status: 404 })),
+    );
+
+    await expect(
+      fetchPrivyEarnVaultPosition("wallet-1", "vault-1"),
+    ).rejects.toMatchObject({
+      code: "privy_earn_upstream_error",
+      status: 404,
+    } satisfies Partial<PrivyEarnRequestError>);
   });
 
   it("never logs the app secret or Authorization header", async () => {

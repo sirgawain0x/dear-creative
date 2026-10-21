@@ -14,6 +14,7 @@ const BACKFILL_JOURNAL_WHEN = 1792522000000;
 const LINKEDIN_JOURNAL_WHEN = 1792523000000;
 const EARN_AUDIT_JOURNAL_WHEN = 1792524500000;
 const READER_UNLOCK_JOURNAL_WHEN = 1792525000000;
+const COWRITERS_JOURNAL_WHEN = 1792602394384;
 
 function createMigrationsFolderThrough0016(): string {
   const dir = mkdtempSync(join(tmpdir(), "dear-drizzle-through-0016-"));
@@ -22,7 +23,9 @@ function createMigrationsFolderThrough0016(): string {
   rmSync(join(dir, "0018_linkedin_member_credentials.sql"));
   rmSync(join(dir, "0019_earn_audit_log.sql"));
   rmSync(join(dir, "0020_reader_post_unlock_purchases.sql"));
+  rmSync(join(dir, "0021_cowriters.sql"));
   rmSync(join(dir, "meta/0017_snapshot.json"));
+  rmSync(join(dir, "meta/0021_snapshot.json"), { force: true });
   const journalPath = join(dir, "meta/_journal.json");
   const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
     entries: Array<{ when: number }>;
@@ -32,7 +35,8 @@ function createMigrationsFolderThrough0016(): string {
       entry.when !== BACKFILL_JOURNAL_WHEN &&
       entry.when !== LINKEDIN_JOURNAL_WHEN &&
       entry.when !== EARN_AUDIT_JOURNAL_WHEN &&
-      entry.when !== READER_UNLOCK_JOURNAL_WHEN,
+      entry.when !== READER_UNLOCK_JOURNAL_WHEN &&
+      entry.when !== COWRITERS_JOURNAL_WHEN,
   );
   writeFileSync(journalPath, `${JSON.stringify(journal, null, 2)}\n`);
   return dir;
@@ -56,24 +60,25 @@ async function seedBackfillFixtures(db: ReturnType<typeof drizzle>) {
 
   const nullAuthorPostId = randomUUID();
   const assignedPostId = randomUUID();
-  await db.insert(posts).values([
-    {
-      id: nullAuthorPostId,
-      slug: "null-author-post",
-      title: "Null author",
-      status: "published",
-      publishedAt: new Date(),
-      authorId: null,
-    },
-    {
-      id: assignedPostId,
-      slug: "assigned-author-post",
-      title: "Assigned author",
-      status: "published",
-      publishedAt: new Date(),
-      authorId: "other-author",
-    },
-  ]);
+  const now = Date.now();
+  await db.$client.execute({
+    sql: `INSERT INTO posts (id, slug, title, status, published_at, author_id, created_at, updated_at)
+          VALUES (?, ?, ?, 'published', ?, NULL, ?, ?)`,
+    args: [nullAuthorPostId, "null-author-post", "Null author", now, now, now],
+  });
+  await db.$client.execute({
+    sql: `INSERT INTO posts (id, slug, title, status, published_at, author_id, created_at, updated_at)
+          VALUES (?, ?, ?, 'published', ?, ?, ?, ?)`,
+    args: [
+      assignedPostId,
+      "assigned-author-post",
+      "Assigned author",
+      now,
+      "other-author",
+      now,
+      now,
+    ],
+  });
 
   return { nullAuthorPostId, assignedPostId };
 }
