@@ -1,8 +1,9 @@
 import { AdamStudio } from "./adam-studio";
+import { STUDIO_PAGE_MAIN_CLASS } from "./studio-page-main-class";
 
 export default function AdamPage() {
   return (
-    <main className="mx-auto w-full min-w-0 max-w-[1800px] px-4 sm:px-6 lg:px-8 py-10">
+    <main className={STUDIO_PAGE_MAIN_CLASS}>
       <AdamStudio initialTab="chat" />
     </main>
   );

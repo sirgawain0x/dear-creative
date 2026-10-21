@@ -65,9 +65,36 @@ async function mockRoutes(page) {
 }
 
 const shots = [
-  { name: "adam-posts-mobile-360.png", width: 360 },
-  { name: "adam-posts-mobile-390.png", width: 390 },
-  { name: "adam-posts-desktop-1440.png", width: 1440 },
+  {
+    key: "adamPosts360",
+    name: "adam-posts-mobile-360.png",
+    width: 360,
+    path: "/adam?tab=posts",
+  },
+  {
+    key: "adamPosts390",
+    name: "adam-posts-mobile-390.png",
+    width: 390,
+    path: "/adam?tab=posts",
+  },
+  {
+    key: "adamPosts1440",
+    name: "adam-posts-desktop-1440.png",
+    width: 1440,
+    path: "/adam?tab=posts",
+  },
+  {
+    key: "approvals390",
+    name: "approvals-mobile-390.png",
+    width: 390,
+    path: "/approvals",
+  },
+  {
+    key: "approvals1440",
+    name: "approvals-desktop-1440.png",
+    width: 1440,
+    path: "/approvals",
+  },
 ];
 
 await mkdir(assetDir, { recursive: true });
@@ -82,17 +109,22 @@ for (const shot of shots) {
     localStorage.setItem("dear_creative_studio_token", t);
   }, token);
   await mockRoutes(page);
-  await page.goto(`${baseUrl}/adam?tab=posts`, {
+  await page.goto(`${baseUrl}${shot.path}`, {
     waitUntil: "domcontentloaded",
   });
   await page.waitForTimeout(2500);
   const metrics = await page.evaluate(() => ({
     scrollWidth: document.documentElement.scrollWidth,
     innerWidth: window.innerWidth,
+    mainPaddingLeft: (() => {
+      const main = document.querySelector("main");
+      if (!main) return 0;
+      return parseFloat(getComputedStyle(main).paddingLeft);
+    })(),
     noHorizontalOverflow:
       document.documentElement.scrollWidth <= window.innerWidth,
   }));
-  measurements[shot.width] = metrics;
+  measurements[shot.key] = metrics;
   await page.screenshot({
     path: path.join(assetDir, shot.name),
     fullPage: true,
