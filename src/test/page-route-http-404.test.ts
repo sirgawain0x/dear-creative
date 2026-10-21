@@ -2,6 +2,20 @@ import { execSync, spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+const localDbUrl =
+  process.env.LOCAL_DATABASE_URL ?? "file:./data/ci-dear-creative.db";
+
+function seedHttpPostFixtures(): void {
+  const dbPath = localDbUrl.replace(/^file:/, "");
+  execSync(
+    `sqlite3 ${JSON.stringify(dbPath)} ` +
+      `"UPDATE posts SET is_gated = 1 WHERE slug = 'hello-dear-creative';` +
+      `INSERT OR REPLACE INTO posts (id, slug, title, status, published_at, teaser_text, email_subject, email_html, body_html, source, is_gated, created_at, updated_at) ` +
+      `SELECT 'seed-page-http-200-ungated', 'page-http-200-ungated', title, status, published_at, teaser_text, email_subject, email_html, body_html, source, 0, created_at, updated_at FROM posts WHERE slug = 'hello-dear-creative';"`,
+    { stdio: "pipe" },
+  );
+}
+
 const shouldRun = process.env.PAGE_HTTP_404_TEST === "1";
 const describeHttp = shouldRun ? describe : describe.skip;
 
@@ -11,13 +25,19 @@ describeHttp("page routes return HTTP 404 before streaming (production server)",
   let server: ChildProcess | null = null;
 
   beforeAll(async () => {
+    seedHttpPostFixtures();
+    try {
+      execSync(`lsof -t -i:${port} | xargs -r kill -9`, { stdio: "ignore" });
+    } catch {
+      // ignore
+    }
+    await new Promise((r) => setTimeout(r, 500));
     if (!existsSync(".next/BUILD_ID")) {
       execSync("npx next build", {
         stdio: "inherit",
         env: {
           ...process.env,
-          LOCAL_DATABASE_URL:
-            process.env.LOCAL_DATABASE_URL ?? "file:./data/ci-dear-creative.db",
+          LOCAL_DATABASE_URL: localDbUrl,
         },
       });
     }
@@ -27,8 +47,7 @@ describeHttp("page routes return HTTP 404 before streaming (production server)",
       env: {
         ...process.env,
         NEXT_PUBLIC_SITE_URL: baseUrl,
-        LOCAL_DATABASE_URL:
-          process.env.LOCAL_DATABASE_URL ?? "file:./data/ci-dear-creative.db",
+        LOCAL_DATABASE_URL: localDbUrl,
       },
     });
 
@@ -66,6 +85,14 @@ describeHttp("page routes return HTTP 404 before streaming (production server)",
     expect(await headStatus("/posts/bogus-slug-notfound-check")).toBe(404);
   });
 
+  it("returns 200 for a published ungated post", async () => {
+    expect(await headStatus("/posts/page-http-200-ungated")).toBe(200);
+  });
+
+  it("returns 200 for a published gated post", async () => {
+    expect(await headStatus("/posts/hello-dear-creative")).toBe(200);
+  });
+
   it("returns 404 for author profiles when the flag is off", async () => {
     expect(await headStatus("/authors/missing-author-id")).toBe(404);
   });
@@ -81,8 +108,7 @@ describeHttp("page routes return HTTP 404 before streaming (production server)",
         ...process.env,
         AUTHOR_PROFILES_ENABLED: "true",
         NEXT_PUBLIC_SITE_URL: baseUrl,
-        LOCAL_DATABASE_URL:
-          process.env.LOCAL_DATABASE_URL ?? "file:./data/ci-dear-creative.db",
+        LOCAL_DATABASE_URL: localDbUrl,
       },
     });
     const deadline = Date.now() + 90_000;

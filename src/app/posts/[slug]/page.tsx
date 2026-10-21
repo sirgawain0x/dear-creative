@@ -22,7 +22,7 @@ import {
   shouldRenderPostTipCard,
 } from "@/lib/posts/post-tip-payee";
 import {
-  abortPostReaderMetadataAtBuild,
+  rejectMissingPublishedPostSlug,
   requirePublishedPostBySlug,
   resolveGatedReaderPostView,
 } from "@/lib/posts/gate-published-post-page";
@@ -199,8 +199,8 @@ function PostArticle({
 }
 
 export async function generateMetadata({ params }: PageProps) {
-  abortPostReaderMetadataAtBuild();
   const { slug } = await params;
+  await rejectMissingPublishedPostSlug(slug);
   const post = await requirePublishedPostBySlug(slug);
   return buildPostPageMetadata(post);
 }
@@ -220,7 +220,7 @@ async function PostPageBody({ slug }: { slug: string }) {
 
 export default async function PostPage(props: PageProps) {
   const { slug } = await props.params;
-  await requirePublishedPostBySlug(slug);
+  await rejectMissingPublishedPostSlug(slug);
 
   return (
     <Suspense

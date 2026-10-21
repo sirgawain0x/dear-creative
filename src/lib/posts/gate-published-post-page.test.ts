@@ -37,19 +37,23 @@ vi.mock("@/lib/paywall/reader-post", () => ({
 import { getDb } from "@/db/client";
 import { getPublishedPostBySlug } from "@/lib/posts/published-posts";
 import {
-  abortPostReaderMetadataAtBuild,
+  isNextProductionBuildPhase,
   requirePublishedPostBySlug,
 } from "./gate-published-post-page";
 
-describe("abortPostReaderMetadataAtBuild", () => {
+describe("isNextProductionBuildPhase", () => {
   afterEach(() => {
-    notFoundMock.mockClear();
     delete process.env.NEXT_PHASE;
   });
 
-  it("terminates during production build", () => {
+  it("is true during production build", () => {
     process.env.NEXT_PHASE = "phase-production-build";
-    expect(() => abortPostReaderMetadataAtBuild()).toThrow("NOT_FOUND");
+    expect(isNextProductionBuildPhase()).toBe(true);
+  });
+
+  it("is false during live requests", () => {
+    delete process.env.NEXT_PHASE;
+    expect(isNextProductionBuildPhase()).toBe(false);
   });
 });
 
