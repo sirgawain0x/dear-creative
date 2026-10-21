@@ -72,9 +72,6 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
     if (previewData) {
       return;
     }
-    setError(null);
-    setHistoryError(null);
-    setLoading(true);
 
     try {
       const headers = await adminPrivyAuthorizationHeaders({
@@ -156,7 +153,16 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
     if (!ready || previewData) {
       return;
     }
-    void fetchWallet();
+    let cancelled = false;
+    void (async () => {
+      await fetchWallet();
+      if (cancelled) {
+        return;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [ready, fetchWallet, previewData]);
 
   const receiveUri = useMemo(() => {
@@ -280,7 +286,12 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
       {!previewData ? (
         <button
           type="button"
-          onClick={() => void fetchWallet()}
+          onClick={() => {
+            setError(null);
+            setHistoryError(null);
+            setLoading(true);
+            void fetchWallet();
+          }}
           disabled={loading}
           className="self-start rounded-full border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
         >
