@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useId, useState } from "react";
 import { useAuthSession } from "./providers/app-providers";
+import { ReaderWalletSheet } from "./wallet/reader-wallet-sheet";
 
 export type SiteNavLink = {
   href: string;
@@ -38,11 +39,17 @@ export function getVisibleNavLinks(isSignedIn: boolean): readonly SiteNavLink[] 
   });
 }
 
-export function SiteHeader() {
+export type SiteHeaderProps = {
+  readerWalletEnabled?: boolean;
+};
+
+export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [walletSheetOpen, setWalletSheetOpen] = useState(false);
   const mobileMenuId = useId();
-  const { isSignedIn, signOut } = useAuthSession();
+  const { isSignedIn, authenticated, signOut } = useAuthSession();
+  const showReaderWallet = readerWalletEnabled && authenticated;
 
   const visibleLinks = getVisibleNavLinks(isSignedIn);
 
@@ -117,6 +124,16 @@ export function SiteHeader() {
               </Link>
             );
           })}
+          {showReaderWallet ? (
+            <button
+              type="button"
+              data-testid="reader-wallet-header-button"
+              onClick={() => setWalletSheetOpen(true)}
+              className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-800 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+            >
+              Wallet
+            </button>
+          ) : null}
           <a
             href={process.env.NEXT_PUBLIC_X_URL || "https://x.com/CreativeCrtv"}
             target="_blank"
@@ -201,6 +218,21 @@ export function SiteHeader() {
                 </li>
               );
             })}
+            {showReaderWallet ? (
+              <li>
+                <button
+                  type="button"
+                  data-testid="reader-wallet-header-button-mobile"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    setWalletSheetOpen(true);
+                  }}
+                  className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                >
+                  Wallet
+                </button>
+              </li>
+            ) : null}
             <li className="pt-2 border-t border-zinc-100 dark:border-zinc-800">
               <a
                 href={process.env.NEXT_PUBLIC_X_URL || "https://x.com/CreativeCrtv"}
@@ -219,6 +251,10 @@ export function SiteHeader() {
           </ul>
         </nav>
       ) : null}
+      <ReaderWalletSheet
+        open={walletSheetOpen}
+        onOpenChange={setWalletSheetOpen}
+      />
     </header>
   );
 }
