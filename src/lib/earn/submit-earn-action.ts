@@ -13,9 +13,11 @@ import {
   postPrivyEarnDeposit,
   postPrivyEarnWithdraw,
 } from "./privy-earn-actions";
+import { insertEarnAuditLogRow } from "./earn-audit-log";
 import { parseRawAmountString, validateEarnActionRequest } from "./validate-action";
 import { assertEarnWalletAccess } from "./wallet-access";
 import type { EarnActionDirection } from "./validate-action";
+import type { PrivyEarnWalletAction } from "./privy-earn-actions";
 
 export type SubmitEarnActionInput = {
   userId: string;
@@ -77,6 +79,7 @@ export async function submitEarnAction(
   let walletUsdcBalanceRaw = BigInt(0);
   let assetsInVaultRaw = BigInt(0);
   let availableLiquidityUsd: number | null = null;
+  let vaultAssetSymbol = "usdc";
 
   try {
     const balances = await fetchWalletBalances(getAddress(input.walletAddress));
@@ -94,6 +97,7 @@ export async function submitEarnAction(
       fetchPrivyEarnVaultDetails(input.vaultId),
       fetchPrivyEarnVaultPosition(input.walletId, input.vaultId),
     ]);
+    vaultAssetSymbol = vault.asset.symbol;
     availableLiquidityUsd = vault.available_liquidity_usd;
     assetsInVaultRaw = BigInt(position.assets_in_vault);
   } catch {
@@ -125,8 +129,17 @@ export async function submitEarnAction(
     raw_amount: rawAmount.toString(),
   };
 
+  const auditBase = {
+    adminPrivyUserId: input.userId,
+    adminWalletId: input.walletId,
+    action: input.direction,
+    vaultId: input.vaultId,
+    asset: vaultAssetSymbol,
+    amount: rawAmount.toString(),
+  };
+
   try {
-    const action =
+    const action: PrivyEarnWalletAction =
       input.direction === "deposit"
         ? await postPrivyEarnDeposit({
             walletId: input.walletId,
@@ -141,6 +154,20 @@ export async function submitEarnAction(
             idempotencyKey: input.idempotencyKey,
           });
 
+    try {
+      await insertEarnAuditLogRow({
+        ...auditBase,
+        status: action.status,
+        privyActionId: action.id,
+      });
+    } catch (error) {
+      console.error("[earn-actions] audit_log_insert_failed", {
+        code: "earn_audit_log_insert_failed",
+        vaultId: input.vaultId,
+        error,
+      });
+    }
+
     const responseBody = { action };
     storeIdempotentEarnActionResponse(
       idempotencyCacheKey,
@@ -149,6 +176,18 @@ export async function submitEarnAction(
     );
     return { ok: true, status: 200, body: responseBody };
   } catch {
+    try {
+      await insertEarnAuditLogRow({
+        ...auditBase,
+        status: "failed",
+      });
+    } catch (error) {
+      console.error("[earn-actions] audit_log_insert_failed", {
+        code: "earn_audit_log_insert_failed",
+        vaultId: input.vaultId,
+        error,
+      });
+    }
     return {
       ok: false,
       status: 502,

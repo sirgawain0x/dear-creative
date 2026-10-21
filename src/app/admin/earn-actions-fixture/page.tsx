@@ -110,6 +110,10 @@ export default async function AdminEarnActionsFixturePage({
         earnEnabled
         earnActionsEnabled
         earnActionsPreview={previewState}
+        earnActionsWalletPreview={{
+          walletId: "fixture-admin-wallet",
+          walletAddress: "0xAE48B6dB64772b9CC24e33A79c809896776a20f6",
+        }}
         previewData={previewData}
       />
     </main>

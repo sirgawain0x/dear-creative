@@ -32,18 +32,9 @@ export async function requireEarnActionsApi(
     return { ok: false, response: earnActionsDisabledResponse() };
   }
 
-  const auth = await requirePrivyAuth(request);
+  const auth = await requirePrivyAuth(request, { requireAdmin: true });
   if (!auth.ok) {
-    const headers = new Headers(auth.response.headers);
-    headers.set("Cache-Control", EARN_ACTIONS_CACHE_CONTROL);
-    return {
-      ok: false,
-      response: new NextResponse(auth.response.body, {
-        status: auth.response.status,
-        statusText: auth.response.statusText,
-        headers,
-      }),
-    };
+    return { ok: false, response: earnActionsDisabledResponse() };
   }
 
   return { ok: true, ctx: { userId: auth.user.userId } };

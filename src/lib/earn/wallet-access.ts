@@ -1,5 +1,4 @@
 import { getAddress, isAddress } from "viem";
-import { getPrivyAdminUserIds } from "@/lib/privy/config";
 import { getPrivyServerClient } from "@/lib/privy/server-client";
 import type { User } from "@privy-io/server-auth";
 
@@ -59,11 +58,7 @@ export async function assertEarnWalletAccess(
     return { ok: false, code: "wallet_address_mismatch" };
   }
 
-  const adminIds = getPrivyAdminUserIds();
   const normalized = normalizeUserId(input.userId);
-  if (adminIds.has(input.userId) || adminIds.has(normalized)) {
-    return { ok: true };
-  }
 
   let user: User;
   try {

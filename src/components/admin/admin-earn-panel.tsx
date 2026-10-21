@@ -1,7 +1,9 @@
 "use client";
 
+import { useWallets } from "@privy-io/react-auth";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuthSession } from "@/components/providers/app-providers";
+import { resolveAdminEarnActionWallet } from "@/lib/wallet/admin-earn-embedded-wallet";
 import {
   EarnActionsFlow,
   type EarnActionsPreviewState,
@@ -46,6 +48,11 @@ type AdminEarnPanelProps = {
   earnEnabled: boolean;
   earnActionsEnabled?: boolean;
   earnActionsPreview?: EarnActionsPreviewState;
+  /** Fixture/screenshot only — production uses Privy embedded wallet from the session. */
+  earnActionsWalletPreview?: {
+    walletId: string;
+    walletAddress: string;
+  };
   previewData?: AdminEarnPreviewData;
 };
 
@@ -70,6 +77,7 @@ export function AdminEarnPanel({
   earnEnabled,
   earnActionsEnabled = false,
   earnActionsPreview,
+  earnActionsWalletPreview,
   previewData,
 }: AdminEarnPanelProps) {
   const {
@@ -78,7 +86,9 @@ export function AdminEarnPanel({
     authenticated,
     getAccessToken,
     privyConfigured,
+    user,
   } = useAuthSession();
+  const { wallets } = useWallets();
   const [loading, setLoading] = useState(
     () => earnEnabled && !previewData,
   );
@@ -103,14 +113,18 @@ export function AdminEarnPanel({
     : undefined;
 
   const actionWallet = useMemo(() => {
-    if (!selectedVault) {
+    if (earnActionsWalletPreview) {
+      return earnActionsWalletPreview;
+    }
+    const resolved = resolveAdminEarnActionWallet({ user, wallets });
+    if (!resolved) {
       return { walletId: "", walletAddress: "" };
     }
     return {
-      walletId: selectedVault.admin_wallet_id,
-      walletAddress: selectedVault.admin_wallet_address,
+      walletId: resolved.walletId,
+      walletAddress: resolved.walletAddress,
     };
-  }, [selectedVault]);
+  }, [earnActionsWalletPreview, user, wallets]);
 
   const positionDisplay = useMemo(() => {
     if (!selectedPosition || !selectedPosition.configured) {

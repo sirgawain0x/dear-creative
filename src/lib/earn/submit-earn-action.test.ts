@@ -20,6 +20,10 @@ vi.mock("./privy-earn-actions", () => ({
   postPrivyEarnWithdraw: vi.fn(),
 }));
 
+vi.mock("./earn-audit-log", () => ({
+  insertEarnAuditLogRow: vi.fn(),
+}));
+
 import { assertEarnWalletAccess } from "./wallet-access";
 import { fetchWalletBalances } from "@/lib/wallet/balances";
 import {
@@ -27,6 +31,7 @@ import {
   fetchPrivyEarnVaultPosition,
 } from "./privy-earn";
 import { postPrivyEarnDeposit } from "./privy-earn-actions";
+import { insertEarnAuditLogRow } from "./earn-audit-log";
 import { submitEarnAction } from "./submit-earn-action";
 
 describe("submitEarnAction", () => {
@@ -88,6 +93,52 @@ describe("submitEarnAction", () => {
     });
     expect(result.ok).toBe(false);
     expect(result.status).toBe(403);
+  });
+
+  it("writes earn audit log on successful submit", async () => {
+    await submitEarnAction({
+      userId: "did:privy:user",
+      walletId: "wallet-1",
+      walletAddress: "0xAE48B6dB64772b9CC24e33A79c809896776a20f6",
+      vaultId: EARN_VAULT_AAVE_ID,
+      rawAmount: "1000000",
+      direction: "deposit",
+      authorizationSignature: "sig",
+      idempotencyKey: "key-audit",
+    });
+    expect(insertEarnAuditLogRow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        adminPrivyUserId: "did:privy:user",
+        adminWalletId: "wallet-1",
+        action: "deposit",
+        vaultId: EARN_VAULT_AAVE_ID,
+        asset: "usdc",
+        amount: "1000000",
+        status: "pending",
+        privyActionId: "action-1",
+      }),
+    );
+  });
+
+  it("writes failed audit log when Privy submit throws", async () => {
+    vi.mocked(postPrivyEarnDeposit).mockRejectedValue(new Error("upstream"));
+    const result = await submitEarnAction({
+      userId: "did:privy:user",
+      walletId: "wallet-1",
+      walletAddress: "0xAE48B6dB64772b9CC24e33A79c809896776a20f6",
+      vaultId: EARN_VAULT_AAVE_ID,
+      rawAmount: "1000000",
+      direction: "deposit",
+      authorizationSignature: "sig",
+      idempotencyKey: "key-fail",
+    });
+    expect(result.ok).toBe(false);
+    expect(insertEarnAuditLogRow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "failed",
+        vaultId: EARN_VAULT_AAVE_ID,
+      }),
+    );
   });
 
   it("reuses idempotent responses", async () => {

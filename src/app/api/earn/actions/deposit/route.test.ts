@@ -52,7 +52,7 @@ describe("POST /api/earn/actions/deposit", () => {
     expect(res.status).toBe(404);
   });
 
-  it("returns 401 when unauthenticated", async () => {
+  it("returns 404 when unauthenticated", async () => {
     vi.mocked(requirePrivyAuth).mockResolvedValue({
       ok: false,
       response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
@@ -63,7 +63,22 @@ describe("POST /api/earn/actions/deposit", () => {
         body: "{}",
       }),
     );
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 for non-admin", async () => {
+    vi.mocked(requirePrivyAuth).mockResolvedValue({
+      ok: false,
+      response: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
+    });
+    const res = await POST(
+      new Request("http://localhost/api/earn/actions/deposit", {
+        method: "POST",
+        body: "{}",
+        headers: { Authorization: "Bearer x" },
+      }),
+    );
+    expect(res.status).toBe(404);
   });
 
   it("forwards deposit submissions", async () => {
