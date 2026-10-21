@@ -58,8 +58,9 @@ if [[ "${HTTP_CODE}" != "404" ]]; then
   exit 1
 fi
 
-if grep -qE 'name="robots"[^>]*content="noindex"' <<<"${HTML}"; then
-  echo "ok: HTTP 404 with noindex meta tag present"
-else
-  echo "ok: HTTP 404 (proxy short-circuit)"
+if ! grep -q "Page not found" <<<"${HTML}"; then
+  echo "Expected site not-found HTML (Page not found) for bogus post slug" >&2
+  exit 1
 fi
+
+echo "ok: HTTP 404 with not-found HTML"

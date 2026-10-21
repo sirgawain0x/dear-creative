@@ -39,6 +39,18 @@ function isMissingColumnError(error: unknown): boolean {
 /**
  * Loads author profile fields, omitting avatar when the column is not migrated yet.
  */
+export async function existsAuthorProfileById(
+  db: DearCreativeDb,
+  authorId: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: authors.id })
+    .from(authors)
+    .where(eq(authors.id, authorId))
+    .limit(1);
+  return Boolean(row);
+}
+
 export async function getAuthorProfileById(
   db: DearCreativeDb,
   authorId: string,

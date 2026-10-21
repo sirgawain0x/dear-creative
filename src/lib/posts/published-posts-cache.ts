@@ -1,6 +1,7 @@
 import { cacheLife, cacheTag } from "next/cache";
 import { getDb } from "@/db/client";
 import {
+  existsPublishedPostBySlug,
   getPublishedPostBySlug,
   listPublishedPosts,
   publishedPostCacheTag,
@@ -18,4 +19,11 @@ export async function getCachedPublishedPostBySlug(slug: string) {
   cacheTag("posts-recent", publishedPostCacheTag(slug));
   cacheLife("minutes");
   return getPublishedPostBySlug(getDb(), slug);
+}
+
+export async function getCachedPublishedPostExists(slug: string): Promise<boolean> {
+  "use cache";
+  cacheTag("posts-recent", publishedPostCacheTag(slug));
+  cacheLife({ revalidate: 60, stale: 60, expire: 600 });
+  return existsPublishedPostBySlug(getDb(), slug);
 }

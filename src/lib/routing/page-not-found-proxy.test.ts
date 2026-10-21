@@ -8,9 +8,16 @@ vi.mock("@/db/client", () => ({
   getDb: vi.fn(),
 }));
 
+vi.mock("@/lib/posts/published-posts-cache", () => ({
+  getCachedPublishedPostExists: vi.fn(),
+}));
+
 import { getDb } from "@/db/client";
+import { getCachedPublishedPostExists } from "@/lib/posts/published-posts-cache";
+import * as publishedPosts from "@/lib/posts/published-posts";
 import {
-  pageNotFoundProxyResponse,
+  NOT_FOUND_DOCUMENT_PATH,
+  notFoundDocumentUrl,
   resolvePageNotFoundProxy,
 } from "./page-not-found-proxy";
 
@@ -19,6 +26,9 @@ describe("resolvePageNotFoundProxy", () => {
     const client = createClient({ url: ":memory:" });
     const db = drizzle(client, { schema });
     vi.mocked(getDb).mockReturnValue(db);
+    vi.mocked(getCachedPublishedPostExists).mockImplementation(async (slug) =>
+      publishedPosts.existsPublishedPostBySlug(db, slug),
+    );
     await client.execute(`
       CREATE TABLE authors (
         id text PRIMARY KEY NOT NULL,
@@ -65,6 +75,15 @@ describe("resolvePageNotFoundProxy", () => {
       title: "Live",
       status: "published",
       publishedAt: new Date(),
+      isGated: false,
+    });
+    await db.insert(schema.posts).values({
+      id: "p-gated",
+      slug: "gated-live-post",
+      title: "Gated",
+      status: "published",
+      publishedAt: new Date(),
+      isGated: true,
     });
     await db.insert(schema.authors).values({
       id: "a1",
@@ -76,31 +95,71 @@ describe("resolvePageNotFoundProxy", () => {
 
   afterEach(() => {
     setAuthorProfilesEnabledForTests(undefined);
+    vi.mocked(getCachedPublishedPostExists).mockReset();
+  });
+
+  it("returns next when the published-post lookup throws (fail open)", async () => {
+    vi.mocked(getCachedPublishedPostExists).mockRejectedValueOnce(
+      new Error("cache unavailable"),
+    );
+    vi.spyOn(publishedPosts, "existsPublishedPostBySlug").mockRejectedValueOnce(
+      new Error("db unavailable"),
+    );
+    const result = await resolvePageNotFoundProxy("/posts/any-slug");
+    expect(result).toEqual({ action: "next" });
+  });
+
+  it("returns next for index and nested paths without a single post slug", async () => {
+    await expect(resolvePageNotFoundProxy("/posts")).resolves.toEqual({
+      action: "next",
+    });
+    await expect(resolvePageNotFoundProxy("/posts/")).resolves.toEqual({
+      action: "next",
+    });
+    await expect(resolvePageNotFoundProxy("/posts/live/extra")).resolves.toEqual(
+      { action: "next" },
+    );
+    await expect(resolvePageNotFoundProxy("/authors")).resolves.toEqual({
+      action: "next",
+    });
+    await expect(resolvePageNotFoundProxy("/authors/a1/extra")).resolves.toEqual(
+      { action: "next" },
+    );
+  });
+
+  it("returns next for a gated published post slug", async () => {
+    const result = await resolvePageNotFoundProxy("/posts/gated-live-post");
+    expect(result).toEqual({ action: "next" });
   });
 
   it("returns not_found for a missing post slug", async () => {
     const result = await resolvePageNotFoundProxy("/posts/missing-slug");
     expect(result).toEqual({ action: "not_found" });
-    expect(pageNotFoundProxyResponse(result)?.status).toBe(404);
+    expect(notFoundDocumentUrl(new URL("http://localhost/posts/missing-slug")).pathname).toBe(
+      NOT_FOUND_DOCUMENT_PATH,
+    );
+  });
+
+  it("returns not_found for malformed post slugs without hitting the cache", async () => {
+    const result = await resolvePageNotFoundProxy("/posts/NOT-VALID");
+    expect(result).toEqual({ action: "not_found" });
+    expect(getCachedPublishedPostExists).not.toHaveBeenCalled();
   });
 
   it("returns not_found for author profiles when the flag is off", async () => {
     setAuthorProfilesEnabledForTests(false);
     const result = await resolvePageNotFoundProxy("/authors/a1");
     expect(result).toEqual({ action: "not_found" });
-    expect(pageNotFoundProxyResponse(result)?.status).toBe(404);
   });
 
   it("returns not_found for a missing author when the flag is on", async () => {
     setAuthorProfilesEnabledForTests(true);
     const result = await resolvePageNotFoundProxy("/authors/missing-author");
     expect(result).toEqual({ action: "not_found" });
-    expect(pageNotFoundProxyResponse(result)?.status).toBe(404);
   });
 
   it("allows an existing published post slug", async () => {
     const result = await resolvePageNotFoundProxy("/posts/live-post");
     expect(result).toEqual({ action: "next" });
-    expect(pageNotFoundProxyResponse(result)).toBeNull();
   });
 });
