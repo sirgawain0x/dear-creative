@@ -51,6 +51,7 @@ export function AdminConsole() {
   const [error, setError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [walletEnabled, setWalletEnabled] = useState(false);
+  const [walletSendEnabled, setWalletSendEnabled] = useState(false);
   const [earnEnabled, setEarnEnabled] = useState(false);
 
   useEffect(() => {
@@ -61,6 +62,9 @@ export function AdminConsole() {
         if (!cancelled && json) {
           if (typeof json.walletEnabled === "boolean") {
             setWalletEnabled(json.walletEnabled);
+          }
+          if (typeof json.walletSendEnabled === "boolean") {
+            setWalletSendEnabled(json.walletSendEnabled);
           }
           if (typeof json.earnEnabled === "boolean") {
             setEarnEnabled(json.earnEnabled);
@@ -199,7 +203,11 @@ export function AdminConsole() {
 
       {isSignedIn ? (
         <div className="grid gap-6 lg:grid-cols-2">
-          <AdminWalletPanel walletEnabled={walletEnabled} />
+          <AdminWalletPanel
+            walletEnabled={walletEnabled}
+            walletSendEnabled={walletSendEnabled}
+            isAdmin={Boolean(session?.isAdmin)}
+          />
           <AdminEarnPanel earnEnabled={earnEnabled} />
         </div>
       ) : null}

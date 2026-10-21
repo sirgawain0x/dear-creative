@@ -93,6 +93,7 @@ describe("GET /api/admin/earn/position", () => {
     expect(res.headers.get("Cache-Control")).toBe("private, no-store");
     const json = await res.json();
     expect(json.configured).toBe(true);
+    expect(json).not.toHaveProperty("walletId");
     expect(json.position.assets_in_vault).toBe("850000000");
   });
 });

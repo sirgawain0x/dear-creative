@@ -44,7 +44,6 @@ export async function GET(request: Request) {
     return adminEarnJsonResponse({
       configured: true,
       vaultId,
-      walletId: walletConfig.walletId,
       position,
     });
   } catch (error) {
