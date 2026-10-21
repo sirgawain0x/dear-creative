@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { useAuthSession } from "@/components/providers/app-providers";
 import { adminPrivyAuthorizationHeaders } from "@/lib/admin/admin-api-auth";
+import { buildEip681BaseReceiveUri } from "@/lib/wallet/eip681-receive-uri";
 import {
   resolveWalletPanelLoadErrors,
   WALLET_HISTORY_ERROR_MESSAGE,
@@ -121,7 +122,8 @@ export function AdminWalletPanel({
         const summaryJson = (await summaryRes.json()) as WalletSummaryResponse;
         setSummary(summaryJson);
         if (summaryJson.configured) {
-          const qr = await QRCode.toDataURL(summaryJson.address, {
+          const receiveUri = buildEip681BaseReceiveUri(summaryJson.address);
+          const qr = await QRCode.toDataURL(receiveUri, {
             margin: 1,
             width: 200,
           });
@@ -176,7 +178,8 @@ export function AdminWalletPanel({
     if (!previewData?.summary.configured) {
       return;
     }
-    void QRCode.toDataURL(previewData.summary.address, {
+    const receiveUri = buildEip681BaseReceiveUri(previewData.summary.address);
+    void QRCode.toDataURL(receiveUri, {
       margin: 1,
       width: 200,
     }).then(setQrDataUrl);
@@ -305,12 +308,20 @@ export function AdminWalletPanel({
               {summary.address}
             </code>
             {qrDataUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element -- data URL QR from qrcode lib
-              <img
-                src={qrDataUrl}
-                alt="QR code for wallet receive address"
-                className="mt-3 h-[200px] w-[200px] rounded-lg border border-zinc-200 dark:border-zinc-700"
-              />
+              <div className="mt-3 inline-flex flex-col items-start gap-2">
+                <span
+                  className="rounded-full border border-sky-300 bg-sky-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-sky-900 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-200"
+                  data-testid="admin-wallet-receive-network-label"
+                >
+                  Base network only
+                </span>
+                {/* eslint-disable-next-line @next/next/no-img-element -- data URL QR from qrcode lib */}
+                <img
+                  src={qrDataUrl}
+                  alt="QR code for Base receive address (EIP-681)"
+                  className="h-[200px] w-[200px] rounded-lg border border-zinc-200 dark:border-zinc-700"
+                />
+              </div>
             ) : null}
           </div>
 

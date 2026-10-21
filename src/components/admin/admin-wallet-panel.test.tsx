@@ -1,10 +1,13 @@
 /**
  * @vitest-environment jsdom
  */
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import QRCode from "qrcode";
+import { getAddress } from "viem";
 import { STUDIO_TOKEN_STORAGE_KEY } from "@/components/providers/app-providers";
-import { AdminWalletPanel } from "./admin-wallet-panel";
+import { buildEip681BaseReceiveUri } from "@/lib/wallet/eip681-receive-uri";
+import { AdminWalletPanel, type AdminWalletPreviewData } from "./admin-wallet-panel";
 
 const mockUseAuthSession = vi.fn();
 
@@ -60,6 +63,7 @@ describe("AdminWalletPanel admin fetch auth", () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -160,5 +164,52 @@ describe("AdminWalletPanel admin fetch auth", () => {
         Authorization: "Bearer privy-access-token",
       });
     }
+  });
+});
+
+const previewFixture: AdminWalletPreviewData = {
+  summary: {
+    configured: true,
+    address: getAddress("0xAE48B6dB64772b9CC24e33A79c809896776a20f6"),
+    network: "base",
+    chainId: 8453,
+    balances: {
+      eth: { formatted: "0.042" },
+      usdc: { formatted: "1250.50" },
+    },
+  },
+  history: {
+    configured: true,
+    transfers: [],
+    pagination: { incomingPageKey: null, outgoingPageKey: null },
+  },
+};
+
+describe("AdminWalletPanel receive QR", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("encodes EIP-681 Base URI in the QR and shows Base network only", async () => {
+    const toDataURL = vi.mocked(QRCode.toDataURL);
+    toDataURL.mockClear();
+
+    await act(async () => {
+      render(<AdminWalletPanel walletEnabled previewData={previewFixture} />);
+    });
+
+    const expectedUri = buildEip681BaseReceiveUri(previewFixture.summary.address);
+    await waitFor(() => {
+      expect(toDataURL).toHaveBeenCalledWith(expectedUri, {
+        margin: 1,
+        width: 200,
+      });
+    });
+
+    expect(
+      screen.getByTestId("admin-wallet-receive-network-label"),
+    ).toHaveTextContent("Base network only");
   });
 });
