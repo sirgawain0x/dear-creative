@@ -1,5 +1,6 @@
 import { connection } from "next/server";
 import { resolveAdminPrivyWalletId } from "@/lib/earn/admin-wallet-id";
+import { getPrivyServerClient } from "@/lib/privy/server-client";
 import {
   PrivyEarnConfigError,
   PrivyEarnRequestError,
@@ -41,10 +42,23 @@ export async function GET(request: Request) {
       walletConfig.walletId,
       vaultId,
     );
+    let walletAddress: string | null = null;
+    const privyClient = getPrivyServerClient();
+    if (privyClient) {
+      try {
+        const wallet = await privyClient.walletApi.getWallet({
+          id: walletConfig.walletId,
+        });
+        walletAddress = wallet.address;
+      } catch {
+        walletAddress = null;
+      }
+    }
     return adminEarnJsonResponse({
       configured: true,
       vaultId,
       walletId: walletConfig.walletId,
+      walletAddress,
       position,
     });
   } catch (error) {

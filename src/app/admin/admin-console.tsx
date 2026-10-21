@@ -52,6 +52,7 @@ export function AdminConsole() {
   const [isVerifying, setIsVerifying] = useState(false);
   const [walletEnabled, setWalletEnabled] = useState(false);
   const [earnEnabled, setEarnEnabled] = useState(false);
+  const [earnActionsEnabled, setEarnActionsEnabled] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,6 +65,9 @@ export function AdminConsole() {
           }
           if (typeof json.earnEnabled === "boolean") {
             setEarnEnabled(json.earnEnabled);
+          }
+          if (typeof json.earnActionsEnabled === "boolean") {
+            setEarnActionsEnabled(json.earnActionsEnabled);
           }
         }
       })
@@ -200,7 +204,10 @@ export function AdminConsole() {
       {isSignedIn ? (
         <div className="grid gap-6 lg:grid-cols-2">
           <AdminWalletPanel walletEnabled={walletEnabled} />
-          <AdminEarnPanel earnEnabled={earnEnabled} />
+          <AdminEarnPanel
+            earnEnabled={earnEnabled}
+            earnActionsEnabled={earnActionsEnabled}
+          />
         </div>
       ) : null}
 

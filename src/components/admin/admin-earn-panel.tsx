@@ -15,6 +15,10 @@ import {
   EARN_VAULT_AAVE_ID,
   EARN_VAULT_MORPHO_ID,
 } from "@/lib/earn/vaults";
+import {
+  EarnActionsFlow,
+  type EarnActionsPreviewState,
+} from "@/components/earn/earn-actions-flow";
 
 type PositionPayload =
   | {
@@ -25,6 +29,8 @@ type PositionPayload =
   | {
       configured: true;
       vaultId: string;
+      walletId?: string;
+      walletAddress?: string | null;
       position: {
         asset: { symbol: string; decimals: number };
         total_deposited: string;
@@ -40,6 +46,8 @@ export type AdminEarnPreviewData = {
 
 type AdminEarnPanelProps = {
   earnEnabled: boolean;
+  earnActionsEnabled?: boolean;
+  earnActionsPreview?: EarnActionsPreviewState;
   previewData?: AdminEarnPreviewData;
 };
 
@@ -62,6 +70,8 @@ function providerLabel(provider: PrivyEarnVaultDetails["provider"]): string {
 
 export function AdminEarnPanel({
   earnEnabled,
+  earnActionsEnabled = false,
+  earnActionsPreview,
   previewData,
 }: AdminEarnPanelProps) {
   const {
@@ -93,6 +103,32 @@ export function AdminEarnPanel({
   const selectedPosition = selectedVault
     ? positions[selectedVault.id]
     : undefined;
+
+  const actionWallet = useMemo(() => {
+    if (previewData) {
+      const configured = Object.values(previewData.positions).find(
+        (entry) => entry.configured,
+      );
+      if (
+        configured?.configured &&
+        configured.walletId &&
+        configured.walletAddress
+      ) {
+        return {
+          walletId: configured.walletId,
+          walletAddress: configured.walletAddress,
+        };
+      }
+      return { walletId: "", walletAddress: "" };
+    }
+    if (selectedPosition?.configured) {
+      return {
+        walletId: selectedPosition.walletId ?? "",
+        walletAddress: selectedPosition.walletAddress ?? "",
+      };
+    }
+    return { walletId: "", walletAddress: "" };
+  }, [previewData, selectedPosition]);
 
   const positionDisplay = useMemo(() => {
     if (!selectedPosition || !selectedPosition.configured) {
@@ -341,6 +377,34 @@ export function AdminEarnPanel({
                 label="Yield earned"
                 value={`${positionDisplay.yieldEarned} ${positionDisplay.symbol}`}
               />
+            </div>
+          ) : null}
+
+          {earnActionsEnabled ? (
+            <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Deposit / withdraw
+              </p>
+              <p className="mt-1 text-[11px] text-zinc-500">
+                Signed in your browser via Privy — no server signer.
+              </p>
+              <div className="mt-3">
+                <EarnActionsFlow
+                  enabled={earnActionsEnabled}
+                  walletId={actionWallet.walletId}
+                  walletAddress={actionWallet.walletAddress}
+                  vaults={vaults.map((entry) => ({
+                    id: entry.id,
+                    name: entry.name,
+                    provider: entry.provider,
+                  }))}
+                  selectedVaultId={selectedVault?.id ?? ""}
+                  getAccessToken={getAccessToken}
+                  privyConfigured={privyConfigured}
+                  authenticated={authenticated}
+                  previewState={earnActionsPreview}
+                />
+              </div>
             </div>
           ) : null}
         </div>
