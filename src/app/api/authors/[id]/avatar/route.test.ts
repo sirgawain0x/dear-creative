@@ -86,8 +86,8 @@ describe("POST /api/authors/[id]/avatar", () => {
   it("validates upload mime type", async () => {
     vi.mocked(requireAuthorProfileEditAccess).mockResolvedValue({
       ok: true,
-      privyUserId: "did:privy:owner",
-      isAdmin: false,
+      privyUserId: "did:privy:admin",
+      isAdmin: true,
     });
     const form = new FormData();
     form.set("file", new Blob(["x"], { type: "application/pdf" }), "a.pdf");

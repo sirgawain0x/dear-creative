@@ -89,7 +89,7 @@ export function AuthorProfileEditForm({
     return (
       <main className="mx-auto max-w-lg px-4 py-12 sm:px-6">
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Sign in with your writer account to edit this profile.
+          Sign in with a Privy admin account to edit this profile.
         </p>
         <button
           type="button"
