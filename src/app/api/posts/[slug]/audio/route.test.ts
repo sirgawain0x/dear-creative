@@ -7,7 +7,7 @@ const { getDbMock, getPublishedPostRowBySlugMock } = vi.hoisted(() => ({
   getPublishedPostRowBySlugMock: vi.fn(),
 }));
 
-const synthesizeSpeechWithGoogleMock = vi.hoisted(() => vi.fn());
+const canReadFullMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/db/client", () => ({
   getDb: getDbMock,
@@ -21,55 +21,71 @@ vi.mock("@/lib/paywall/viewer-from-cookies", () => ({
   resolvePostViewerFromCookies: vi.fn(async () => null),
 }));
 
+vi.mock("@/lib/paywall/can-read-full", () => ({
+  canReadFull: canReadFullMock,
+}));
+
 vi.mock("next/headers", () => ({
   cookies: vi.fn(async () => ({
     get: () => undefined,
   })),
 }));
 
-vi.mock("@/lib/adam/gemini-studio", () => ({
-  synthesizeSpeechWithGoogle: synthesizeSpeechWithGoogleMock,
-}));
+const STORED_MP3 = "https://cdn.example/narration.mp3";
 
 describe("GET /api/posts/[slug]/audio", () => {
   afterEach(() => {
     setPaywallEnabledForTests(undefined);
+    canReadFullMock.mockReset();
   });
 
-  it("returns stored audio metadata when audio_url is set", async () => {
-    const db = { tag: "db" };
-    getDbMock.mockReturnValue(db);
+  it("redirects to stored audio (302 Location) when audio_url is set", async () => {
+    getDbMock.mockReturnValue({});
     getPublishedPostRowBySlugMock.mockResolvedValue({
       slug: "hello",
       title: "Hello",
       isGated: false,
       authorId: null,
       postId: "p1",
-      audioUrl: "https://cdn.example/narration.mp3",
+      audioUrl: STORED_MP3,
       audioVoice: "Puck",
     });
 
     const response = await GET(
-      new Request("http://localhost/api/posts/hello/audio?voice=Aoede"),
+      new Request("http://localhost/api/posts/hello/audio"),
       { params: Promise.resolve({ slug: "hello" }) },
     );
 
-    expect(response.status).toBe(200);
-    const body = (await response.json()) as {
-      audioUrl: string;
-      voice: string;
-      preGenerated: boolean;
-    };
-    expect(body).toMatchObject({
-      audioUrl: "https://cdn.example/narration.mp3",
-      voice: "Puck",
-      preGenerated: true,
-    });
-    expect(synthesizeSpeechWithGoogleMock).not.toHaveBeenCalled();
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe(STORED_MP3);
   });
 
-  it("returns 403 for gated posts when paywall is enabled and viewer lacks access", async () => {
+  it("redirects entitled readers on gated posts (player src follows Location)", async () => {
     setPaywallEnabledForTests(true);
+    canReadFullMock.mockResolvedValue(true);
+    getDbMock.mockReturnValue({});
+    getPublishedPostRowBySlugMock.mockResolvedValue({
+      slug: "gated-unlocked",
+      title: "Gated",
+      isGated: true,
+      authorId: "w1",
+      postId: "p1",
+      audioUrl: STORED_MP3,
+      audioVoice: "Puck",
+    });
+
+    const response = await GET(
+      new Request("http://localhost/api/posts/gated-unlocked/audio"),
+      { params: Promise.resolve({ slug: "gated-unlocked" }) },
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe(STORED_MP3);
+  });
+
+  it("returns 403 without redirect for locked gated posts", async () => {
+    setPaywallEnabledForTests(true);
+    canReadFullMock.mockResolvedValue(false);
     getDbMock.mockReturnValue({});
     getPublishedPostRowBySlugMock.mockResolvedValue({
       slug: "gated",
@@ -77,7 +93,7 @@ describe("GET /api/posts/[slug]/audio", () => {
       isGated: true,
       authorId: "w1",
       postId: "p1",
-      audioUrl: "https://cdn.example/gated.mp3",
+      audioUrl: STORED_MP3,
       audioVoice: "Puck",
     });
 
@@ -87,9 +103,10 @@ describe("GET /api/posts/[slug]/audio", () => {
     );
 
     expect(response.status).toBe(403);
+    expect(response.headers.get("Location")).toBeNull();
   });
 
-  it("returns 404 and does not call TTS when the post has no stored audio", async () => {
+  it("returns 404 when the post has no stored audio", async () => {
     getDbMock.mockReturnValue({});
     getPublishedPostRowBySlugMock.mockResolvedValue({
       slug: "no-audio",
@@ -108,7 +125,6 @@ describe("GET /api/posts/[slug]/audio", () => {
     );
 
     expect(response.status).toBe(404);
-    expect(synthesizeSpeechWithGoogleMock).not.toHaveBeenCalled();
   });
 
   it("returns 404 when the post is not published", async () => {
@@ -120,6 +136,5 @@ describe("GET /api/posts/[slug]/audio", () => {
     );
 
     expect(response.status).toBe(404);
-    expect(synthesizeSpeechWithGoogleMock).not.toHaveBeenCalled();
   });
 });
