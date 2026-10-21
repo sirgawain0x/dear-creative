@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import QRCode from "qrcode";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import { useAuthSession } from "@/components/providers/app-providers";
 import { adminPrivyAuthorizationHeaders } from "@/lib/admin/admin-api-auth";
 import { buildEip681BaseReceiveUri } from "@/lib/wallet/eip681-receive-uri";
@@ -77,7 +77,6 @@ export function AdminWalletPanel({
   const [history, setHistory] = useState<HistoryResponse | null>(
     previewData?.history ?? null,
   );
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [incomingPageKey, setIncomingPageKey] = useState<string | null>(null);
   const [outgoingPageKey, setOutgoingPageKey] = useState<string | null>(null);
 
@@ -121,16 +120,6 @@ export function AdminWalletPanel({
       if (summaryRes.ok) {
         const summaryJson = (await summaryRes.json()) as WalletSummaryResponse;
         setSummary(summaryJson);
-        if (summaryJson.configured) {
-          const receiveUri = buildEip681BaseReceiveUri(summaryJson.address);
-          const qr = await QRCode.toDataURL(receiveUri, {
-            margin: 1,
-            width: 200,
-          });
-          setQrDataUrl(qr);
-        } else {
-          setQrDataUrl(null);
-        }
       } else {
         setError(loadErrors.summaryError);
       }
@@ -174,16 +163,12 @@ export function AdminWalletPanel({
     };
   }, [fetchWalletFromApi, previewData, ready, walletEnabled]);
 
-  useEffect(() => {
-    if (!previewData?.summary.configured) {
-      return;
+  const receiveUri = useMemo(() => {
+    if (!summary || !summary.configured) {
+      return null;
     }
-    const receiveUri = buildEip681BaseReceiveUri(previewData.summary.address);
-    void QRCode.toDataURL(receiveUri, {
-      margin: 1,
-      width: 200,
-    }).then(setQrDataUrl);
-  }, [previewData]);
+    return buildEip681BaseReceiveUri(summary.address);
+  }, [summary]);
 
   const handleRefresh = () => {
     setLoading(true);
@@ -307,7 +292,7 @@ export function AdminWalletPanel({
             <code className="mt-2 block break-all text-xs font-mono text-emerald-700 dark:text-emerald-400">
               {summary.address}
             </code>
-            {qrDataUrl ? (
+            {receiveUri ? (
               <div className="mt-3 inline-flex flex-col items-start gap-2">
                 <span
                   className="rounded-full border border-sky-300 bg-sky-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-sky-900 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-200"
@@ -315,11 +300,14 @@ export function AdminWalletPanel({
                 >
                   Base network only
                 </span>
-                {/* eslint-disable-next-line @next/next/no-img-element -- data URL QR from qrcode lib */}
-                <img
-                  src={qrDataUrl}
-                  alt="QR code for Base receive address (EIP-681)"
-                  className="h-[200px] w-[200px] rounded-lg border border-zinc-200 dark:border-zinc-700"
+                <QRCodeSVG
+                  value={receiveUri}
+                  size={200}
+                  level="M"
+                  marginSize={1}
+                  className="rounded-lg border border-zinc-200 dark:border-zinc-700"
+                  data-testid="admin-wallet-receive-qr"
+                  title="QR code for Base receive address (EIP-681)"
                 />
               </div>
             ) : null}

@@ -3,7 +3,6 @@
  */
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import QRCode from "qrcode";
 import { getAddress } from "viem";
 import { STUDIO_TOKEN_STORAGE_KEY } from "@/components/providers/app-providers";
 import { buildEip681BaseReceiveUri } from "@/lib/wallet/eip681-receive-uri";
@@ -20,10 +19,10 @@ vi.mock("@/components/providers/app-providers", async (importOriginal) => {
   };
 });
 
-vi.mock("qrcode", () => ({
-  default: {
-    toDataURL: vi.fn(async () => "data:image/png;base64,test"),
-  },
+vi.mock("qrcode.react", () => ({
+  QRCodeSVG: ({ value, title }: { value: string; title?: string }) => (
+    <svg data-testid="admin-wallet-receive-qr" data-value={value} aria-label={title} />
+  ),
 }));
 
 function mockBrowserStorage() {
@@ -193,20 +192,13 @@ describe("AdminWalletPanel receive QR", () => {
   });
 
   it("encodes EIP-681 Base URI in the QR and shows Base network only", async () => {
-    const toDataURL = vi.mocked(QRCode.toDataURL);
-    toDataURL.mockClear();
-
     await act(async () => {
       render(<AdminWalletPanel walletEnabled previewData={previewFixture} />);
     });
 
     const expectedUri = buildEip681BaseReceiveUri(previewFixture.summary.address);
-    await waitFor(() => {
-      expect(toDataURL).toHaveBeenCalledWith(expectedUri, {
-        margin: 1,
-        width: 200,
-      });
-    });
+    const qr = screen.getByTestId("admin-wallet-receive-qr");
+    expect(qr).toHaveAttribute("data-value", expectedUri);
 
     expect(
       screen.getByTestId("admin-wallet-receive-network-label"),

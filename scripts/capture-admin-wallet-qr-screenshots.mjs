@@ -33,7 +33,7 @@ for (const shot of shots) {
     waitUntil: "networkidle",
   });
   await page.getByTestId("admin-wallet-panel").waitFor({ state: "visible" });
-  await page.getByTestId("admin-wallet-receive-network-label").waitFor({
+  await page.getByTestId("admin-wallet-receive-qr").waitFor({
     state: "visible",
   });
   await page.screenshot({
