@@ -11,12 +11,16 @@ import {
   resolvePublicReaderBodyHtml,
   type PostBodySource,
 } from "./public-body";
+import { resolvePostPaywallCheckoutProps } from "./reader-post-checkout";
 import { resolvePostViewerFromCookies } from "./viewer-from-cookies";
 
 export type ReaderPostView = {
   post: PublishedPostDetail;
   canReadFull: boolean;
   showPaywall: boolean;
+  paywallCheckout: Awaited<
+    ReturnType<typeof resolvePostPaywallCheckoutProps>
+  >;
 };
 
 export type PublishedPostWithPaywallFields = PublishedPostDetail & {
@@ -83,6 +87,7 @@ export async function resolveReaderPostView(
       post: applyReaderBodyToPost(row, true),
       canReadFull: true,
       showPaywall: false,
+      paywallCheckout: null,
     };
   }
 
@@ -98,11 +103,19 @@ export async function resolveReaderPostView(
     },
     viewer,
   );
+  const showPaywall = row.isGated && !entitled;
+  const paywallCheckout = await resolvePostPaywallCheckoutProps(db, {
+    slug,
+    showPaywall,
+    authorId: row.authorId,
+    readCookie,
+  });
 
   return {
     post: applyReaderBodyToPost(row, entitled),
     canReadFull: entitled,
-    showPaywall: row.isGated && !entitled,
+    showPaywall,
+    paywallCheckout,
   };
 }
 

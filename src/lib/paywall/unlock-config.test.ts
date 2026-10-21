@@ -1,8 +1,23 @@
-import { describe, expect, it } from "vitest";
-import { POST_UNLOCK_PRICE_USDC_UNITS } from "./unlock-config";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  postUnlockAmountRaw,
+  postUnlockPriceUsdcUnits,
+} from "./unlock-config";
 
-describe("POST_UNLOCK_PRICE_USDC_UNITS", () => {
-  it("is null so PR A does not imply a default per-post charge", () => {
-    expect(POST_UNLOCK_PRICE_USDC_UNITS).toBeNull();
+describe("post unlock price config", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("returns null when POST_UNLOCK_PRICE_USDC is unset", () => {
+    vi.stubEnv("POST_UNLOCK_PRICE_USDC", "");
+    expect(postUnlockPriceUsdcUnits()).toBeNull();
+    expect(postUnlockAmountRaw()).toBeNull();
+  });
+
+  it("parses a positive USDC amount into 6-decimal raw units", () => {
+    vi.stubEnv("POST_UNLOCK_PRICE_USDC", "1.5");
+    expect(postUnlockPriceUsdcUnits()).toBe(1.5);
+    expect(postUnlockAmountRaw()).toBe(BigInt(1_500000));
   });
 });

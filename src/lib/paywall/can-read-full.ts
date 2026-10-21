@@ -1,6 +1,11 @@
-import { and, eq, gt, inArray } from "drizzle-orm";
+import { and, eq, gt } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
-import { subscriptions, unlocks } from "@/db/schema";
+import { subscriptions } from "@/db/schema";
+import {
+  hasLegacyUnlock,
+  hasReaderCheckoutUnlock,
+  resolveReaderCheckoutSubscription,
+} from "./reader-checkout-access";
 import type { PostViewer } from "./viewer-types";
 
 export type PaywallPostAccessInput = {
@@ -22,7 +27,7 @@ export async function resolveSubscriptionAccess(
     return false;
   }
   const asOf = input.asOf ?? new Date();
-  const [row] = await db
+  const [adminRow] = await db
     .select({ id: subscriptions.id })
     .from(subscriptions)
     .where(
@@ -34,30 +39,27 @@ export async function resolveSubscriptionAccess(
       ),
     )
     .limit(1);
-  return Boolean(row);
+  if (adminRow) {
+    return true;
+  }
+
+  const readerSub = await resolveReaderCheckoutSubscription(db, {
+    privyUserId: input.privyUserId,
+    writerId,
+    asOf,
+  });
+  return Boolean(readerSub);
 }
 
 export async function resolveUnlockAccess(
   db: DearCreativeDb,
   input: { postId: string; walletAddresses: string[] },
 ): Promise<boolean> {
-  const wallets = input.walletAddresses
-    .map((address) => address.trim().toLowerCase())
-    .filter(Boolean);
-  if (wallets.length === 0) {
-    return false;
-  }
-  const [row] = await db
-    .select({ id: unlocks.id })
-    .from(unlocks)
-    .where(
-      and(
-        eq(unlocks.postId, input.postId),
-        inArray(unlocks.walletAddress, wallets),
-      ),
-    )
-    .limit(1);
-  return Boolean(row);
+  const [legacy, reader] = await Promise.all([
+    hasLegacyUnlock(db, input),
+    hasReaderCheckoutUnlock(db, input),
+  ]);
+  return legacy || reader;
 }
 
 /**
