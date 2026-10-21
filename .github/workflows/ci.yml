@@ -24,6 +24,8 @@ jobs:
       - name: Build with local database
         env:
           LOCAL_DATABASE_URL: file:./data/ci-dear-creative.db
+          READER_WALLET_ENABLED: "true"
+          READER_WALLET_E2E_AUTH: "true"
         run: |
           npm run db:migrate:local
           npx next build
@@ -31,6 +33,8 @@ jobs:
         env:
           CI: true
           LOCAL_DATABASE_URL: file:./data/ci-dear-creative.db
+          READER_WALLET_ENABLED: "true"
+          READER_WALLET_E2E_AUTH: "true"
         run: |
           npx playwright install --with-deps chromium
           npm run test:e2e

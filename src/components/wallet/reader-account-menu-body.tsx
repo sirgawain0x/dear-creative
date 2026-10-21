@@ -86,7 +86,8 @@ export function ReaderAccountMenuBody({
       setCopyLabel("Copy failed");
       window.setTimeout(() => setCopyLabel("Copy address"), 2000);
     }
-  }, [walletAddress]);
+    onNavigate?.();
+  }, [onNavigate, walletAddress]);
 
   const handleSignOut = () => {
     onNavigate?.();

@@ -40,6 +40,7 @@ export function ReaderAccountDropdown({
   fixturePreviewData,
 }: ReaderAccountDropdownProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [desktopOpen, setDesktopOpen] = useState(false);
   const {
     authenticated,
     login,
@@ -92,7 +93,7 @@ export function ReaderAccountDropdown({
   if (surface === "desktop") {
     return (
       <div className={className}>
-        <DropdownMenu>
+        <DropdownMenu open={desktopOpen} onOpenChange={setDesktopOpen}>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
@@ -113,6 +114,7 @@ export function ReaderAccountDropdown({
             <ReaderAccountMenuBody
               previewData={fixturePreviewData}
               fixtureShowAdmin={fixtureAuthenticated}
+              onNavigate={() => setDesktopOpen(false)}
             />
           </DropdownMenuContent>
         </DropdownMenu>

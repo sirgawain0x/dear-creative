@@ -6,6 +6,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { getPrivyAppId } from "@/lib/privy/config";
 import { isReaderWalletEnabled } from "@/lib/wallet/reader-wallet-feature-flag";
+import { isReaderWalletE2eAuthEnabled } from "@/lib/wallet/reader-wallet-e2e-auth";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -34,6 +35,7 @@ export default function RootLayout({
 }>) {
   const privyAppId = getPrivyAppId();
   const readerWalletEnabled = isReaderWalletEnabled();
+  const readerWalletE2eAuthEnabled = isReaderWalletE2eAuthEnabled();
 
   return (
     <html
@@ -44,7 +46,10 @@ export default function RootLayout({
         <BotIdProtect />
       </head>
       <body className="min-h-full flex flex-col bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
-        <AppProviders privyAppId={privyAppId}>
+        <AppProviders
+          privyAppId={privyAppId}
+          readerWalletE2eAuthEnabled={readerWalletE2eAuthEnabled}
+        >
           <SiteHeader readerWalletEnabled={readerWalletEnabled} />
           <div className="min-w-0 flex-1">{children}</div>
         </AppProviders>

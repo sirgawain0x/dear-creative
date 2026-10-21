@@ -14,8 +14,13 @@ export default defineConfig({
   webServer: {
     command: process.env.CI ? "npm run start" : "npm run dev",
     url: "http://127.0.0.1:3000",
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: true,
     timeout: 120_000,
+    env: {
+      ...process.env,
+      READER_WALLET_ENABLED: "true",
+      READER_WALLET_E2E_AUTH: "true",
+    },
   },
   projects: [
     {
