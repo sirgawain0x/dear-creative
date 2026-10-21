@@ -53,6 +53,11 @@ HTML="$(cat /tmp/post-slug-notfound.html)"
 
 echo "curl /posts/${BOGUS_SLUG} -> HTTP ${HTTP_CODE}"
 
+if [[ "${HTTP_CODE}" != "404" ]]; then
+  echo "Expected HTTP 404 for missing post slug, got ${HTTP_CODE}" >&2
+  exit 1
+fi
+
 if ! grep -qE 'name="robots"[^>]*content="noindex"' <<<"${HTML}"; then
   echo "Expected noindex meta tag in HTML for bogus post slug" >&2
   exit 1

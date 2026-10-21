@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Script from "next/script";
+import { connection } from "next/server";
 import { Suspense } from "react";
-import { notFound } from "next/navigation";
 import type { Address } from "viem";
 import { DispatchAudioPlayer } from "@/components/audio/dispatch-audio-player";
 import { OwnerEditPostButton } from "@/components/auth/owner-edit-controls";
@@ -23,9 +23,9 @@ import {
   shouldRenderPostTipCard,
 } from "@/lib/posts/post-tip-payee";
 import {
-  resolvePublicPostForMetadata,
-  resolveReaderPostView,
-} from "@/lib/paywall/reader-post";
+  gatePublishedPostMetadata,
+  gatePublishedPostPage,
+} from "@/lib/posts/gate-published-post-page";
 import { getDb } from "@/db/client";
 import {
   classifyArticleTopic,
@@ -193,19 +193,13 @@ function PostArticle({
 
 export async function generateMetadata({ params }: PageProps) {
   const { slug } = await params;
-  const post = await resolvePublicPostForMetadata(slug);
-  if (!post) {
-    return {};
-  }
+  const post = await gatePublishedPostMetadata(slug);
   return buildPostPageMetadata(post);
 }
 
-async function PostPageReader({ params }: PageProps) {
-  const { slug } = await params;
-  const view = await resolveReaderPostView(slug);
-  if (!view) {
-    notFound();
-  }
+async function PostPageBody({ slug }: { slug: string }) {
+  const view = await gatePublishedPostPage(slug);
+  await connection();
   const payToAddress = await resolvePostTipPayToAddress(getDb(), slug);
   return (
     <PostArticle
@@ -216,7 +210,10 @@ async function PostPageReader({ params }: PageProps) {
   );
 }
 
-export default function PostPage(props: PageProps) {
+export default async function PostPage(props: PageProps) {
+  const { slug } = await props.params;
+  await gatePublishedPostMetadata(slug);
+
   return (
     <Suspense
       fallback={
@@ -228,7 +225,7 @@ export default function PostPage(props: PageProps) {
         </p>
       }
     >
-      <PostPageReader params={props.params} />
+      <PostPageBody slug={slug} />
     </Suspense>
   );
 }
