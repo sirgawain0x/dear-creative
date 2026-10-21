@@ -6,8 +6,13 @@ import { AdminEarnPanel } from "@/components/admin/admin-earn-panel";
 import { AdminWalletPanel } from "@/components/admin/admin-wallet-panel";
 import { OracleIngestForm } from "@/components/admin/oracle-ingest-form";
 import { useAuthSession } from "@/components/providers/app-providers";
-import { AdminPayoutsCard } from "./admin-payouts-card";
 import { AdminLinkedInConnect } from "./admin-linkedin-connect";
+
+import type { AdminMeSession } from "./admin-session";
+import { AdminPayoutsSection } from "./admin-payouts-section";
+import { resolveStudioBearerToken } from "@/lib/admin/studio-bearer-token";
+
+export { ADMIN_PAYOUTS_PRIVY_SIGN_IN_NOTE } from "./admin-payouts-section";
 
 export const ADMIN_OWNER_TOOL_LINKS = [
   {
@@ -42,12 +47,10 @@ export function AdminConsole() {
     getAccessToken,
     privyConfigured,
     privyTimedOut,
+    authenticated,
   } = useAuthSession();
 
-  const [session, setSession] = useState<{
-    userId: string;
-    isAdmin: boolean;
-  } | null>(null);
+  const [session, setSession] = useState<AdminMeSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [walletEnabled, setWalletEnabled] = useState(false);
@@ -77,11 +80,17 @@ export function AdminConsole() {
     };
   }, []);
 
-  const refreshSession = useCallback(async () => {
+  const refreshSession = useCallback(async (options?: { silent?: boolean }) => {
     setError(null);
-    setIsVerifying(true);
+    if (!options?.silent) {
+      setIsVerifying(true);
+    }
     try {
-      const token = await getAccessToken();
+      const token = await resolveStudioBearerToken({
+        privyConfigured,
+        authenticated,
+        getAccessToken,
+      });
       if (!token) {
         setSession(null);
         setError("No access token available. Please sign in first.");
@@ -95,13 +104,27 @@ export function AdminConsole() {
         setError("Could not verify admin session. Ensure your Privy DID is in PRIVY_ADMIN_USER_IDS.");
         return;
       }
-      setSession(await response.json());
+      setSession((await response.json()) as AdminMeSession);
     } catch {
       setError("Failed to verify session with server.");
     } finally {
-      setIsVerifying(false);
+      if (!options?.silent) {
+        setIsVerifying(false);
+      }
     }
-  }, [getAccessToken]);
+  }, [authenticated, getAccessToken, privyConfigured]);
+
+  useEffect(() => {
+    if (!ready || !authenticated) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      void refreshSession({ silent: true });
+    }, 0);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [ready, authenticated, refreshSession]);
 
   if (!ready) {
     return <p className="text-zinc-500">Loading authentication status…</p>;
@@ -235,7 +258,11 @@ export function AdminConsole() {
           </div>
         </div>
       ) : null}
-      {isSignedIn ? <AdminPayoutsCard /> : null}
+      <AdminPayoutsSection
+        session={session}
+        isSignedIn={isSignedIn}
+        authenticated={authenticated}
+      />
       {session?.isAdmin ? (
         <AdminLinkedInConnect
           isAdmin={session.isAdmin}

@@ -6,6 +6,7 @@ import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { migrate } from "drizzle-orm/libsql/migrator";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { NextResponse } from "next/server";
 import * as schema from "@/db/schema";
 import { writers } from "@/db/schema";
 import { getAddress } from "viem";
@@ -13,6 +14,7 @@ import {
   resetPrivyLinkedChecksumAddressesResolverForTests,
   setPrivyLinkedChecksumAddressesResolverForTests,
 } from "@/lib/payments/privy-linked-wallet";
+import { requirePrivyAuth } from "@/lib/privy/require-auth";
 import { GET } from "./route";
 
 let testDb: ReturnType<typeof drizzle>;
@@ -21,11 +23,8 @@ vi.mock("@/db/client", () => ({
   getDb: () => testDb,
 }));
 
-const mockRequireStudioOrAdamAuth = vi.fn();
-
-vi.mock("@/lib/adam/studio-auth", () => ({
-  requireStudioOrAdamAuth: (...args: unknown[]) =>
-    mockRequireStudioOrAdamAuth(...args),
+vi.mock("@/lib/privy/require-auth", () => ({
+  requirePrivyAuth: vi.fn(),
 }));
 
 async function createTestDb() {
@@ -47,35 +46,35 @@ describe("GET /api/admin/payouts", () => {
       "DEAR_PLATFORM_TREASURY_ADDRESS",
       "0xf46f1ba19a9280f752a451d0973b047d81c63d70",
     );
-    mockRequireStudioOrAdamAuth.mockReset();
+    vi.mocked(requirePrivyAuth).mockReset();
     resetPrivyLinkedChecksumAddressesResolverForTests();
   });
 
   afterEach(() => {
     vi.unstubAllEnvs();
     resetPrivyLinkedChecksumAddressesResolverForTests();
+    vi.clearAllMocks();
   });
 
   it("returns 401 when unauthenticated", async () => {
-    mockRequireStudioOrAdamAuth.mockResolvedValue({
+    vi.mocked(requirePrivyAuth).mockResolvedValue({
       ok: false,
-      response: new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-      }),
+      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
     });
 
     const response = await GET(
       new Request("http://localhost/api/admin/payouts"),
     );
     expect(response.status).toBe(401);
+    expect(requirePrivyAuth).toHaveBeenCalledWith(expect.any(Request), {
+      requireAdmin: true,
+    });
   });
 
   it("returns 403 for non-admin users", async () => {
-    mockRequireStudioOrAdamAuth.mockResolvedValue({
+    vi.mocked(requirePrivyAuth).mockResolvedValue({
       ok: false,
-      response: new Response(JSON.stringify({ error: "Forbidden" }), {
-        status: 403,
-      }),
+      response: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
     });
 
     const response = await GET(
@@ -86,11 +85,27 @@ describe("GET /api/admin/payouts", () => {
     expect(response.status).toBe(403);
   });
 
+  it("rejects adam/studio service token (privy admin only)", async () => {
+    vi.mocked(requirePrivyAuth).mockResolvedValue({
+      ok: false,
+      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+    });
+
+    const response = await GET(
+      new Request("http://localhost/api/admin/payouts", {
+        headers: { Authorization: "Bearer adam-api-token" },
+      }),
+    );
+    expect(response.status).toBe(401);
+    expect(requirePrivyAuth).toHaveBeenCalledWith(expect.any(Request), {
+      requireAdmin: true,
+    });
+  });
+
   it("returns checksummed payout snapshot for privy admin with matching linked wallet", async () => {
-    mockRequireStudioOrAdamAuth.mockResolvedValue({
+    vi.mocked(requirePrivyAuth).mockResolvedValue({
       ok: true,
-      actor: "did:privy:admin",
-      mode: "privy_admin",
+      user: { userId: "did:privy:admin" },
     });
 
     setPrivyLinkedChecksumAddressesResolverForTests(async () => [
@@ -121,10 +136,9 @@ describe("GET /api/admin/payouts", () => {
   });
 
   it("returns null writer fields when linked wallet does not match any writer", async () => {
-    mockRequireStudioOrAdamAuth.mockResolvedValue({
+    vi.mocked(requirePrivyAuth).mockResolvedValue({
       ok: true,
-      actor: "did:privy:admin",
-      mode: "privy_admin",
+      user: { userId: "did:privy:admin" },
     });
 
     setPrivyLinkedChecksumAddressesResolverForTests(async () => [
@@ -140,35 +154,6 @@ describe("GET /api/admin/payouts", () => {
     const response = await GET(
       new Request("http://localhost/api/admin/payouts", {
         headers: { Authorization: "Bearer admin-token" },
-      }),
-    );
-
-    const body = (await response.json()) as {
-      payoutWalletAddress: string | null;
-      payoutSplitAddress: string | null;
-      treasuryAddress: string;
-    };
-    expect(body.payoutWalletAddress).toBeNull();
-    expect(body.payoutSplitAddress).toBeNull();
-    expect(body.treasuryAddress).toBeTruthy();
-  });
-
-  it("returns Not set writer fields for Adam API token (no Privy user)", async () => {
-    mockRequireStudioOrAdamAuth.mockResolvedValue({
-      ok: true,
-      actor: "adam-token",
-      mode: "adam_token",
-    });
-
-    await testDb.insert(writers).values({
-      id: randomUUID(),
-      payoutWalletAddress: WRITER_WALLET,
-      payoutSplitAddress: "0x2222222222222222222222222222222222222222",
-    });
-
-    const response = await GET(
-      new Request("http://localhost/api/admin/payouts", {
-        headers: { Authorization: "Bearer adam-api-token" },
       }),
     );
 
