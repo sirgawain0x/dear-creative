@@ -2,6 +2,10 @@ import { and, count, desc, eq, isNotNull, lte } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
 import { getPostAudioColumns } from "@/db/ensure-schema";
 import { authors, posts } from "@/db/schema";
+import {
+  getAcceptedPostByline,
+  type PostBylineWriter,
+} from "@/lib/cowriters/byline";
 import { mapAuthorRow, type PostAuthorDetail } from "./post-author";
 import { resolvePublicPostCoverImage } from "./post-cover-image";
 import { buildPublicPostTeaser } from "./post-public-teaser";
@@ -29,6 +33,7 @@ export type PublishedPostDetail = PublishedPostListItem & {
   audioUrl?: string | null;
   audioVoice?: string | null;
   author?: PostAuthorDetail | null;
+  bylineWriters?: PostBylineWriter[];
 };
 
 export type PublishedPostsPage = {
@@ -221,6 +226,7 @@ export async function getPublishedPostRowBySlug(
   }
 
   const audio = await getPostAudioColumns(db, slug);
+  const bylineWriters = await getAcceptedPostByline(db, row.id);
 
   const author =
     row.authorName && row.authorSlug
@@ -252,6 +258,7 @@ export async function getPublishedPostRowBySlug(
     audioUrl: audio.audioUrl,
     audioVoice: audio.audioVoice,
     author,
+    bylineWriters,
     postId: row.id,
     authorId: row.authorId,
     isGated: row.isGated,
