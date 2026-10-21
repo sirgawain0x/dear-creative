@@ -107,13 +107,13 @@ describe("SiteHeader auth control", () => {
     const { SiteHeader } = await import("./site-header");
     render(<SiteHeader readerWalletEnabled />);
 
-    const signInButtons = screen.getAllByRole("button", { name: "Sign In" });
-    expect(signInButtons).toHaveLength(1);
-    expect(signInButtons[0]).toHaveAttribute(
+    const desktopSignIn = mainNav().getAllByRole("button", { name: "Sign In" });
+    expect(desktopSignIn).toHaveLength(1);
+    expect(desktopSignIn[0]).toHaveAttribute(
       "data-testid",
       "reader-wallet-header-button",
     );
-    expect(screen.queryByRole("link", { name: "Sign In" })).not.toBeInTheDocument();
+    expect(mainNav().queryByRole("link", { name: "Sign In" })).not.toBeInTheDocument();
   });
 
   it("links Wallet to /admin when signed out and Privy is unavailable", async () => {
