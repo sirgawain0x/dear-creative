@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns: optimizedImageRemotePatterns,
   },
-  serverExternalPackages: ["ffmpeg-static"],
+  serverExternalPackages: ["ffmpeg-static", "@libsql/client"],
   outputFileTracingIncludes: {
     "/api/adam/posts/*/repurpose/*": [
       "./node_modules/ffmpeg-static/**/*",

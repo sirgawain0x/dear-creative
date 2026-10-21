@@ -165,6 +165,10 @@ const ADDITIVE_POST_COLUMNS: Array<{ name: string; ddl: string }> = [
     name: "audio_voice",
     ddl: "ALTER TABLE posts ADD audio_voice text",
   },
+  {
+    name: "split_address_override",
+    ddl: "ALTER TABLE posts ADD split_address_override text",
+  },
 ];
 
 async function runEnsurePostsSchema(db: DearCreativeDb): Promise<void> {

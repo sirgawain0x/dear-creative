@@ -6,7 +6,11 @@ import { eq } from "drizzle-orm";
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { migrate } from "drizzle-orm/libsql/migrator";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/posts/expire-published-post-cache", () => ({
+  expirePublishedPostExistenceCache: vi.fn(),
+}));
 import * as schema from "@/db/schema";
 import { approvals, posts } from "@/db/schema";
 import { contentHashForPost } from "./snapshot-from-post";

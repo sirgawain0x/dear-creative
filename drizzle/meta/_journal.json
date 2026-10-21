@@ -141,6 +141,13 @@
       "when": 1792525000000,
       "tag": "0020_reader_post_unlock_purchases",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1792602394384,
+      "tag": "0021_cowriters",
+      "breakpoints": true
     }
   ]
 }

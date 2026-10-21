@@ -54,6 +54,7 @@ import { NARRATION_VOICES, voiceLabel } from "@/lib/audio/narration-voices";
 import { playAdamGoogleTts } from "@/app/adam/adam-message-tts";
 import { stopDispatchAudioResources } from "@/lib/audio/stop-active-audio";
 import { RepurposePanel } from "@/app/adam/repurpose-panel";
+import { EditorWritersPanel } from "@/components/admin/EditorWritersPanel";
 
 export type StudioTab = "chat" | "ideas" | "posts" | "approvals" | "schedule";
 type VoiceEngineMode = "google" | "browser";
@@ -447,6 +448,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
     useState<PaywallSettings>(DEFAULT_PAYWALL_SETTINGS);
   const [isSavingPost, setIsSavingPost] = useState(false);
   const [isPolishingPost, setIsPolishingPost] = useState(false);
+  const [cowritersEnabled, setCowritersEnabled] = useState(false);
 
   // Schedule state
   const [schedule, setSchedule] = useState<AdamScheduleRecord | null>(null);
@@ -515,6 +517,15 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
       freeContent: post.freeContent ?? "",
       gatedContent: post.gatedContent ?? "",
     });
+  }, []);
+
+  useEffect(() => {
+    void fetch("/api/adam/cowriters/status")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { enabled?: boolean } | null) => {
+        setCowritersEnabled(Boolean(data?.enabled));
+      })
+      .catch(() => setCowritersEnabled(false));
   }, []);
 
   const authFetch = useCallback(
@@ -1946,12 +1957,20 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
         const data = (await res.json()) as {
           post?: AdminPostRecord;
           error?: string;
+          publishGate?: { label: string; ok: boolean }[];
         };
 
         if (!res.ok || !data.post) {
+          const gateHint =
+            data.publishGate && data.publishGate.length > 0
+              ? ` Blocked: ${data.publishGate
+                  .filter((c) => !c.ok)
+                  .map((c) => c.label)
+                  .join("; ")}`
+              : "";
           setStatusBanner({
             kind: "error",
-            text: data.error || "Failed to save post updates.",
+            text: (data.error || "Failed to save post updates.") + gateHint,
           });
           return;
         }
@@ -3718,6 +3737,13 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                   onInsertGateTag={handleInsertPaywallGateTag}
                 />
               ) : null}
+              <EditorWritersPanel
+                key={selectedEditPostId ?? "no-post"}
+                postId={selectedEditPostId}
+                authFetch={authFetch}
+                enabled={cowritersEnabled}
+                isPublishedTarget={editPostStatus === "published"}
+              />
 
               {/* Post Banner & Thumbnail (Lens Grove) */}
               <div className="rounded-xl border border-zinc-200 bg-zinc-50/70 p-4 dark:border-zinc-800 dark:bg-zinc-950/50">

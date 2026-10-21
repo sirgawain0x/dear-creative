@@ -2,6 +2,10 @@ import { and, count, desc, eq, isNotNull, lte } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
 import { getPostAudioColumns } from "@/db/ensure-schema";
 import { authors, posts } from "@/db/schema";
+import {
+  getAcceptedPostByline,
+  type PostBylineWriter,
+} from "@/lib/cowriters/byline";
 import { mapAuthorRow, type PostAuthorDetail } from "./post-author";
 import { resolvePublicPostCoverImage } from "./post-cover-image";
 import { buildPublicPostTeaser } from "./post-public-teaser";
@@ -29,6 +33,7 @@ export type PublishedPostDetail = PublishedPostListItem & {
   audioUrl?: string | null;
   audioVoice?: string | null;
   author?: PostAuthorDetail | null;
+  bylineWriters?: PostBylineWriter[];
 };
 
 export type PublishedPostsPage = {
@@ -221,6 +226,7 @@ export async function getPublishedPostRowBySlug(
   }
 
   const audio = await getPostAudioColumns(db, slug);
+  const bylineWriters = await getAcceptedPostByline(db, row.id);
 
   const author =
     row.authorName && row.authorSlug
@@ -252,12 +258,27 @@ export async function getPublishedPostRowBySlug(
     audioUrl: audio.audioUrl,
     audioVoice: audio.audioVoice,
     author,
+    bylineWriters,
     postId: row.id,
     authorId: row.authorId,
     isGated: row.isGated,
     freeContent: row.freeContent,
     gatedContent: row.gatedContent,
   };
+}
+
+export async function existsPublishedPostBySlug(
+  db: DearCreativeDb,
+  slug: string,
+  options?: { asOf?: Date },
+): Promise<boolean> {
+  const asOf = options?.asOf ?? new Date();
+  const [row] = await db
+    .select({ id: posts.id })
+    .from(posts)
+    .where(and(publishedVisibilityFilter(asOf), eq(posts.slug, slug)))
+    .limit(1);
+  return Boolean(row);
 }
 
 export async function getPublishedPostBySlug(

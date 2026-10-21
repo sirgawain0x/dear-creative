@@ -3,11 +3,12 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { AuthorProfileView } from "@/components/authors/author-profile-view";
 import { getDb } from "@/db/client";
+import { gateAuthorProfilePage } from "@/lib/authors/gate-author-profile-page";
 import { isAuthorProfilesEnabled } from "@/lib/authors/feature-flag";
-import { ensureAuthorProfilesEnabled } from "@/lib/authors/guard";
 import {
   getAuthorProfileById,
   listPublishedArticlesForAuthor,
+  type AuthorProfileRecord,
 } from "@/lib/authors/author-profile";
 
 type PageProps = {
@@ -18,12 +19,12 @@ export const instant = false;
 
 export async function generateMetadata({ params }: PageProps) {
   if (!isAuthorProfilesEnabled()) {
-    return { title: "Not found" };
+    notFound();
   }
   const { id } = await params;
   const author = await getAuthorProfileById(getDb(), id);
   if (!author) {
-    return { title: "Author not found" };
+    notFound();
   }
   return {
     title: `${author.name} · Dear Creative`,
@@ -31,30 +32,31 @@ export async function generateMetadata({ params }: PageProps) {
   };
 }
 
-async function AuthorProfileContent({ params }: PageProps) {
+async function AuthorProfileArticles({
+  author,
+  authorId,
+}: {
+  author: AuthorProfileRecord;
+  authorId: string;
+}) {
   await connection();
-  ensureAuthorProfilesEnabled();
-  const { id } = await params;
-  const db = getDb();
-  const author = await getAuthorProfileById(db, id);
-  if (!author) {
-    notFound();
-  }
-  const articles = await listPublishedArticlesForAuthor(db, id);
-
+  const articles = await listPublishedArticlesForAuthor(getDb(), authorId);
   return (
     <AuthorProfileView
       author={author}
       articles={articles}
-      editHref={`/authors/${encodeURIComponent(id)}/edit`}
+      editHref={`/authors/${encodeURIComponent(authorId)}/edit`}
     />
   );
 }
 
-export default function AuthorProfilePage(props: PageProps) {
+export default async function AuthorProfilePage(props: PageProps) {
+  const { id } = await props.params;
+  const author = await gateAuthorProfilePage(id);
+
   return (
     <Suspense fallback={<main className="mx-auto max-w-3xl px-4 py-16">Loading…</main>}>
-      <AuthorProfileContent {...props} />
+      <AuthorProfileArticles author={author} authorId={id} />
     </Suspense>
   );
 }

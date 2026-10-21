@@ -61,7 +61,34 @@ describe("GET /api/admin/earn/position", () => {
     expect(res.status).toBe(404);
   });
 
-  it("returns 404 for non-admin (same as flag off)", async () => {
+  it("returns 401 when authorization token is missing", async () => {
+    vi.mocked(requirePrivyAuth).mockResolvedValue({
+      ok: false,
+      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+    });
+    const res = await GET(
+      new Request(
+        `http://localhost/api/admin/earn/position?vault=${EARN_VAULT_AAVE_ID}`,
+      ),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 when authorization token is expired", async () => {
+    vi.mocked(requirePrivyAuth).mockResolvedValue({
+      ok: false,
+      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+    });
+    const res = await GET(
+      new Request(
+        `http://localhost/api/admin/earn/position?vault=${EARN_VAULT_AAVE_ID}`,
+        { headers: { Authorization: "Bearer expired" } },
+      ),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 403 for non-admin users", async () => {
     vi.mocked(requirePrivyAuth).mockResolvedValue({
       ok: false,
       response: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
@@ -72,7 +99,7 @@ describe("GET /api/admin/earn/position", () => {
         { headers: { Authorization: "Bearer x" } },
       ),
     );
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
   });
 
   it("rejects unknown vault ids", async () => {

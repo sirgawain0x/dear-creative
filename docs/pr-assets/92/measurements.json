@@ -1,0 +1,22 @@
+{
+  "confirm390": {
+    "scrollWidth": 390,
+    "innerWidth": 390,
+    "noHorizontalOverflow": true
+  },
+  "confirm1440": {
+    "scrollWidth": 1440,
+    "innerWidth": 1440,
+    "noHorizontalOverflow": true
+  },
+  "pending390": {
+    "scrollWidth": 390,
+    "innerWidth": 390,
+    "noHorizontalOverflow": true
+  },
+  "success1440": {
+    "scrollWidth": 1440,
+    "innerWidth": 1440,
+    "noHorizontalOverflow": true
+  }
+}
