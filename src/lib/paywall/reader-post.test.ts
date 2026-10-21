@@ -20,23 +20,38 @@ vi.mock("@/lib/posts/published-posts", () => ({
 }));
 
 import { connection } from "next/server";
-import { resolveReaderPostView } from "./reader-post";
+import {
+  resolvePublicPostForMetadata,
+  resolveReaderPostView,
+} from "./reader-post";
 
-describe("resolveReaderPostView", () => {
+describe("post slug reader connection", () => {
   afterEach(() => {
     setPaywallEnabledForTests(undefined);
     vi.mocked(connection).mockClear();
   });
 
-  it("opts into request-time rendering before paywall date checks when paywall is enabled", async () => {
+  it("calls connection before published visibility Date checks when paywall is enabled", async () => {
     setPaywallEnabledForTests(true);
     await resolveReaderPostView("any-slug");
     expect(connection).toHaveBeenCalled();
   });
 
-  it("does not call connection when paywall is disabled", async () => {
+  it("calls connection before published visibility Date checks when paywall is disabled", async () => {
     setPaywallEnabledForTests(false);
     await resolveReaderPostView("any-slug");
-    expect(connection).not.toHaveBeenCalled();
+    expect(connection).toHaveBeenCalled();
+  });
+
+  it("calls connection for metadata resolution when paywall is enabled", async () => {
+    setPaywallEnabledForTests(true);
+    await resolvePublicPostForMetadata("any-slug");
+    expect(connection).toHaveBeenCalled();
+  });
+
+  it("calls connection for metadata resolution when paywall is disabled", async () => {
+    setPaywallEnabledForTests(false);
+    await resolvePublicPostForMetadata("any-slug");
+    expect(connection).toHaveBeenCalled();
   });
 });
