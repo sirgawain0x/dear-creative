@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/db/client";
-import { getPublishedPostBySlug } from "@/lib/posts/published-posts";
+import { getPublishedPostRowBySlug } from "@/lib/posts/published-posts";
+import { isPaywallEnabled } from "@/lib/paywall/feature-flag";
+import { canReadFull } from "@/lib/paywall/can-read-full";
+import { resolvePostViewerFromCookies } from "@/lib/paywall/viewer-from-cookies";
+import { cookies } from "next/headers";
 
 export async function GET(
   _request: Request,
@@ -9,19 +13,40 @@ export async function GET(
   const { slug } = await props.params;
   const db = getDb();
 
-  const post = await getPublishedPostBySlug(db, slug);
+  const row = await getPublishedPostRowBySlug(db, slug);
 
-  if (!post) {
+  if (!row) {
     return NextResponse.json({ error: "Post not found" }, { status: 404 });
   }
 
-  const audioUrl = post.audioUrl?.trim();
+  if (isPaywallEnabled() && row.isGated) {
+    const cookieStore = await cookies();
+    const readCookie = (name: string) => cookieStore.get(name)?.value;
+    const viewer = await resolvePostViewerFromCookies(db, readCookie);
+    const entitled = await canReadFull(
+      db,
+      {
+        isGated: row.isGated,
+        authorId: row.authorId,
+        postId: row.postId,
+      },
+      viewer,
+    );
+    if (!entitled) {
+      return NextResponse.json(
+        { error: "Audio not available for this post" },
+        { status: 403 },
+      );
+    }
+  }
+
+  const audioUrl = row.audioUrl?.trim();
 
   if (audioUrl) {
     return NextResponse.json({
       ok: true,
       audioUrl,
-      voice: post.audioVoice?.trim() || "Puck",
+      voice: row.audioVoice?.trim() || "Puck",
       preGenerated: true,
       mimeType: "audio/mpeg",
     });

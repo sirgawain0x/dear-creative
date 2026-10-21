@@ -420,15 +420,12 @@ describe("generateVideoWithVeo (Gemini Omni default)", () => {
   });
 });
 
-describe("generateBannerWithGemini (Nano Banana fallback)", () => {
+describe("generateBannerWithGemini (Nano Banana primary)", () => {
   it("requests response_format.mime_type image/jpeg on the interactions API", async () => {
     vi.stubEnv("GEMINI_API_KEY", "test-key");
     const fakeJpeg = Buffer.from("jpeg").toString("base64");
 
     const mockFetch = vi.fn(async (url: string, init?: RequestInit) => {
-      if (url.includes("generateContent")) {
-        return new Response(JSON.stringify({ candidates: [] }), { status: 200 });
-      }
       if (url.includes("/interactions")) {
         const body = JSON.parse(String(init?.body));
         expect(body.response_format?.mime_type).toBe("image/jpeg");
@@ -456,16 +453,11 @@ describe("generateBannerWithGemini (Nano Banana fallback)", () => {
     );
   });
 
-  it("falls back to gemini-nano-banana-2.1 via Interactions when primary image fails", async () => {
+  it("generates banners with gemini-nano-banana-2.1 via Interactions", async () => {
     vi.stubEnv("GEMINI_API_KEY", "test-key");
     const fakeJpeg = Buffer.from("jpeg-bytes").toString("base64");
 
     const mockFetch = vi.fn(async (url: string, init?: RequestInit) => {
-      if (url.includes("generateContent")) {
-        return new Response(JSON.stringify({ candidates: [] }), {
-          status: 200,
-        });
-      }
       if (url.includes("/interactions")) {
         expect(String(url)).not.toContain("key=");
         expect(geminiHeaders(init).get("x-goog-api-key")).toBe("test-key");
@@ -517,9 +509,6 @@ describe("generateBannerWithGemini (Nano Banana fallback)", () => {
     const fakeJpeg = Buffer.from("jpeg-no-mime").toString("base64");
 
     const mockFetch = vi.fn(async (url: string) => {
-      if (url.includes("generateContent")) {
-        return new Response(JSON.stringify({ candidates: [] }), { status: 200 });
-      }
       if (url.includes("/interactions")) {
         return new Response(
           JSON.stringify({
@@ -546,15 +535,12 @@ describe("generateBannerWithGemini (Nano Banana fallback)", () => {
     );
   });
 
-  it("honors ADAM_IMAGEN_MODEL for the Nano Banana fallback", async () => {
+  it("honors ADAM_IMAGEN_MODEL for banner generation", async () => {
     vi.stubEnv("GEMINI_API_KEY", "test-key");
     vi.stubEnv("ADAM_IMAGEN_MODEL", "gemini-3.1-flash-image");
     const fakeJpeg = Buffer.from("jpeg").toString("base64");
 
     const mockFetch = vi.fn(async (url: string, init?: RequestInit) => {
-      if (url.includes("generateContent")) {
-        return new Response("{}", { status: 500 });
-      }
       if (url.includes("/interactions")) {
         const body = JSON.parse(String(init?.body));
         expect(body.model).toBe("gemini-3.1-flash-image");
@@ -584,11 +570,6 @@ describe("generateBannerWithGemini (Nano Banana fallback)", () => {
     vi.stubEnv("GEMINI_API_KEY", "test-key");
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const mockFetch = vi.fn(async (url: string) => {
-      if (url.includes("generateContent")) {
-        return new Response(JSON.stringify({ candidates: [] }), {
-          status: 200,
-        });
-      }
       if (url.includes("/interactions")) {
         return new Response(
           JSON.stringify({
