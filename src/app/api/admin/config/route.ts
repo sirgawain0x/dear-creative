@@ -1,6 +1,7 @@
 import { connection, NextResponse } from "next/server";
 import { getAdamApiToken } from "@/lib/adam/require-auth";
 import { getPrivyAppId } from "@/lib/privy/config";
+import { isEarnEnabled } from "@/lib/earn/feature-flag";
 import { isWalletEnabled } from "@/lib/wallet/feature-flag";
 import { isWalletSendEnabled } from "@/lib/wallet/send-feature-flag";
 
@@ -28,6 +29,7 @@ export async function GET() {
       adamTokenConfigured: Boolean(getAdamApiToken()),
       walletEnabled: isWalletEnabled(),
       walletSendEnabled: isWalletSendEnabled(),
+      earnEnabled: isEarnEnabled(),
     });
   } catch {
     return adminConfigResponse(
