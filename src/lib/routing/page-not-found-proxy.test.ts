@@ -82,6 +82,7 @@ describe("resolvePageNotFoundProxy", () => {
         source_guid text,
         source text,
         sponsor_id text,
+        split_address_override text,
         created_at integer NOT NULL DEFAULT (unixepoch() * 1000),
         updated_at integer NOT NULL DEFAULT (unixepoch() * 1000)
       );
