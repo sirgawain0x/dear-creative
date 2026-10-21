@@ -34,7 +34,7 @@ export async function requireAdminEarnApi(
 
   const auth = await requirePrivyAuth(request, { requireAdmin: true });
   if (!auth.ok) {
-    return { ok: false, response: earnFeatureDisabledResponse() };
+    return { ok: false, response: auth.response };
   }
 
   return { ok: true, ctx: { userId: auth.user.userId } };

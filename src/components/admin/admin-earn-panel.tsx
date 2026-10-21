@@ -136,12 +136,16 @@ export function AdminEarnPanel({
       }
 
       const vaultsRes = await fetch("/api/admin/earn/vaults", { headers });
-      if (vaultsRes.status === 404) {
-        setError("Earn feature is disabled.");
+      if (vaultsRes.status === 401) {
+        setError("Sign in with Privy");
         return;
       }
       if (vaultsRes.status === 403) {
         setError("Admin access required.");
+        return;
+      }
+      if (vaultsRes.status === 404) {
+        setError("Earn feature is disabled.");
         return;
       }
       if (!vaultsRes.ok) {
