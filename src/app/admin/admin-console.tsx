@@ -5,8 +5,11 @@ import { useCallback, useEffect, useState } from "react";
 import { AdminWalletPanel } from "@/components/admin/admin-wallet-panel";
 import { OracleIngestForm } from "@/components/admin/oracle-ingest-form";
 import { useAuthSession } from "@/components/providers/app-providers";
-import { AdminPayoutsCard } from "./admin-payouts-card";
 import { AdminLinkedInConnect } from "./admin-linkedin-connect";
+
+import { AdminPayoutsSection } from "./admin-payouts-section";
+
+export { ADMIN_PAYOUTS_PRIVY_SIGN_IN_NOTE } from "./admin-payouts-section";
 
 export const ADMIN_OWNER_TOOL_LINKS = [
   {
@@ -41,6 +44,8 @@ export function AdminConsole() {
     getAccessToken,
     privyConfigured,
     privyTimedOut,
+    authenticated,
+    hasStudioToken,
   } = useAuthSession();
 
   const [session, setSession] = useState<{
@@ -217,7 +222,12 @@ export function AdminConsole() {
           </div>
         </div>
       ) : null}
-      {isSignedIn ? <AdminPayoutsCard /> : null}
+      <AdminPayoutsSection
+        session={session}
+        isSignedIn={isSignedIn}
+        authenticated={authenticated}
+        hasStudioToken={hasStudioToken}
+      />
       {session?.isAdmin ? (
         <AdminLinkedInConnect
           isAdmin={session.isAdmin}

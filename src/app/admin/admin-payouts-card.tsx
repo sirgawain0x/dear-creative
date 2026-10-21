@@ -6,7 +6,15 @@ import { adminApiAuthorizationHeaders } from "@/lib/admin/admin-api-auth";
 import type { AdminPayoutsSnapshot } from "@/lib/admin/admin-payouts";
 import { AdminPayoutAddressRow } from "./admin-payout-address-row";
 
-export function AdminPayoutsCard() {
+type AdminPayoutsCardProps = {
+  fixtureSnapshot?: AdminPayoutsSnapshot;
+  skipFetch?: boolean;
+};
+
+export function AdminPayoutsCard({
+  fixtureSnapshot,
+  skipFetch = false,
+}: AdminPayoutsCardProps = {}) {
   const {
     ready,
     isSignedIn,
@@ -15,11 +23,16 @@ export function AdminPayoutsCard() {
     privyConfigured,
   } = useAuthSession();
 
-  const [data, setData] = useState<AdminPayoutsSnapshot | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<AdminPayoutsSnapshot | null>(
+    skipFetch ? (fixtureSnapshot ?? null) : null,
+  );
+  const [loading, setLoading] = useState(!skipFetch);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (skipFetch) {
+      return;
+    }
     if (!ready) {
       return;
     }
@@ -72,9 +85,16 @@ export function AdminPayoutsCard() {
     return () => {
       cancelled = true;
     };
-  }, [ready, isSignedIn, authenticated, getAccessToken, privyConfigured]);
+  }, [
+    ready,
+    isSignedIn,
+    authenticated,
+    getAccessToken,
+    privyConfigured,
+    skipFetch,
+  ]);
 
-  if (!isSignedIn) {
+  if (!skipFetch && !isSignedIn) {
     return null;
   }
 
