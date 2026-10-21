@@ -82,26 +82,12 @@ export async function acceptCowriterInvite(
     return { ok: false, reason: "invalid_token" };
   }
 
-  let writerId = membership.writerId;
-  if (!writerId) {
-    const walletFromInvite = invite.wallet;
-    const walletFromUser = normalizeIdentityList(identity.wallets, "wallet")[0];
-    const wallet = walletFromInvite ?? walletFromUser;
-    if (wallet) {
-      const emailLabel = invite.email ?? undefined;
-      writerId = await ensureAuthorForPayoutAddress(db, wallet, emailLabel);
-    }
-  }
-
   const now = new Date();
 
   return db.transaction(async (tx) => {
     const claimed = await tx
       .update(writerInvites)
-      .set({
-        status: "accepted",
-        acceptedWriterId: writerId,
-      })
+      .set({ status: "accepted" })
       .where(
         and(
           eq(writerInvites.id, invite.id),
@@ -114,6 +100,22 @@ export async function acceptCowriterInvite(
     if (claimed.length === 0) {
       return { ok: false as const, reason: "already_used" as const };
     }
+
+    let writerId = membership.writerId;
+    if (!writerId) {
+      const walletFromInvite = invite.wallet;
+      const walletFromUser = normalizeIdentityList(identity.wallets, "wallet")[0];
+      const wallet = walletFromInvite ?? walletFromUser;
+      if (wallet) {
+        const emailLabel = invite.email ?? undefined;
+        writerId = await ensureAuthorForPayoutAddress(tx, wallet, emailLabel);
+      }
+    }
+
+    await tx
+      .update(writerInvites)
+      .set({ acceptedWriterId: writerId })
+      .where(eq(writerInvites.id, invite.id));
 
     await tx
       .update(postWriters)

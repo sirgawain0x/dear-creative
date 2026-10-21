@@ -71,7 +71,7 @@ export function assertCanAddCowriter(
 }
 
 export async function findAuthorIdByPayoutAddress(
-  db: DearCreativeDb,
+  db: DearCreativeDbSession,
   wallet: string,
 ): Promise<string | null> {
   const normalized = normalizeWalletAddress(wallet);
@@ -84,7 +84,7 @@ export async function findAuthorIdByPayoutAddress(
 }
 
 export async function ensureAuthorForPayoutAddress(
-  db: DearCreativeDb,
+  db: DearCreativeDbSession,
   wallet: string,
   displayName?: string,
 ): Promise<string> {

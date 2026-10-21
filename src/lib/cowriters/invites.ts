@@ -48,44 +48,49 @@ export async function createCowriterInvite(
     throw new Error("Provide either email or wallet, not both");
   }
 
-  await ensureAuthorPostWriterRow(db, input.postId);
-
-  const active = await listActivePostWriters(db, input.postId);
-  assertCanAddCowriter(active);
-
   const token = generateInviteToken();
   const tokenHash = hashInviteToken(token);
   const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
   const inviteId = randomUUID();
   const postWriterId = randomUUID();
 
-  let matchedWriterId: string | null = null;
-  if (wallet) {
-    matchedWriterId = await findAuthorIdByPayoutAddress(db, wallet);
-  }
+  let matchedExistingWriter = false;
 
-  await db.insert(writerInvites).values({
-    id: inviteId,
-    postId: input.postId,
-    invitedBy: input.invitedBy,
-    email,
-    wallet,
-    tokenHash,
-    expiresAt,
-    status: "pending",
+  await db.transaction(async (tx) => {
+    await ensureAuthorPostWriterRow(tx, input.postId);
+
+    const active = await listActivePostWriters(tx, input.postId);
+    assertCanAddCowriter(active);
+
+    let writerIdForInvite: string | null = null;
+    if (wallet) {
+      writerIdForInvite = await findAuthorIdByPayoutAddress(tx, wallet);
+    }
+    matchedExistingWriter = Boolean(writerIdForInvite);
+
+    await tx.insert(writerInvites).values({
+      id: inviteId,
+      postId: input.postId,
+      invitedBy: input.invitedBy,
+      email,
+      wallet,
+      tokenHash,
+      expiresAt,
+      status: "pending",
+    });
+
+    await tx.insert(postWriters).values({
+      id: postWriterId,
+      postId: input.postId,
+      writerId: writerIdForInvite,
+      inviteId,
+      role: "cowriter",
+      shareBps: 0,
+      status: "pending",
+    });
+
+    await rebalancePostWriterShares(tx, input.postId);
   });
-
-  await db.insert(postWriters).values({
-    id: postWriterId,
-    postId: input.postId,
-    writerId: matchedWriterId,
-    inviteId,
-    role: "cowriter",
-    shareBps: 0,
-    status: "pending",
-  });
-
-  await rebalancePostWriterShares(db, input.postId);
 
   const base = input.inviteBaseUrl.replace(/\/$/, "");
   const inviteUrl = `${base}/cowriters/accept?token=${encodeURIComponent(token)}`;
@@ -95,7 +100,7 @@ export async function createCowriterInvite(
     postWriterId,
     inviteUrl,
     expiresAt,
-    matchedExistingWriter: Boolean(matchedWriterId),
+    matchedExistingWriter,
   };
 }
 
@@ -114,19 +119,22 @@ export async function removeCowriterMembership(
     return false;
   }
 
-  await db
-    .update(postWriters)
-    .set({ status: "removed" })
-    .where(eq(postWriters.id, postWriterId));
+  await db.transaction(async (tx) => {
+    await tx
+      .update(postWriters)
+      .set({ status: "removed" })
+      .where(eq(postWriters.id, postWriterId));
 
-  if (row.inviteId) {
-    await db
-      .update(writerInvites)
-      .set({ status: "revoked" })
-      .where(eq(writerInvites.id, row.inviteId));
-  }
+    if (row.inviteId) {
+      await tx
+        .update(writerInvites)
+        .set({ status: "revoked" })
+        .where(eq(writerInvites.id, row.inviteId));
+    }
 
-  await rebalancePostWriterShares(db, postId);
+    await rebalancePostWriterShares(tx, postId);
+  });
+
   return true;
 }
 

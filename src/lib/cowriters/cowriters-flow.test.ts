@@ -15,7 +15,7 @@ import { acceptCowriterInvite } from "./accept-invite";
 import {
   setCowritersEnabledForTests,
 } from "./feature-flag";
-import { createCowriterInvite } from "./invites";
+import { createCowriterInvite, removeCowriterMembership } from "./invites";
 import { hashInviteToken } from "./invite-token";
 import { assertCanAddCowriter, listActivePostWriters } from "./membership";
 import {
@@ -30,6 +30,12 @@ async function createMigratedDb() {
   const db = drizzle({ client, schema });
   await migrate(db, { migrationsFolder: "./drizzle" });
   return { client, db };
+}
+
+function sumActiveShareBps(
+  rows: Awaited<ReturnType<typeof listActivePostWriters>>,
+): number {
+  return rows.reduce((total, row) => total + row.shareBps, 0);
 }
 
 describe("co-writer invites and limits", () => {
@@ -236,6 +242,111 @@ describe("co-writer invites and limits", () => {
       wallets: [],
     });
     expect(result).toEqual({ ok: false, reason: "already_used" });
+
+    client.close();
+  });
+
+  it("does not create an author row when accept fails on a wallet invite", async () => {
+    const cowriterWallet = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const { client, db } = await createMigratedDb();
+    await db.insert(posts).values({
+      id: "p-wallet",
+      slug: "p-wallet",
+      title: "Wallet invite",
+      status: "draft",
+    });
+    await db.insert(postWriters).values({
+      id: "author:p-wallet",
+      postId: "p-wallet",
+      role: "author",
+      shareBps: 10_000,
+      status: "accepted",
+    });
+
+    const created = await createCowriterInvite(db, {
+      postId: "p-wallet",
+      invitedBy: "admin",
+      wallet: cowriterWallet,
+      inviteBaseUrl: "https://news.example.com",
+    });
+    const token = decodeURIComponent(created.inviteUrl.split("token=")[1]!);
+    const identity = { emails: [] as string[], wallets: [cowriterWallet] };
+
+    const authorCountBefore = (
+      await db.select({ id: authors.id }).from(authors)
+    ).length;
+
+    await db
+      .update(writerInvites)
+      .set({ expiresAt: new Date(Date.now() - 60_000) })
+      .where(eq(writerInvites.id, created.inviteId));
+
+    const expired = await acceptCowriterInvite(db, token, identity);
+    expect(expired).toEqual({ ok: false, reason: "already_used" });
+    expect((await db.select({ id: authors.id }).from(authors)).length).toBe(
+      authorCountBefore,
+    );
+
+    await db
+      .update(writerInvites)
+      .set({
+        expiresAt: new Date(Date.now() + 60_000),
+        status: "pending",
+      })
+      .where(eq(writerInvites.id, created.inviteId));
+
+    const first = await acceptCowriterInvite(db, token, identity);
+    expect(first.ok).toBe(true);
+    const afterFirst = (await db.select({ id: authors.id }).from(authors)).length;
+    expect(afterFirst).toBe(authorCountBefore + 1);
+
+    const second = await acceptCowriterInvite(db, token, identity);
+    expect(second).toEqual({ ok: false, reason: "already_used" });
+    expect((await db.select({ id: authors.id }).from(authors)).length).toBe(
+      afterFirst,
+    );
+
+    client.close();
+  });
+
+  it("keeps active writer shares summing to 10000 after invite, accept, and remove", async () => {
+    const { client, db } = await createMigratedDb();
+    await db.insert(posts).values({
+      id: "p-sum",
+      slug: "p-sum",
+      title: "Share sum",
+      status: "draft",
+    });
+    await db.insert(postWriters).values({
+      id: "author:p-sum",
+      postId: "p-sum",
+      role: "author",
+      shareBps: 10_000,
+      status: "accepted",
+    });
+
+    const created = await createCowriterInvite(db, {
+      postId: "p-sum",
+      invitedBy: "admin",
+      email: "split@example.com",
+      inviteBaseUrl: "https://news.example.com",
+    });
+    let rows = await listActivePostWriters(db, "p-sum");
+    expect(sumActiveShareBps(rows)).toBe(10_000);
+
+    const token = decodeURIComponent(created.inviteUrl.split("token=")[1]!);
+    await acceptCowriterInvite(db, token, {
+      emails: ["split@example.com"],
+      wallets: [],
+    });
+    rows = await listActivePostWriters(db, "p-sum");
+    expect(sumActiveShareBps(rows)).toBe(10_000);
+
+    await removeCowriterMembership(db, "p-sum", created.postWriterId);
+    rows = await listActivePostWriters(db, "p-sum");
+    expect(sumActiveShareBps(rows)).toBe(10_000);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.role).toBe("author");
 
     client.close();
   });
