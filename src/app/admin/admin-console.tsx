@@ -50,14 +50,20 @@ export function AdminConsole() {
   const [error, setError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [walletEnabled, setWalletEnabled] = useState(false);
+  const [walletSendEnabled, setWalletSendEnabled] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     void fetch("/api/admin/config")
       .then((r) => (r.ok ? r.json() : null))
       .then((json) => {
-        if (!cancelled && json && typeof json.walletEnabled === "boolean") {
-          setWalletEnabled(json.walletEnabled);
+        if (!cancelled && json) {
+          if (typeof json.walletEnabled === "boolean") {
+            setWalletEnabled(json.walletEnabled);
+          }
+          if (typeof json.walletSendEnabled === "boolean") {
+            setWalletSendEnabled(json.walletSendEnabled);
+          }
         }
       })
       .catch(() => {});
@@ -191,7 +197,11 @@ export function AdminConsole() {
       </div>
 
       {isSignedIn ? (
-        <AdminWalletPanel walletEnabled={walletEnabled} />
+        <AdminWalletPanel
+          walletEnabled={walletEnabled}
+          walletSendEnabled={walletSendEnabled}
+          isAdmin={Boolean(session?.isAdmin)}
+        />
       ) : null}
 
       {/* Owner Navigation Links (Gated) */}
