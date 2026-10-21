@@ -58,6 +58,17 @@ type AdminEarnPanelProps = {
 
 const DEFAULT_VAULT_ORDER = [EARN_VAULT_AAVE_ID, EARN_VAULT_MORPHO_ID];
 
+function parseEarnApiErrorBody(text: string): { error?: string } | null {
+  if (!text.trim()) {
+    return null;
+  }
+  try {
+    return JSON.parse(text) as { error?: string };
+  } catch {
+    return null;
+  }
+}
+
 function providerLabel(provider: PrivyEarnVaultDetails["provider"]): string {
   switch (provider) {
     case "aave":
@@ -168,15 +179,30 @@ export function AdminEarnPanel({
       }
 
       const vaultsRes = await fetch("/api/admin/earn/vaults", { headers });
-      if (vaultsRes.status === 404) {
+      const vaultsBodyText = await vaultsRes.text();
+      const vaultsErrorBody = parseEarnApiErrorBody(vaultsBodyText);
+
+      if (vaultsRes.status === 401) {
+        setError("Sign in with Privy");
+        return;
+      }
+      if (vaultsRes.status === 403) {
+        setError("Admin access required.");
+        return;
+      }
+      if (vaultsRes.status === 404 && !vaultsErrorBody) {
         setError("Earn feature is disabled.");
         return;
       }
       if (!vaultsRes.ok) {
-        setError("Could not load vault details.");
+        const code =
+          typeof vaultsErrorBody?.error === "string"
+            ? vaultsErrorBody.error
+            : null;
+        setError(code ?? "Could not load vault details.");
         return;
       }
-      const vaultsJson = (await vaultsRes.json()) as {
+      const vaultsJson = JSON.parse(vaultsBodyText) as {
         vaults: PrivyEarnVaultDetails[];
       };
       setVaults(vaultsJson.vaults);
