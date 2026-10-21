@@ -1,0 +1,7 @@
+{
+  "viewports": [
+    "390x900",
+    "1440x900"
+  ],
+  "note": "Static fixture markup; verify no horizontal overflow visually."
+}

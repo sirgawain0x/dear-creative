@@ -267,7 +267,7 @@ export function buildX402PaymentRequirements(input: {
         mimeType: "application/json",
         payTo,
         maxTimeoutSeconds: 300,
-        asset: "USDC",
+        asset: getX402UsdcAddress(network),
       },
     ],
   };
