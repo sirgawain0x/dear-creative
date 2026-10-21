@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Script from "next/script";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import type { Address } from "viem";
 import { DispatchAudioPlayer } from "@/components/audio/dispatch-audio-player";
@@ -199,8 +200,8 @@ export async function generateMetadata({ params }: PageProps) {
   return buildPostPageMetadata(post);
 }
 
-export default async function PostPage(props: PageProps) {
-  const { slug } = await props.params;
+async function PostPageReader({ params }: PageProps) {
+  const { slug } = await params;
   const view = await resolveReaderPostView(slug);
   if (!view) {
     notFound();
@@ -212,5 +213,22 @@ export default async function PostPage(props: PageProps) {
       payToAddress={payToAddress}
       showPaywall={view.showPaywall}
     />
+  );
+}
+
+export default function PostPage(props: PageProps) {
+  return (
+    <Suspense
+      fallback={
+        <p
+          className="mx-auto max-w-3xl px-6 py-16 text-sm text-zinc-500"
+          aria-busy="true"
+        >
+          Loading dispatch…
+        </p>
+      }
+    >
+      <PostPageReader params={props.params} />
+    </Suspense>
   );
 }

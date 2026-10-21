@@ -71,14 +71,14 @@ export async function resolveReaderPostView(
   slug: string,
   options?: { db?: DearCreativeDb },
 ): Promise<ReaderPostView | null> {
+  if (isPaywallEnabled()) {
+    await connection();
+  }
+
   const db = options?.db ?? getDb();
   const row = await loadPublishedPostWithPaywallFields(db, slug);
   if (!row) {
     return null;
-  }
-
-  if (isPaywallEnabled() && row.isGated) {
-    await connection();
   }
 
   if (!isPaywallEnabled()) {
@@ -114,13 +114,16 @@ export async function resolvePublicPostForMetadata(
   slug: string,
   options?: { db?: DearCreativeDb },
 ): Promise<PublishedPostDetail | null> {
+  if (isPaywallEnabled()) {
+    await connection();
+  }
+
   const db = options?.db ?? getDb();
   const row = await loadPublishedPostWithPaywallFields(db, slug);
   if (!row) {
     return null;
   }
   if (isPaywallEnabled() && row.isGated) {
-    await connection();
     return applyReaderBodyToPost(row, false);
   }
   return applyReaderBodyToPost(row, true);
