@@ -15,14 +15,17 @@ export function isNextProductionBuildPhase(): boolean {
   return phase === "phase-production-build" || phase === "phase-export";
 }
 
-/** Stable as-of during prerender so published lookups do not call `new Date()`. */
-export function buildStablePublishedAsOf(): Date {
-  return new Date("2099-12-31T23:59:59.999Z");
+/**
+ * Fail-closed as-of during production build: no post (including scheduled future
+ * publishes) can prerender as published. Uses epoch instead of `new Date()`.
+ */
+export function buildFailClosedPublishedAsOf(): Date {
+  return new Date(0);
 }
 
 async function publishedAsOfForLookup(): Promise<Date> {
   if (isNextProductionBuildPhase()) {
-    return buildStablePublishedAsOf();
+    return buildFailClosedPublishedAsOf();
   }
   await connection();
   return new Date();

@@ -38,7 +38,7 @@ import { connection } from "next/server";
 import { getDb } from "@/db/client";
 import { getPublishedPostBySlug } from "@/lib/posts/published-posts";
 import {
-  buildStablePublishedAsOf,
+  buildFailClosedPublishedAsOf,
   isNextProductionBuildPhase,
   rejectMissingPublishedPostSlug,
   requirePublishedPostBySlug,
@@ -68,7 +68,7 @@ describe("rejectMissingPublishedPostSlug", () => {
     delete process.env.NEXT_PHASE;
   });
 
-  it("uses stable as-of during production build without connection", async () => {
+  it("uses fail-closed epoch as-of during production build without connection", async () => {
     process.env.NEXT_PHASE = "phase-production-build";
     vi.mocked(getDb).mockReturnValue({} as ReturnType<typeof getDb>);
     vi.mocked(getPublishedPostBySlug).mockResolvedValue(null);
@@ -79,7 +79,7 @@ describe("rejectMissingPublishedPostSlug", () => {
     expect(getPublishedPostBySlug).toHaveBeenCalledWith(
       expect.anything(),
       "bogus-slug",
-      { asOf: buildStablePublishedAsOf() },
+      { asOf: buildFailClosedPublishedAsOf() },
     );
   });
 
@@ -93,7 +93,7 @@ describe("rejectMissingPublishedPostSlug", () => {
     const options = vi.mocked(getPublishedPostBySlug).mock.calls[0]?.[2];
     expect(options?.asOf).toBeInstanceOf(Date);
     expect(options?.asOf?.getTime()).not.toBe(
-      buildStablePublishedAsOf().getTime(),
+      buildFailClosedPublishedAsOf().getTime(),
     );
   });
 });
