@@ -62,7 +62,7 @@ describe("AdminLinkedInConnect", () => {
 
   it("refetches status after linkedin=connected query param", async () => {
     searchParams.set("linkedin", "connected");
-    const fetchMock = vi.fn(async () => ({
+    const fetchMock = vi.fn(async (_input: RequestInfo) => ({
       ok: true,
       json: async () => ({ connected: true, memberName: "Ada Lovelace" }),
     }));
