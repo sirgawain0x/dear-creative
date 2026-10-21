@@ -4,7 +4,7 @@ import type { DearCreativeDb } from "@/db/client";
 import { getDb } from "@/db/client";
 import type { PublishedPostDetail } from "@/lib/posts/published-posts";
 import { getPublishedPostRowBySlug } from "@/lib/posts/published-posts";
-import { resolveCanReadFullPost } from "./can-read-full";
+import { canReadFull } from "./can-read-full";
 import { isPaywallEnabled } from "./feature-flag";
 import {
   resolveFullReaderBodyHtml,
@@ -92,7 +92,7 @@ export async function resolveReaderPostView(
   const cookieStore = await cookies();
   const readCookie = (name: string) => cookieStore.get(name)?.value;
   const viewer = await resolvePostViewerFromCookies(db, readCookie);
-  const entitled = await resolveCanReadFullPost(
+  const entitled = await canReadFull(
     db,
     {
       isGated: row.isGated,

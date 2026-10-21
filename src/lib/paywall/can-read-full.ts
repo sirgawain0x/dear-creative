@@ -9,25 +9,6 @@ export type PaywallPostAccessInput = {
   postId: string;
 };
 
-export function canReadFull(
-  post: PaywallPostAccessInput,
-  viewer: PostViewer | null,
-): boolean {
-  if (!post.isGated) {
-    return true;
-  }
-  if (!viewer) {
-    return false;
-  }
-  if (viewer.isAdmin) {
-    return true;
-  }
-  if (post.authorId && viewer.writerId && post.authorId === viewer.writerId) {
-    return true;
-  }
-  return false;
-}
-
 export async function resolveSubscriptionAccess(
   db: DearCreativeDb,
   input: {
@@ -79,18 +60,29 @@ export async function resolveUnlockAccess(
   return Boolean(row);
 }
 
-export async function resolveCanReadFullPost(
+/**
+ * Whether the viewer may read gated_content for this post.
+ * Includes single-post pay-per-post unlock rows on `unlocks`.
+ */
+export async function canReadFull(
   db: DearCreativeDb,
   post: PaywallPostAccessInput,
   viewer: PostViewer | null,
   options?: { asOf?: Date },
 ): Promise<boolean> {
-  if (canReadFull(post, viewer)) {
+  if (!post.isGated) {
     return true;
   }
-  if (!viewer || !post.isGated) {
+  if (!viewer) {
     return false;
   }
+  if (viewer.isAdmin) {
+    return true;
+  }
+  if (post.authorId && viewer.writerId && post.authorId === viewer.writerId) {
+    return true;
+  }
+
   const writerId = post.authorId?.trim() ?? null;
   const [hasSubscription, hasUnlock] = await Promise.all([
     resolveSubscriptionAccess(db, {
@@ -104,4 +96,14 @@ export async function resolveCanReadFullPost(
     }),
   ]);
   return hasSubscription || hasUnlock;
+}
+
+/** @deprecated Use canReadFull */
+export async function resolveCanReadFullPost(
+  db: DearCreativeDb,
+  post: PaywallPostAccessInput,
+  viewer: PostViewer | null,
+  options?: { asOf?: Date },
+): Promise<boolean> {
+  return canReadFull(db, post, viewer, options);
 }

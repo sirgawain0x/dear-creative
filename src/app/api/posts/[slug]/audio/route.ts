@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/db/client";
 import { getPublishedPostRowBySlug } from "@/lib/posts/published-posts";
 import { isPaywallEnabled } from "@/lib/paywall/feature-flag";
-import { resolveCanReadFullPost } from "@/lib/paywall/can-read-full";
+import { canReadFull } from "@/lib/paywall/can-read-full";
 import { resolvePostViewerFromCookies } from "@/lib/paywall/viewer-from-cookies";
 import { cookies } from "next/headers";
 
@@ -23,7 +23,7 @@ export async function GET(
     const cookieStore = await cookies();
     const readCookie = (name: string) => cookieStore.get(name)?.value;
     const viewer = await resolvePostViewerFromCookies(db, readCookie);
-    const entitled = await resolveCanReadFullPost(
+    const entitled = await canReadFull(
       db,
       {
         isGated: row.isGated,
