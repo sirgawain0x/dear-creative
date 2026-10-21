@@ -1,6 +1,10 @@
 import { getPrivyAppId, getPrivyAppSecret } from "@/lib/privy/config";
 import { PrivyEarnConfigError, PrivyEarnRequestError } from "./privy-earn";
-import { privyWalletActionUrl } from "./privy-earn-urls";
+import {
+  privyEarnDepositUrl,
+  privyEarnWithdrawUrl,
+  privyWalletActionUrl,
+} from "./privy-earn-urls";
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
@@ -84,7 +88,7 @@ export async function postPrivyEarnDeposit(params: {
   authorizationSignature: string;
   idempotencyKey: string;
 }): Promise<PrivyEarnWalletAction> {
-  const url = `https://api.privy.io/api/v1/wallets/${encodeURIComponent(params.walletId)}/earn/ethereum/deposit`;
+  const url = privyEarnDepositUrl(params.walletId);
   return privyWalletApiFetch<PrivyEarnWalletAction>(url, {
     method: "POST",
     body: params.body,
@@ -99,7 +103,7 @@ export async function postPrivyEarnWithdraw(params: {
   authorizationSignature: string;
   idempotencyKey: string;
 }): Promise<PrivyEarnWalletAction> {
-  const url = `https://api.privy.io/api/v1/wallets/${encodeURIComponent(params.walletId)}/earn/ethereum/withdraw`;
+  const url = privyEarnWithdrawUrl(params.walletId);
   return privyWalletApiFetch<PrivyEarnWalletAction>(url, {
     method: "POST",
     body: params.body,
