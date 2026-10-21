@@ -110,4 +110,78 @@ describe("oracle-resolver", () => {
     expect(pred2?.status).toBe("pending");
     expect(pred2?.resolvedOutcome).toBeNull();
   });
+
+  it("does not set socialBroadcastAt when X was skipped for x_live_off and Mastodon skipped", async () => {
+    const db = await createTestDb();
+
+    await db.insert(predictions).values({
+      id: "pred-x-off",
+      questionId:
+        "0x3333333333333333333333333333333333333333333333333333333333333333",
+      articleSlug: "x-live-off",
+      questionText: "Will this skip social broadcast timestamp?",
+      bondToken: "ETH",
+      minBondWei: "10000000000000000",
+      txHash: "0xhash3",
+      status: "pending",
+    });
+
+    const mockReader: OracleContractReader = {
+      isFinalized: async () => true,
+      resultFor: async () =>
+        "0x0000000000000000000000000000000000000000000000000000000000000001",
+    };
+
+    const mockBroadcaster = vi.fn().mockResolvedValue({
+      x: "skipped",
+      xSkipReason: "x_live_off",
+      mastodon: "skipped",
+      mastodonSkipReason: "unconfigured",
+    });
+
+    await resolvePendingPredictions(db, {
+      reader: mockReader,
+      broadcaster: mockBroadcaster,
+    });
+
+    const [row] = await db.select().from(predictions);
+    expect(row?.status).toBe("finalized");
+    expect(row?.socialBroadcastAt).toBeNull();
+  });
+
+  it("sets socialBroadcastAt when at least one social channel posted", async () => {
+    const db = await createTestDb();
+
+    await db.insert(predictions).values({
+      id: "pred-masto-only",
+      questionId:
+        "0x4444444444444444444444444444444444444444444444444444444444444444",
+      articleSlug: "masto-only",
+      questionText: "Mastodon only?",
+      bondToken: "ETH",
+      minBondWei: "10000000000000000",
+      txHash: "0xhash4",
+      status: "pending",
+    });
+
+    const mockReader: OracleContractReader = {
+      isFinalized: async () => true,
+      resultFor: async () =>
+        "0x0000000000000000000000000000000000000000000000000000000000000001",
+    };
+
+    const mockBroadcaster = vi.fn().mockResolvedValue({
+      x: "skipped",
+      xSkipReason: "x_live_off",
+      mastodon: "posted",
+    });
+
+    await resolvePendingPredictions(db, {
+      reader: mockReader,
+      broadcaster: mockBroadcaster,
+    });
+
+    const [row] = await db.select().from(predictions);
+    expect(row?.socialBroadcastAt).not.toBeNull();
+  });
 });

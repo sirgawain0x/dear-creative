@@ -15,6 +15,7 @@ import {
 import {
   broadcastOracleResolution,
   type BroadcastOracleResolutionResult,
+  oracleSocialChannelsPublished,
 } from "@/lib/social";
 import { isOracleEnabled } from "@/lib/predictions/feature-flag";
 import {
@@ -158,6 +159,7 @@ export async function resolvePendingPredictions(
 
       const socialResult = await broadcaster(postMessage, item.txHash);
       const now = Date.now();
+      const socialPublished = oracleSocialChannelsPublished(socialResult);
 
       await db
         .update(predictions)
@@ -166,7 +168,7 @@ export async function resolvePendingPredictions(
           rawResult,
           resolvedOutcome: outcomeText,
           resolvedAt: new Date(now),
-          socialBroadcastAt: new Date(now),
+          socialBroadcastAt: socialPublished ? new Date(now) : null,
           updatedAt: new Date(now),
         })
         .where(eq(predictions.id, item.id));
