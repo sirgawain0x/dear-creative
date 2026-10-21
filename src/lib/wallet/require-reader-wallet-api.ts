@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requirePrivyAuth } from "@/lib/privy/require-auth";
 import {
   assertReaderWalletChainId,
-  READER_WALLET_CHAIN_ID,
+  resolveReaderWalletGateChainId,
 } from "./reader-wallet-chain";
 import { isReaderWalletEnabled } from "./reader-wallet-feature-flag";
 import {
@@ -10,7 +10,9 @@ import {
   type ReaderEmbeddedWallet,
 } from "./reader-embedded-wallet";
 
-export type ReaderWalletApiContext = ReaderEmbeddedWallet;
+export type ReaderWalletApiContext = ReaderEmbeddedWallet & {
+  chainId: ReturnType<typeof resolveReaderWalletGateChainId>;
+};
 
 export type ReaderWalletApiGateResult =
   | { ok: true; ctx: ReaderWalletApiContext }
@@ -36,6 +38,8 @@ export async function requireReaderWalletApi(
     request.headers.get("authorization"),
   );
   if (!wallet) {
+    const chainId = resolveReaderWalletGateChainId();
+    assertReaderWalletChainId(chainId);
     return {
       ok: false,
       response: NextResponse.json(
@@ -43,7 +47,7 @@ export async function requireReaderWalletApi(
           configured: false,
           reason: "no_embedded_wallet",
           network: "base",
-          chainId: READER_WALLET_CHAIN_ID,
+          chainId,
         },
         { status: 404 },
       ),
@@ -57,5 +61,7 @@ export async function requireReaderWalletApi(
     };
   }
 
-  return { ok: true, ctx: wallet };
+  const chainId = resolveReaderWalletGateChainId();
+  assertReaderWalletChainId(chainId);
+  return { ok: true, ctx: { ...wallet, chainId } };
 }

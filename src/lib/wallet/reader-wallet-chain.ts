@@ -6,3 +6,8 @@ export function assertReaderWalletChainId(chainId: number): void {
     throw new Error("reader_wallet_wrong_chain");
   }
 }
+
+/** Chain id attached to reader wallet gate responses (Base mainnet only). */
+export function resolveReaderWalletGateChainId(): typeof READER_WALLET_CHAIN_ID {
+  return READER_WALLET_CHAIN_ID;
+}

@@ -37,6 +37,20 @@ describe("requireReaderWalletApi", () => {
     vi.clearAllMocks();
   });
 
+  it("returns chainId 8453 on successful gate", async () => {
+    const result = await requireReaderWalletApi(
+      new Request("http://localhost/api/wallet/me", {
+        headers: { Authorization: "Bearer token-a" },
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.ctx.chainId).toBe(8453);
+      expect(result.ctx.address).toBe(ADDR_A);
+    }
+  });
+
   it("returns 401 when session user id does not match resolved wallet user id", async () => {
     vi.mocked(resolveReaderEmbeddedWalletFromAuthorization).mockResolvedValue({
       privyUserId: USER_B,
