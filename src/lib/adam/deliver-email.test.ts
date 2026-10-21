@@ -835,11 +835,11 @@ describe("sendNewsletterEmail", () => {
     expect(email.html).not.toContain("Paid secret");
     expect(email.html).toContain("Read the rest");
     expect(email.html).toContain("/posts/newsletter-");
+    expect(email.html).toContain('aria-hidden="true"');
+    expect(email.previewText).toBeUndefined();
     expect(email.text).toContain("Free only");
     expect(email.text).not.toContain("Paid secret");
     expect(email.text).toMatch(/Read the rest: https:\/\//);
-    expect(email.previewText).toContain("Free only");
-    expect(email.previewText).not.toContain("Paid secret");
   });
 
   it("aborts the provider call when the timeout elapses", async () => {

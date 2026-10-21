@@ -4,6 +4,7 @@ import { resolvePostPublicUrl } from "@/lib/posts/post-public-url";
 import { stripMarkdown } from "@/lib/posts/post-spotlight-teaser";
 import { stripHtmlTags } from "@/lib/posts/reading-time";
 import { isPaywallEnabled } from "@/lib/paywall/feature-flag";
+import { prependHiddenEmailPreheader } from "./newsletter-email-preheader";
 
 export type NewsletterPaywallPostFields = {
   slug: string;
@@ -20,7 +21,6 @@ export type BuildNewsletterEmailContentInput = NewsletterPaywallPostFields & {
 export type NewsletterEmailContent = {
   html: string;
   text?: string;
-  previewText?: string;
 };
 
 const READ_THE_REST_LABEL = "Read the rest";
@@ -54,21 +54,22 @@ export function buildNewsletterEmailContent(
   });
   const freeHtml = ensureArticleHtml(input.freeContent?.trim() || "");
   const readMoreHtml = `<p><a href="${escapeHtmlAttribute(postUrl)}">${READ_THE_REST_LABEL}</a></p>`;
-  const html = freeHtml ? `${freeHtml}\n${readMoreHtml}` : readMoreHtml;
+  const bodyHtml = freeHtml ? `${freeHtml}\n${readMoreHtml}` : readMoreHtml;
 
   const freePlain = plainTextFromFreeContent(input.freeContent);
   const text = freePlain
     ? `${freePlain}\n\n${READ_THE_REST_LABEL}: ${postUrl}`
     : `${READ_THE_REST_LABEL}: ${postUrl}`;
 
-  const previewText = buildPublicPostTeaser({
+  const inboxPreview = buildPublicPostTeaser({
     excerpt: null,
     publicPreview: input.freeContent,
-  });
+  })?.trim();
+
+  const html = prependHiddenEmailPreheader(bodyHtml, inboxPreview);
 
   return {
     html,
     text,
-    previewText: previewText?.trim() || undefined,
   };
 }

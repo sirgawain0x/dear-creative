@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Script from "next/script";
+import { notFound } from "next/navigation";
 import type { Address } from "viem";
 import { DispatchAudioPlayer } from "@/components/audio/dispatch-audio-player";
 import { OwnerEditPostButton } from "@/components/auth/owner-edit-controls";
@@ -8,6 +9,7 @@ import { PredictionCard } from "@/components/predictions/prediction-card";
 import { PostFeedbackWidget } from "@/components/posts/post-feedback-widget";
 import { PostKeyTakeaways } from "@/components/posts/post-key-takeaways";
 import { AuthorByline } from "@/components/posts/author-byline";
+import { PostPaywallCard } from "@/components/posts/post-paywall-card";
 import { PostShareButton } from "@/components/posts/post-share-button";
 import { splitArticleAtParagraph } from "@/lib/posts/post-takeaway-inline";
 import { publishedPostBodyForDisplay } from "@/lib/posts/published-post-render";
@@ -19,7 +21,10 @@ import {
   resolvePostTipPayToAddress,
   shouldRenderPostTipCard,
 } from "@/lib/posts/post-tip-payee";
-import { requirePublishedPostBySlug } from "@/lib/posts/require-published-post";
+import {
+  resolvePublicPostForMetadata,
+  resolveReaderPostView,
+} from "@/lib/paywall/reader-post";
 import { getDb } from "@/db/client";
 import {
   classifyArticleTopic,
@@ -35,9 +40,11 @@ type PageProps = {
 function PostArticle({
   post,
   payToAddress,
+  showPaywall,
 }: {
   post: PublishedPostDetail;
   payToAddress: Address | null;
+  showPaywall: boolean;
 }) {
   const bodyHtml = publishedPostBodyForDisplay(post.bodyHtml);
   const metrics = calculateReadingTime(post.bodyHtml ?? post.excerpt);
@@ -58,11 +65,9 @@ function PostArticle({
         >
           ← All Posts
         </Link>
-        {/* Owner-only edit post button */}
         <OwnerEditPostButton slug={post.slug} label="✎ Edit Post" />
       </div>
 
-      {/* Hero Banner (matches the thumbnail on posts list) */}
       <div className="mb-8 overflow-hidden rounded-2xl border border-zinc-200/80 bg-zinc-100 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <img
           src={post.coverImage}
@@ -119,18 +124,18 @@ function PostArticle({
         ) : null}
       </header>
 
-      {/* Dispatch Audio Player (Listen Mode) */}
-      <DispatchAudioPlayer
-        slug={post.slug}
-        title={post.title}
-        excerpt={post.excerpt}
-        bodyHtml={bodyHtml}
-        listenMinutes={metrics.listenMinutes}
-        audioUrl={post.audioUrl}
-        audioVoice={post.audioVoice}
-      />
+      {!showPaywall ? (
+        <DispatchAudioPlayer
+          slug={post.slug}
+          title={post.title}
+          excerpt={post.excerpt}
+          bodyHtml={bodyHtml}
+          listenMinutes={metrics.listenMinutes}
+          audioUrl={post.audioUrl}
+          audioVoice={post.audioVoice}
+        />
+      ) : null}
 
-      {/* Article Content with Inline Key Takeaway Callout */}
       {bodyHtml ? (
         restHtml ? (
           <>
@@ -139,7 +144,6 @@ function PostArticle({
               dangerouslySetInnerHTML={{ __html: introHtml }}
             />
 
-            {/* Inline Key Takeaway Callout after Paragraph 2 */}
             <PostKeyTakeaways
               takeaway={post.excerpt}
               title={post.title}
@@ -164,6 +168,8 @@ function PostArticle({
         )
       ) : null}
 
+      {showPaywall ? <PostPaywallCard title={post.title} /> : null}
+
       {shouldRenderPostTipCard(payToAddress) ? (
         <MicroTippingWidget
           slug={post.slug}
@@ -172,13 +178,10 @@ function PostArticle({
         />
       ) : null}
 
-      {/* Oracle Verification: reality.eth Prediction Card */}
       <PredictionCard slug={post.slug} />
 
-      {/* Agent Feedback Loop: 2-Button Helpful/Skip Reader Sentiment */}
       <PostFeedbackWidget slug={post.slug} />
 
-      {/* Official X / Twitter Widget Script for dynamic embed hydration */}
       <Script
         src="https://platform.twitter.com/widgets.js"
         strategy="lazyOnload"
@@ -189,13 +192,25 @@ function PostArticle({
 
 export async function generateMetadata({ params }: PageProps) {
   const { slug } = await params;
-  const post = await requirePublishedPostBySlug(slug);
+  const post = await resolvePublicPostForMetadata(slug);
+  if (!post) {
+    return {};
+  }
   return buildPostPageMetadata(post);
 }
 
 export default async function PostPage(props: PageProps) {
   const { slug } = await props.params;
-  const post = await requirePublishedPostBySlug(slug);
+  const view = await resolveReaderPostView(slug);
+  if (!view) {
+    notFound();
+  }
   const payToAddress = await resolvePostTipPayToAddress(getDb(), slug);
-  return <PostArticle post={post} payToAddress={payToAddress} />;
+  return (
+    <PostArticle
+      post={view.post}
+      payToAddress={payToAddress}
+      showPaywall={view.showPaywall}
+    />
+  );
 }

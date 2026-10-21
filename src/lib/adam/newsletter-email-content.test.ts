@@ -51,7 +51,10 @@ describe("buildNewsletterEmailContent", () => {
       "Read the rest: https://dear.example.test/posts/gated-issue",
     );
 
-    expect(result.previewText).toContain("Free section only");
-    expect(result.previewText).not.toContain("Secret paid section");
+    expect(result.html).toContain('aria-hidden="true"');
+    expect(result.html).toContain("display:none");
+    expect(result.html).toContain("Free section only");
+    expect(result.html).not.toContain("Secret paid section");
+    expect(result.text).not.toContain("Secret paid section");
   });
 });

@@ -8,16 +8,18 @@ describe("isPaywallEnabled", () => {
   });
 
   it("defaults to false when unset", () => {
-    delete process.env.PAYWALL_ENABLED;
+    vi.stubEnv("PAYWALL_ENABLED", "");
     expect(isPaywallEnabled()).toBe(false);
   });
 
-  it("is false for truthy values other than the literal true", () => {
+  it("is false for truthy non-true values", () => {
     vi.stubEnv("PAYWALL_ENABLED", "TRUE");
     expect(isPaywallEnabled()).toBe(false);
+    vi.stubEnv("PAYWALL_ENABLED", "1");
+    expect(isPaywallEnabled()).toBe(false);
   });
 
-  it("is true only when PAYWALL_ENABLED is exactly true", () => {
+  it("is true only when value is exactly true", () => {
     vi.stubEnv("PAYWALL_ENABLED", "true");
     expect(isPaywallEnabled()).toBe(true);
   });

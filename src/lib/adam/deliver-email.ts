@@ -86,7 +86,6 @@ async function sendNewsletterChunks(
     subject: string;
     html: string;
     text?: string;
-    previewText?: string;
     providerTimeoutMs?: number;
     clock: Clock;
   },
@@ -195,7 +194,6 @@ async function sendNewsletterChunks(
               subject: input.subject,
               html: input.html,
               text: input.text,
-              previewText: input.previewText,
               recipients,
             },
             {
@@ -291,7 +289,6 @@ export async function sendNewsletterEmail(
   });
   const html = emailContent.html;
   const text = emailContent.text;
-  const previewText = emailContent.previewText;
 
   const dryRun = Boolean(input.dryRun);
   if (dryRun) {
@@ -332,7 +329,6 @@ export async function sendNewsletterEmail(
     subject,
     html,
     text,
-    previewText,
     providerTimeoutMs: input.providerTimeoutMs,
     clock,
   });
