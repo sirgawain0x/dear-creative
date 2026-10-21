@@ -1,31 +1,33 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+const notFoundMock = vi.hoisted(() => vi.fn(() => undefined));
 const isReaderWalletFixturePageEnabledMock = vi.hoisted(() => vi.fn());
+
+vi.mock("next/navigation", () => ({
+  notFound: notFoundMock,
+}));
 
 vi.mock("@/lib/wallet/reader-wallet-fixture-page", () => ({
   isReaderWalletFixturePageEnabled: isReaderWalletFixturePageEnabledMock,
 }));
 
-vi.mock("next/navigation", () => ({
-  notFound: vi.fn(() => {
-    throw new Error("NOT_FOUND");
-  }),
-}));
-
 describe("/reader/wallet-fixture page gate", () => {
-  beforeEach(() => {
+  afterEach(() => {
+    notFoundMock.mockClear();
     isReaderWalletFixturePageEnabledMock.mockReset();
   });
 
-  it("returns 404 when fixture gate is off", async () => {
+  it("calls notFound when fixture gate is off", async () => {
     isReaderWalletFixturePageEnabledMock.mockReturnValue(false);
     const { default: Page } = await import("./page");
-    expect(() => Page({})).toThrow("NOT_FOUND");
+    Page();
+    expect(notFoundMock).toHaveBeenCalledTimes(1);
   });
 
-  it("renders when fixture gate is on", async () => {
+  it("does not call notFound when fixture gate is on", async () => {
     isReaderWalletFixturePageEnabledMock.mockReturnValue(true);
     const { default: Page } = await import("./page");
-    expect(Page({})).toBeTruthy();
+    Page();
+    expect(notFoundMock).not.toHaveBeenCalled();
   });
 });
