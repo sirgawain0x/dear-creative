@@ -2234,6 +2234,15 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                 ? "Invalid Token / Admin Required"
                 : "Verifying session…"}
           </span>
+          {adminStatus.isAdmin ? (
+            <Link
+              href="/admin"
+              data-testid="studio-admin-console-link"
+              className="rounded-full border border-zinc-300 bg-zinc-900 px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs transition hover:bg-zinc-800 dark:border-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            >
+              Admin Console
+            </Link>
+          ) : null}
           <button
             type="button"
             onClick={() => void loadStudioData()}

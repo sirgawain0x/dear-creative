@@ -60,4 +60,16 @@ describe("SiteHeader auth control", () => {
 
     expect(screen.getByRole("button", { name: "Sign Out" })).toBeInTheDocument();
   });
+
+  it("does not render Admin or Admin Console links in the header when signed in", async () => {
+    mockIsSignedIn = true;
+    const { SiteHeader } = await import("./site-header");
+    render(<SiteHeader />);
+
+    expect(screen.queryByRole("link", { name: "Admin" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Admin Console" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /admin/i })).not.toBeInTheDocument();
+  });
 });

@@ -89,28 +89,15 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
 
             if (isAuthAction && isSignedIn) {
               return (
-                <div key={link.href} className="flex items-center gap-1">
-                  <Link
-                    href="/admin"
-                    aria-current={active ? "page" : undefined}
-                    className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                      active
-                        ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                        : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-100"
-                    }`}
-                    title="Admin Console"
-                  >
-                    Admin
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => void signOut()}
-                    className="rounded-full border border-zinc-200 px-3 py-1 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 hover:text-red-600 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-red-400"
-                    title="Sign Out"
-                  >
-                    Sign Out
-                  </button>
-                </div>
+                <button
+                  key={`${link.href}-sign-out`}
+                  type="button"
+                  onClick={() => void signOut()}
+                  className="rounded-full border border-zinc-200 px-3 py-1 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 hover:text-red-600 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-red-400"
+                  title="Sign Out"
+                >
+                  Sign Out
+                </button>
               );
             }
 
@@ -195,19 +182,7 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
 
               if (isAuthAction && isSignedIn) {
                 return (
-                  <li key={link.href} className="flex flex-col gap-1 pt-1">
-                    <Link
-                      href="/admin"
-                      aria-current={active ? "page" : undefined}
-                      onClick={() => setMobileMenuOpen(false)}
-                      className={`block rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                        active
-                          ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                          : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900"
-                      }`}
-                    >
-                      Admin Console
-                    </Link>
+                  <li key={`${link.href}-sign-out`}>
                     <button
                       type="button"
                       onClick={() => {
