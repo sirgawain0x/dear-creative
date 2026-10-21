@@ -43,7 +43,7 @@ async function personalSignRaw(
 }
 
 function assertPersonalSignRequest(sigReq: SignatureRequest): void {
-  if (sigReq.type !== undefined && sigReq.type !== "personal_sign") {
+  if (sigReq.type !== "personal_sign") {
     throw new Error(WALLET_SWAP_SIGNATURE_TYPE_ERROR);
   }
 }

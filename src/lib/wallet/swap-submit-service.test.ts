@@ -1,8 +1,15 @@
 import { getAddress } from "viem";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertPreparedFromAdmin, submitAdminSwapPreparedCall } from "./swap-submit-service";
-import { sealSwapQuote } from "./swap-quote-seal";
-import { buildMockSwapPreparedUserOp } from "./swap-test-prepared";
+import { resetSwapQuoteSealReplayStoreForTests } from "./swap-quote-seal-replay";
+import {
+  buildMockSwapPreparedUserOp,
+  mockUsdcToEthQuoteFields,
+  SWAP_VITEST_MOCK_ROUTER,
+} from "./swap-test-prepared";
+import { sealSwapQuoteForTest } from "./swap-test-seal";
+import { SWAP_EXECUTE_TARGET_SELECTORS } from "./swap-constants";
+import { WALLET_SWAP_QUOTE_REPLAY_ERROR } from "./swap-errors";
 import {
   resetAlchemyWalletRpcForTests,
   setAlchemyWalletRpcForTests,
@@ -30,24 +37,28 @@ describe("assertPreparedFromAdmin", () => {
 describe("submitAdminSwapPreparedCall", () => {
   afterEach(() => {
     resetAlchemyWalletRpcForTests();
+    resetSwapQuoteSealReplayStoreForTests();
     vi.unstubAllEnvs();
+  });
+
+  beforeEach(() => {
+    (SWAP_EXECUTE_TARGET_SELECTORS as Record<string, string[]>)[
+      SWAP_VITEST_MOCK_ROUTER.toLowerCase()
+    ] = ["0x24856bc3"];
   });
 
   it("rejects tampered quote binding", async () => {
     vi.stubEnv("ADMIN_WALLET_ADDRESS", ADMIN);
     vi.stubEnv("WALLET_SWAP_QUOTE_SEAL_SECRET", VALID_TEST_SEAL_SECRET);
-    const quote = {
-      expiry: new Date(Date.now() + 60_000).toISOString(),
-      minimumToAmount: "0x5f5e100",
-      fromAmount: "0x5f5e100",
-    };
+    const quote = mockUsdcToEthQuoteFields(new Date(Date.now() + 60_000).toISOString());
     const prepared = buildMockSwapPreparedUserOp({ from: ADMIN, quote });
-    const seal = sealSwapQuote({
+    const seal = sealSwapQuoteForTest({
       from: ADMIN,
       direction: "USDC_TO_ETH",
       amount: "5",
       slippageBps: 50,
-      ...quote,
+      quote,
+      prepared,
     });
     (prepared as Record<string, unknown>)._swapQuoteSeal = seal;
 
@@ -69,22 +80,19 @@ describe("submitAdminSwapPreparedCall", () => {
   it("forwards signed authorizations to wallet_sendPreparedCalls", async () => {
     vi.stubEnv("ADMIN_WALLET_ADDRESS", ADMIN);
     vi.stubEnv("WALLET_SWAP_QUOTE_SEAL_SECRET", VALID_TEST_SEAL_SECRET);
-    const quote = {
-      expiry: new Date(Date.now() + 60_000).toISOString(),
-      minimumToAmount: "0x5f5e100",
-      fromAmount: "0x5f5e100",
-    };
+    const quote = mockUsdcToEthQuoteFields(new Date(Date.now() + 60_000).toISOString());
     const prepared = buildMockSwapPreparedUserOp({
       from: ADMIN,
       quote,
       includeAuthorization: true,
     });
-    const seal = sealSwapQuote({
+    const seal = sealSwapQuoteForTest({
       from: ADMIN,
       direction: "USDC_TO_ETH",
       amount: "5",
       slippageBps: 50,
-      ...quote,
+      quote,
+      prepared,
     });
     const txItem = (prepared as unknown[])[1] as Record<string, unknown>;
     txItem._swapQuoteSeal = seal;
@@ -117,5 +125,47 @@ describe("submitAdminSwapPreparedCall", () => {
     expect(sent[1]).toMatchObject({
       signature: { type: "secp256k1", data: "0x22" },
     });
+  });
+
+  it("rejects replayed quote seals", async () => {
+    vi.stubEnv("ADMIN_WALLET_ADDRESS", ADMIN);
+    vi.stubEnv("WALLET_SWAP_QUOTE_SEAL_SECRET", VALID_TEST_SEAL_SECRET);
+    const quote = mockUsdcToEthQuoteFields(new Date(Date.now() + 60_000).toISOString());
+    const prepared = buildMockSwapPreparedUserOp({ from: ADMIN, quote });
+    const seal = sealSwapQuoteForTest({
+      from: ADMIN,
+      direction: "USDC_TO_ETH",
+      amount: "5",
+      slippageBps: 50,
+      quote,
+      prepared,
+    });
+    (prepared as Record<string, unknown>)._swapQuoteSeal = seal;
+
+    setAlchemyWalletRpcForTests(async () => ({ id: "call-replay" }));
+
+    const binding = {
+      direction: "USDC_TO_ETH" as const,
+      amount: "5",
+      slippageBps: 50,
+    };
+
+    const first = await submitAdminSwapPreparedCall({
+      prepared,
+      signature: "0x11",
+      quoteBinding: binding,
+    });
+    expect(first.ok).toBe(true);
+
+    const second = await submitAdminSwapPreparedCall({
+      prepared,
+      signature: "0x12",
+      quoteBinding: binding,
+    });
+    expect(second.ok).toBe(false);
+    if (!second.ok) {
+      expect(second.status).toBe(409);
+      expect(second.error).toBe(WALLET_SWAP_QUOTE_REPLAY_ERROR);
+    }
   });
 });

@@ -20,8 +20,14 @@ import {
   WALLET_SWAP_QUOTE_BINDING_ERROR,
   WALLET_SWAP_QUOTE_EXPIRED_ERROR,
 } from "@/lib/wallet/swap-errors";
-import { sealSwapQuote } from "@/lib/wallet/swap-quote-seal";
-import { buildMockSwapPreparedUserOp } from "@/lib/wallet/swap-test-prepared";
+import { resetSwapQuoteSealReplayStoreForTests } from "@/lib/wallet/swap-quote-seal-replay";
+import {
+  buildMockSwapPreparedUserOp,
+  mockUsdcToEthQuoteFields,
+  SWAP_VITEST_MOCK_ROUTER,
+} from "@/lib/wallet/swap-test-prepared";
+import { sealSwapQuoteForTest } from "@/lib/wallet/swap-test-seal";
+import { SWAP_EXECUTE_TARGET_SELECTORS } from "@/lib/wallet/swap-constants";
 
 vi.mock("@/lib/privy/require-auth", () => ({
   requirePrivyAuth: vi.fn(),
@@ -47,18 +53,15 @@ function submitBody(overrides: Record<string, unknown>) {
 }
 
 function buildSealedPrepared(amount = "5") {
-  const quote = {
-    expiry: new Date(Date.now() + 60_000).toISOString(),
-    minimumToAmount: "0x5f5e100",
-    fromAmount: "0x5f5e100",
-  };
+  const quote = mockUsdcToEthQuoteFields(new Date(Date.now() + 60_000).toISOString());
   const prepared = buildMockSwapPreparedUserOp({ from: ADMIN, quote });
-  const seal = sealSwapQuote({
+  const seal = sealSwapQuoteForTest({
     from: ADMIN,
     direction: "USDC_TO_ETH",
     amount,
     slippageBps: 50,
-    ...quote,
+    quote,
+    prepared,
   });
   (prepared as Record<string, unknown>)._swapQuoteSeal = seal;
   return { prepared, quote, amount };
@@ -69,6 +72,10 @@ describe("POST /api/admin/wallet/swap/submit", () => {
     setWalletEnabledForTests(true);
     setWalletSwapEnabledForTests(true);
     resetAlchemyWalletRpcForTests();
+    resetSwapQuoteSealReplayStoreForTests();
+    (SWAP_EXECUTE_TARGET_SELECTORS as Record<string, string[]>)[
+      SWAP_VITEST_MOCK_ROUTER.toLowerCase()
+    ] = ["0x24856bc3"];
     vi.stubEnv("ADMIN_WALLET_ADDRESS", ADMIN);
     vi.stubEnv("WALLET_SWAP_QUOTE_SEAL_SECRET", VALID_TEST_SEAL_SECRET);
     vi.mocked(requirePrivyAuth).mockResolvedValue({
@@ -81,6 +88,7 @@ describe("POST /api/admin/wallet/swap/submit", () => {
     setWalletEnabledForTests(undefined);
     setWalletSwapEnabledForTests(undefined);
     resetAlchemyWalletRpcForTests();
+    resetSwapQuoteSealReplayStoreForTests();
     vi.unstubAllEnvs();
   });
 
@@ -120,18 +128,15 @@ describe("POST /api/admin/wallet/swap/submit", () => {
   });
 
   it("rejects expired quotes", async () => {
-    const quote = {
-      expiry: "2000-01-01T00:00:00.000Z",
-      minimumToAmount: "0x1",
-      fromAmount: "0x1",
-    };
+    const quote = mockUsdcToEthQuoteFields("2000-01-01T00:00:00.000Z");
     const prepared = buildMockSwapPreparedUserOp({ from: ADMIN, quote });
-    const seal = sealSwapQuote({
+    const seal = sealSwapQuoteForTest({
       from: ADMIN,
       direction: "USDC_TO_ETH",
       amount: "5",
       slippageBps: 50,
-      ...quote,
+      quote,
+      prepared,
     });
     (prepared as Record<string, unknown>)._swapQuoteSeal = seal;
 
@@ -154,11 +159,7 @@ describe("POST /api/admin/wallet/swap/submit", () => {
       submitBody({
         signature: "0x11",
         prepared: {
-          quote: {
-            expiry: new Date(Date.now() + 60_000).toISOString(),
-            minimumToAmount: "0x1",
-            fromAmount: "0x1",
-          },
+          quote: mockUsdcToEthQuoteFields(new Date(Date.now() + 60_000).toISOString()),
         },
         direction: "USDC_TO_ETH",
         amount: "5",
@@ -185,22 +186,19 @@ describe("POST /api/admin/wallet/swap/submit", () => {
   });
 
   it("submits valid prepared swap and forwards authorizations", async () => {
-    const quote = {
-      expiry: new Date(Date.now() + 60_000).toISOString(),
-      minimumToAmount: "0x5f5e100",
-      fromAmount: "0x5f5e100",
-    };
+    const quote = mockUsdcToEthQuoteFields(new Date(Date.now() + 60_000).toISOString());
     const prepared = buildMockSwapPreparedUserOp({
       from: ADMIN,
       quote,
       includeAuthorization: true,
     });
-    const seal = sealSwapQuote({
+    const seal = sealSwapQuoteForTest({
       from: ADMIN,
       direction: "USDC_TO_ETH",
       amount: "5",
       slippageBps: 50,
-      ...quote,
+      quote,
+      prepared,
     });
     const txItem = (prepared as unknown[])[1] as Record<string, unknown>;
     txItem._swapQuoteSeal = seal;

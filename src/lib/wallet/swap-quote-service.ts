@@ -3,14 +3,19 @@ import { resolveAdminWalletConfig } from "./admin-wallet-address";
 import { alchemyWalletJsonRpc } from "./alchemy-wallet-jsonrpc";
 import { assertPreparedSwapAllowlisted } from "./swap-allowlist";
 import {
+  BASE_CHAIN_ID,
   BASE_CHAIN_ID_HEX,
   swapTokenAddress,
   type SwapDirection,
 } from "./swap-constants";
 import { isAdminWalletDelegatedToMav2 } from "./swap-delegation";
 import { WALLET_SWAP_ALLOWLIST_ERROR, WALLET_SWAP_FIXED_ERROR } from "./swap-errors";
+import {
+  hashPreparedForSeal,
+  hashSignatureRequestForSeal,
+} from "./swap-prepared-digest";
 import { isSwapQuoteSealConfigured, sealSwapQuote } from "./swap-quote-seal";
-import { attachFromToPrepared } from "./swap-prepared-from";
+import { attachFromToPrepared, stripInternalPreparedFields } from "./swap-prepared-from";
 import {
   toHexQuantity,
   validateSwapRequestInput,
@@ -18,6 +23,75 @@ import {
 } from "./swap-validation";
 
 export type AlchemySwapQuoteResult = Record<string, unknown> | unknown[];
+
+function parseHexQuantity(value: string): bigint | null {
+  if (typeof value !== "string" || !value.startsWith("0x")) {
+    return null;
+  }
+  try {
+    return BigInt(value);
+  } catch {
+    return null;
+  }
+}
+
+function stripSealFromPrepared(prepared: Record<string, unknown> | unknown[]): unknown {
+  if (Array.isArray(prepared)) {
+    return prepared.map((item) =>
+      item && typeof item === "object"
+        ? stripInternalPreparedFields(item as Record<string, unknown>)
+        : item,
+    );
+  }
+  return stripInternalPreparedFields(prepared as Record<string, unknown>);
+}
+
+function readPreparedTxRecord(
+  prepared: Record<string, unknown> | unknown[],
+): Record<string, unknown> | null {
+  if (Array.isArray(prepared)) {
+    for (const item of prepared) {
+      if (item && typeof item === "object" && "signatureRequest" in (item as Record<string, unknown>)) {
+        return item as Record<string, unknown>;
+      }
+    }
+    return null;
+  }
+  return prepared;
+}
+
+function assertAlchemyQuoteConstraints(
+  prepared: Record<string, unknown> | unknown[],
+  minimumToAmountRaw: bigint,
+): boolean {
+  const tx = readPreparedTxRecord(prepared);
+  const sigReq = tx?.signatureRequest;
+  if (!sigReq || typeof sigReq !== "object") {
+    return false;
+  }
+  if ((sigReq as { type?: string }).type !== "personal_sign") {
+    return false;
+  }
+
+  const quoteSource = Array.isArray(prepared)
+    ? (prepared.find(
+        (item) =>
+          item &&
+          typeof item === "object" &&
+          "quote" in (item as Record<string, unknown>),
+      ) as Record<string, unknown> | undefined)
+    : (prepared as Record<string, unknown>);
+
+  const quoteObj = quoteSource?.quote as { minimumToAmount?: string } | undefined;
+  const alchemyMin = quoteObj?.minimumToAmount
+    ? parseHexQuantity(quoteObj.minimumToAmount)
+    : null;
+  if (alchemyMin === null || alchemyMin < minimumToAmountRaw) {
+    return false;
+  }
+
+  return true;
+}
 
 export type AdminSwapQuoteResponse = {
   from: Address;
@@ -108,6 +182,10 @@ export async function requestAdminSwapQuote(input: {
     return { ok: false, status: 502, error: WALLET_SWAP_ALLOWLIST_ERROR };
   }
 
+  if (!assertAlchemyQuoteConstraints(prepared, v.minimumToAmountRaw)) {
+    return { ok: false, status: 502, error: WALLET_SWAP_FIXED_ERROR };
+  }
+
   const quoteSource = Array.isArray(prepared)
     ? (prepared.find(
         (item) =>
@@ -125,6 +203,11 @@ export async function requestAdminSwapQuote(input: {
   const needsWalletUpgrade = !(await isAdminWalletDelegatedToMav2(config.address));
 
   const preparedWithFrom = attachFromToPrepared(prepared, config.address);
+  const txRecord = readPreparedTxRecord(preparedWithFrom);
+  const signatureRequestDigest = hashSignatureRequestForSeal(
+    txRecord?.signatureRequest ?? null,
+  );
+  const preparedDigest = hashPreparedForSeal(stripSealFromPrepared(preparedWithFrom));
 
   const quoteSeal = sealSwapQuote({
     from: getAddress(config.address),
@@ -134,6 +217,9 @@ export async function requestAdminSwapQuote(input: {
     expiry: quoteObj.expiry,
     fromAmount: quoteObj.fromAmount,
     minimumToAmount: quoteObj.minimumToAmount,
+    chainId: BASE_CHAIN_ID,
+    preparedDigest,
+    signatureRequestDigest,
   });
   if (!quoteSeal) {
     return { ok: false, status: 502, error: WALLET_SWAP_FIXED_ERROR };

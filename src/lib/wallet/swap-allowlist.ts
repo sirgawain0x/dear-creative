@@ -8,11 +8,15 @@ import {
 import { MAV2_EXECUTE_ABI, type Mav2ExecuteCall } from "./swap-mav2-abi";
 import {
   ALCHEMY_MAV2_V110,
-  SWAP_ALLOWED_INNER_SELECTORS,
-  SWAP_ALLOWED_EXECUTE_TARGETS,
+  SWAP_EXECUTE_TARGET_SELECTORS,
+  swapAllowedRouterTargets,
 } from "./swap-constants";
+import { decodeApproveSpenderAndAmount } from "./swap-decode-allowlist";
 
 const AUTHORIZATION_TYPES = new Set(["authorization", "eip7702-authorization"]);
+
+const APPROVE_SELECTOR = "0x095ea7b3";
+const TRANSFER_FROM_SELECTOR = "0x23b872dd";
 
 function normalizeAddress(value: string): Address | null {
   if (!isAddress(value)) {
@@ -30,7 +34,15 @@ function isAllowedExecuteTarget(target: Address, adminAddress: Address): boolean
   if (lower === adminAddress.toLowerCase()) {
     return true;
   }
-  return SWAP_ALLOWED_EXECUTE_TARGETS.has(lower);
+  return lower in SWAP_EXECUTE_TARGET_SELECTORS;
+}
+
+function allowedSelectorsForTarget(target: Address): ReadonlySet<string> | null {
+  const list = SWAP_EXECUTE_TARGET_SELECTORS[target.toLowerCase()];
+  if (!list) {
+    return null;
+  }
+  return new Set(list.map((s) => s.toLowerCase()));
 }
 
 function readSelector(data: Hex): Hex | null {
@@ -40,12 +52,44 @@ function readSelector(data: Hex): Hex | null {
   return data.slice(0, 10).toLowerCase() as Hex;
 }
 
-function assertInnerCalldataAllowed(data: Hex, target: Address): boolean {
+function assertInnerCalldataAllowed(
+  data: Hex,
+  target: Address,
+  fromAmountRaw: bigint | null,
+): boolean {
+  if (!data || data === "0x" || data.length < 10) {
+    return false;
+  }
+
   const selector = readSelector(data);
   if (!selector) {
-    return true;
+    return false;
   }
-  return SWAP_ALLOWED_INNER_SELECTORS.has(selector);
+
+  const allowed = allowedSelectorsForTarget(target);
+  if (!allowed || !allowed.has(selector)) {
+    return false;
+  }
+
+  if (selector === TRANSFER_FROM_SELECTOR) {
+    return false;
+  }
+
+  if (selector === APPROVE_SELECTOR) {
+    const decoded = decodeApproveSpenderAndAmount(data);
+    if (!decoded) {
+      return false;
+    }
+    const routers = swapAllowedRouterTargets();
+    if (!routers.has(decoded.spender.toLowerCase())) {
+      return false;
+    }
+    if (fromAmountRaw !== null && decoded.amount > fromAmountRaw) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function decodeMav2Executions(callData: Hex): Mav2ExecuteCall[] | null {
@@ -83,7 +127,7 @@ function collectCallDataSegments(node: unknown): Hex[] {
     const record = value as Record<string, unknown>;
     for (const key of ["data", "callData"] as const) {
       const raw = record[key];
-      if (typeof raw === "string" && raw.startsWith("0x") && raw.length >= 10) {
+      if (typeof raw === "string" && raw.startsWith("0x")) {
         segments.push(raw as Hex);
       }
     }
@@ -118,6 +162,7 @@ function validateAuthorizationItem(
 function validateRawCalls(
   calls: unknown[],
   adminAddress: Address,
+  fromAmountRaw: bigint | null,
 ): { ok: true } | { ok: false } {
   for (const call of calls) {
     if (!call || typeof call !== "object") {
@@ -136,7 +181,7 @@ function validateRawCalls(
       typeof record.data === "string" && record.data.startsWith("0x")
         ? (record.data as Hex)
         : ("0x" as Hex);
-    if (!assertInnerCalldataAllowed(data, to)) {
+    if (!assertInnerCalldataAllowed(data, to, fromAmountRaw)) {
       return { ok: false };
     }
   }
@@ -146,6 +191,7 @@ function validateRawCalls(
 function validateExecuteSegments(
   segments: Hex[],
   adminAddress: Address,
+  fromAmountRaw: bigint | null,
 ): { ok: true } | { ok: false } {
   if (segments.length === 0) {
     return { ok: false };
@@ -161,12 +207,34 @@ function validateExecuteSegments(
       if (!isAllowedExecuteTarget(target, adminAddress)) {
         return { ok: false };
       }
-      if (!assertInnerCalldataAllowed(exec.data, target)) {
+      if (!assertInnerCalldataAllowed(exec.data, target, fromAmountRaw)) {
         return { ok: false };
       }
     }
   }
   return { ok: true };
+}
+
+function parseFromAmountRaw(prepared: unknown): bigint | null {
+  const record = Array.isArray(prepared)
+    ? (prepared.find(
+        (item) =>
+          item &&
+          typeof item === "object" &&
+          "quote" in (item as Record<string, unknown>),
+      ) as Record<string, unknown> | undefined)
+    : (prepared as Record<string, unknown> | undefined);
+
+  const quote = record?.quote as { fromAmount?: string } | undefined;
+  const raw = quote?.fromAmount;
+  if (typeof raw !== "string" || !raw.startsWith("0x")) {
+    return null;
+  }
+  try {
+    return BigInt(raw);
+  } catch {
+    return null;
+  }
 }
 
 /** Validate prepared swap payloads by decoding MAv2 execute / executeBatch calldata. */
@@ -177,6 +245,8 @@ export function assertPreparedSwapAllowlisted(
   if (prepared === null || prepared === undefined) {
     return { ok: false };
   }
+
+  const fromAmountRaw = parseFromAmountRaw(prepared);
 
   if (Array.isArray(prepared)) {
     for (const item of prepared) {
@@ -192,7 +262,7 @@ export function assertPreparedSwapAllowlisted(
       }
     }
     const segments = collectCallDataSegments(prepared);
-    return validateExecuteSegments(segments, adminAddress);
+    return validateExecuteSegments(segments, adminAddress, fromAmountRaw);
   }
 
   if (typeof prepared !== "object") {
@@ -201,13 +271,12 @@ export function assertPreparedSwapAllowlisted(
 
   const record = prepared as Record<string, unknown>;
   if (Array.isArray(record.calls)) {
-    const raw = validateRawCalls(record.calls, adminAddress);
+    const raw = validateRawCalls(record.calls, adminAddress, fromAmountRaw);
     if (!raw.ok) {
       return raw;
     }
   }
 
   const segments = collectCallDataSegments(prepared);
-  return validateExecuteSegments(segments, adminAddress);
+  return validateExecuteSegments(segments, adminAddress, fromAmountRaw);
 }
-

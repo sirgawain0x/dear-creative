@@ -10,6 +10,9 @@ export const WALLET_SWAP_QUOTE_EXPIRED_ERROR =
 export const WALLET_SWAP_QUOTE_BINDING_ERROR =
   "Swap quote could not be verified. Request a new quote.";
 
+export const WALLET_SWAP_QUOTE_REPLAY_ERROR =
+  "Swap quote was already submitted. Request a new quote.";
+
 export const WALLET_SWAP_SIGNATURE_TYPE_ERROR =
   "Unsupported swap signature request. Request a new quote.";
 

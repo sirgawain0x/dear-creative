@@ -19,11 +19,6 @@ export const BASE_WETH_ADDRESS = getAddress(
   "0x4200000000000000000000000000000000000006",
 );
 
-/** ERC-4337 EntryPoint v0.7 (bundler user ops). */
-export const ENTRY_POINT_V07 = getAddress(
-  "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
-);
-
 export const BASE_CHAIN_ID = 8453;
 export const BASE_CHAIN_ID_HEX = "0x2105";
 
@@ -50,26 +45,37 @@ export function swapTokenAddress(asset: "USDC" | "ETH"): Address {
 }
 
 /**
- * Allowed `execute` / `executeBatch` targets for admin swaps (tokens + settlement routers on Base).
- * Sources: Base USDC/WETH, Alchemy Wallet swap settlement (same-chain swaps alpha).
+ * Allowed inner calldata selectors per MAv2 `execute` target (lowercase address keys).
+ *
+ * Router rows MUST come from a captured `wallet_requestQuote_v0` response on Base
+ * (see `src/lib/wallet/fixtures/alchemy-swap-quote-*.json` and PR #93). Do not
+ * add router addresses from docs or explorers without a live quote decode.
  */
-export const ALCHEMY_BASE_SWAP_SETTLEMENT = getAddress(
-  "0x0000000000008e6a39e03c7156e46b238c9e2036",
-);
+export const SWAP_EXECUTE_TARGET_SELECTORS: Readonly<
+  Record<string, readonly string[]>
+> = {
+  [SWAP_USDC.toLowerCase()]: [
+    "0x095ea7b3", // approve(address,uint256)
+    "0xa9059cbb", // transfer(address,uint256)
+  ],
+  [BASE_WETH_ADDRESS.toLowerCase()]: [
+    "0x095ea7b3", // approve(address,uint256)
+    "0xd0e30db0", // deposit()
+    "0x2e1a7d4d", // withdraw(uint256)
+  ],
+};
 
-export const SWAP_ALLOWED_EXECUTE_TARGETS: ReadonlySet<string> = new Set([
-  SWAP_USDC.toLowerCase(),
-  BASE_WETH_ADDRESS.toLowerCase(),
-  ALCHEMY_BASE_SWAP_SETTLEMENT.toLowerCase(),
-  ENTRY_POINT_V07.toLowerCase(),
-]);
-
-/** Inner calldata selectors permitted on allowlisted targets (ERC-20 + common swap entrypoints). */
-export const SWAP_ALLOWED_INNER_SELECTORS: ReadonlySet<string> = new Set([
-  "0x095ea7b3", // approve(address,uint256)
-  "0xa9059cbb", // transfer(address,uint256)
-  "0x23b872dd", // transferFrom(address,address,uint256)
-  "0x3593564c", // execute(bytes,bytes[],uint256) — Universal Router style
-  "0x414bf389", // exactInputSingle(...)
-  "0x24856bc3", // execute(bytes32,bytes) — Alchemy settlement surface
-]);
+/** Targets that may receive ERC-20 `approve` spenders (routers from captured quotes). */
+export function swapAllowedRouterTargets(): ReadonlySet<string> {
+  const tokenTargets = new Set([
+    SWAP_USDC.toLowerCase(),
+    BASE_WETH_ADDRESS.toLowerCase(),
+  ]);
+  const routers = new Set<string>();
+  for (const target of Object.keys(SWAP_EXECUTE_TARGET_SELECTORS)) {
+    if (!tokenTargets.has(target)) {
+      routers.add(target);
+    }
+  }
+  return routers;
+}

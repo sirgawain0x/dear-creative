@@ -26,7 +26,12 @@ import {
 } from "@/lib/wallet/swap-eth-usd-price";
 import { WALLET_SWAP_FIXED_ERROR } from "@/lib/wallet/swap-errors";
 import { MAV2_EXECUTE_ABI } from "@/lib/wallet/swap-mav2-abi";
-import { buildMockSwapPreparedUserOp } from "@/lib/wallet/swap-test-prepared";
+import { SWAP_EXECUTE_TARGET_SELECTORS } from "@/lib/wallet/swap-constants";
+import {
+  buildMockSwapPreparedUserOp,
+  mockUsdcToEthQuoteFields,
+  SWAP_VITEST_MOCK_ROUTER,
+} from "@/lib/wallet/swap-test-prepared";
 import { BASE_USDC_ADDRESS } from "@/lib/payments/subscription-config";
 
 vi.mock("@/lib/privy/require-auth", () => ({
@@ -61,6 +66,9 @@ describe("POST /api/admin/wallet/swap/quote", () => {
     resetSwapEthUsdPriceForTests();
     setSwapEthUsdPriceForTests(async () => 3000);
     setSwapDelegationCheckForTests(async () => false);
+    (SWAP_EXECUTE_TARGET_SELECTORS as Record<string, string[]>)[
+      SWAP_VITEST_MOCK_ROUTER.toLowerCase()
+    ] = ["0x24856bc3"];
     vi.stubEnv("ADMIN_WALLET_ADDRESS", ADMIN);
     vi.stubEnv("WALLET_SWAP_QUOTE_SEAL_SECRET", VALID_TEST_SEAL_SECRET);
     vi.mocked(requirePrivyAuth).mockResolvedValue({
@@ -71,11 +79,7 @@ describe("POST /api/admin/wallet/swap/quote", () => {
       if (method === "wallet_requestQuote_v0") {
         return buildMockSwapPreparedUserOp({
           from: ADMIN,
-          quote: {
-            expiry: new Date(Date.now() + 60_000).toISOString(),
-            minimumToAmount: "0x5f5e100",
-            fromAmount: "0x5f5e100",
-          },
+          quote: mockUsdcToEthQuoteFields(new Date(Date.now() + 60_000).toISOString()),
         });
       }
       throw new Error("unexpected");

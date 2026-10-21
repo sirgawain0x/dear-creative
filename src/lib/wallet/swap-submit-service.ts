@@ -7,11 +7,21 @@ import {
   WALLET_SWAP_FIXED_ERROR,
   WALLET_SWAP_QUOTE_BINDING_ERROR,
   WALLET_SWAP_QUOTE_EXPIRED_ERROR,
+  WALLET_SWAP_QUOTE_REPLAY_ERROR,
 } from "./swap-errors";
-import { isSwapQuoteSealConfigured, verifySwapQuoteSeal } from "./swap-quote-seal";
+import {
+  hashPreparedForSeal,
+  hashSignatureRequestForSeal,
+} from "./swap-prepared-digest";
+import {
+  isSwapQuoteSealConfigured,
+  verifySwapQuoteSeal,
+  type SwapQuoteSealPayload,
+} from "./swap-quote-seal";
+import { consumeSwapQuoteSealOnce } from "./swap-quote-seal-replay";
+import { BASE_CHAIN_ID } from "./swap-constants";
 import { isQuoteNearOrPastExpiry } from "./swap-expiry";
 import { stripInternalPreparedFields } from "./swap-prepared-from";
-import type { SwapQuoteSealPayload } from "./swap-quote-seal";
 
 export type SwapSubmitInput = {
   prepared: Record<string, unknown> | unknown[];
@@ -57,8 +67,21 @@ export async function submitAdminSwapPreparedCall(
   }
 
   const seal = extractQuoteSeal(input.prepared);
-  if (!input.quoteBinding || !verifySwapQuoteSeal(seal, { ...input.quoteBinding, ...quotePayload, from: config.address })) {
+  const sealPayload = buildQuoteSealPayload(
+    input.prepared,
+    config.address,
+    input.quoteBinding,
+    quotePayload,
+  );
+  if (
+    !sealPayload ||
+    !verifySwapQuoteSeal(seal, sealPayload)
+  ) {
     return { ok: false, status: 400, error: WALLET_SWAP_QUOTE_BINDING_ERROR };
+  }
+
+  if (typeof seal !== "string" || !consumeSwapQuoteSealOnce(seal)) {
+    return { ok: false, status: 409, error: WALLET_SWAP_QUOTE_REPLAY_ERROR };
   }
 
   if (isQuoteNearOrPastExpiry(quotePayload.expiry)) {
@@ -112,6 +135,56 @@ function extractQuoteFields(
     expiry: quote.expiry,
     fromAmount: quote.fromAmount,
     minimumToAmount: quote.minimumToAmount,
+  };
+}
+
+function readPreparedTxRecord(
+  prepared: Record<string, unknown> | unknown[],
+): Record<string, unknown> | null {
+  if (Array.isArray(prepared)) {
+    for (const item of prepared) {
+      if (item && typeof item === "object" && "signatureRequest" in (item as Record<string, unknown>)) {
+        return item as Record<string, unknown>;
+      }
+    }
+    return null;
+  }
+  return prepared;
+}
+
+function stripSealFromPrepared(prepared: Record<string, unknown> | unknown[]): unknown {
+  if (Array.isArray(prepared)) {
+    return prepared.map((item) => {
+      if (!item || typeof item !== "object") {
+        return item;
+      }
+      const { _swapQuoteSeal, ...rest } = item as Record<string, unknown>;
+      return rest;
+    });
+  }
+  const { _swapQuoteSeal, ...rest } = prepared as Record<string, unknown>;
+  return rest;
+}
+
+function buildQuoteSealPayload(
+  prepared: Record<string, unknown> | unknown[],
+  from: Address,
+  quoteBinding: SwapQuoteBinding | undefined,
+  quoteFields: Omit<SwapQuoteSealPayload, "from" | "direction" | "amount" | "slippageBps" | "chainId" | "preparedDigest" | "signatureRequestDigest">,
+): SwapQuoteSealPayload | null {
+  if (!quoteBinding) {
+    return null;
+  }
+  const tx = readPreparedTxRecord(prepared);
+  return {
+    from,
+    direction: quoteBinding.direction,
+    amount: quoteBinding.amount,
+    slippageBps: quoteBinding.slippageBps,
+    ...quoteFields,
+    chainId: BASE_CHAIN_ID,
+    preparedDigest: hashPreparedForSeal(stripSealFromPrepared(prepared)),
+    signatureRequestDigest: hashSignatureRequestForSeal(tx?.signatureRequest ?? null),
   };
 }
 

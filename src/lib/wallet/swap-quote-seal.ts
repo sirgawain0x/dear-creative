@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Address } from "viem";
-import type { SwapDirection } from "./swap-constants";
+import { BASE_CHAIN_ID, type SwapDirection } from "./swap-constants";
 
 /** Dedicated env var for swap quote HMAC seals (never reuse other secrets). */
 export const WALLET_SWAP_QUOTE_SEAL_SECRET_ENV = "WALLET_SWAP_QUOTE_SEAL_SECRET";
@@ -15,6 +15,9 @@ export type SwapQuoteSealPayload = {
   expiry: string;
   fromAmount: string;
   minimumToAmount: string;
+  chainId: number;
+  preparedDigest: string;
+  signatureRequestDigest: string;
 };
 
 export type SwapQuoteSealSecretStatus =
@@ -39,11 +42,14 @@ export function isSwapQuoteSealConfigured(): boolean {
 function canonicalSealBody(payload: SwapQuoteSealPayload): string {
   return JSON.stringify({
     amount: payload.amount,
+    chainId: payload.chainId,
     direction: payload.direction,
     expiry: payload.expiry,
     from: payload.from.toLowerCase(),
     fromAmount: payload.fromAmount.toLowerCase(),
     minimumToAmount: payload.minimumToAmount.toLowerCase(),
+    preparedDigest: payload.preparedDigest,
+    signatureRequestDigest: payload.signatureRequestDigest,
     slippageBps: payload.slippageBps,
   });
 }

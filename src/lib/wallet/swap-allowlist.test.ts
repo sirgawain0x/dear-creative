@@ -1,21 +1,27 @@
 import { encodeFunctionData, getAddress } from "viem";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { BASE_USDC_ADDRESS } from "@/lib/payments/subscription-config";
 import { assertPreparedSwapAllowlisted } from "./swap-allowlist";
-import { ALCHEMY_MAV2_V110, BASE_WETH_ADDRESS } from "./swap-constants";
+import { ALCHEMY_MAV2_V110, BASE_WETH_ADDRESS, SWAP_EXECUTE_TARGET_SELECTORS } from "./swap-constants";
 import { MAV2_EXECUTE_ABI } from "./swap-mav2-abi";
-import { buildMockSwapPreparedUserOp } from "./swap-test-prepared";
+import {
+  buildMockSwapPreparedUserOp,
+  mockUsdcToEthQuoteFields,
+  SWAP_VITEST_MOCK_ROUTER,
+} from "./swap-test-prepared";
 
 const ADMIN = getAddress("0xAE48B6dB64772b9CC24e33A79c809896776a20f6");
 
-const QUOTE = {
-  expiry: new Date(Date.now() + 60_000).toISOString(),
-  minimumToAmount: "0x5f5e100",
-  fromAmount: "0x5f5e100",
-};
+const QUOTE = mockUsdcToEthQuoteFields(new Date(Date.now() + 60_000).toISOString());
 
 describe("swap allowlist", () => {
-  it("allows MAv2 execute targets to USDC with approve selector", () => {
+  beforeEach(() => {
+    (SWAP_EXECUTE_TARGET_SELECTORS as Record<string, string[]>)[
+      SWAP_VITEST_MOCK_ROUTER.toLowerCase()
+    ] = ["0x24856bc3"];
+  });
+
+  it("allows MAv2 execute targets to USDC with approve to mock router", () => {
     const prepared = buildMockSwapPreparedUserOp({
       from: ADMIN,
       quote: QUOTE,
@@ -26,11 +32,26 @@ describe("swap allowlist", () => {
 
   it("rejects execute to unknown targets", () => {
     const evil = getAddress("0x1234567890123456789012345678901234567890");
-    const inner = "0x095ea7b30000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+    const inner = encodeFunctionData({
+      abi: [
+        {
+          type: "function",
+          name: "approve",
+          inputs: [
+            { name: "spender", type: "address" },
+            { name: "amount", type: "uint256" },
+          ],
+          outputs: [{ type: "bool" }],
+          stateMutability: "nonpayable",
+        },
+      ] as const,
+      functionName: "approve",
+      args: [SWAP_VITEST_MOCK_ROUTER, BigInt(1)],
+    });
     const callData = encodeFunctionData({
       abi: MAV2_EXECUTE_ABI,
       functionName: "execute",
-      args: [evil, BigInt(0), inner as `0x${string}`],
+      args: [evil, BigInt(0), inner],
     });
     const prepared = {
       type: "user-operation-v070",
@@ -46,6 +67,82 @@ describe("swap allowlist", () => {
       abi: MAV2_EXECUTE_ABI,
       functionName: "execute",
       args: [BASE_WETH_ADDRESS, BigInt(0), "0xdeadbeef"],
+    });
+    const prepared = { type: "user-operation-v070", from: ADMIN, data: callData, quote: QUOTE };
+    expect(assertPreparedSwapAllowlisted(prepared, ADMIN).ok).toBe(false);
+  });
+
+  it("rejects empty inner calldata", () => {
+    const callData = encodeFunctionData({
+      abi: MAV2_EXECUTE_ABI,
+      functionName: "execute",
+      args: [BASE_WETH_ADDRESS, BigInt(0), "0x"],
+    });
+    const prepared = { type: "user-operation-v070", from: ADMIN, data: callData, quote: QUOTE };
+    expect(assertPreparedSwapAllowlisted(prepared, ADMIN).ok).toBe(false);
+  });
+
+  it("rejects transferFrom inner selector", () => {
+    const callData = encodeFunctionData({
+      abi: MAV2_EXECUTE_ABI,
+      functionName: "execute",
+      args: [
+        BASE_USDC_ADDRESS,
+        BigInt(0),
+        "0x23b872dd0000000000000000000000000000000000000000000000000000000000000000",
+      ],
+    });
+    const prepared = { type: "user-operation-v070", from: ADMIN, data: callData, quote: QUOTE };
+    expect(assertPreparedSwapAllowlisted(prepared, ADMIN).ok).toBe(false);
+  });
+
+  it("rejects approve when spender is not an allowlisted router", () => {
+    const inner = encodeFunctionData({
+      abi: [
+        {
+          type: "function",
+          name: "approve",
+          inputs: [
+            { name: "spender", type: "address" },
+            { name: "amount", type: "uint256" },
+          ],
+          outputs: [{ type: "bool" }],
+          stateMutability: "nonpayable",
+        },
+      ] as const,
+      functionName: "approve",
+      args: [getAddress("0x2222222222222222222222222222222222222222"), BigInt(1)],
+    });
+    const callData = encodeFunctionData({
+      abi: MAV2_EXECUTE_ABI,
+      functionName: "execute",
+      args: [BASE_USDC_ADDRESS, BigInt(0), inner],
+    });
+    const prepared = { type: "user-operation-v070", from: ADMIN, data: callData, quote: QUOTE };
+    expect(assertPreparedSwapAllowlisted(prepared, ADMIN).ok).toBe(false);
+  });
+
+  it("rejects approve when amount exceeds quote fromAmount", () => {
+    const inner = encodeFunctionData({
+      abi: [
+        {
+          type: "function",
+          name: "approve",
+          inputs: [
+            { name: "spender", type: "address" },
+            { name: "amount", type: "uint256" },
+          ],
+          outputs: [{ type: "bool" }],
+          stateMutability: "nonpayable",
+        },
+      ] as const,
+      functionName: "approve",
+      args: [SWAP_VITEST_MOCK_ROUTER, BigInt(QUOTE.fromAmount) + BigInt(1)],
+    });
+    const callData = encodeFunctionData({
+      abi: MAV2_EXECUTE_ABI,
+      functionName: "execute",
+      args: [BASE_USDC_ADDRESS, BigInt(0), inner],
     });
     const prepared = { type: "user-operation-v070", from: ADMIN, data: callData, quote: QUOTE };
     expect(assertPreparedSwapAllowlisted(prepared, ADMIN).ok).toBe(false);
