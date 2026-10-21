@@ -15,6 +15,7 @@ vi.mock("@/lib/wallet/balances", () => ({
 }));
 
 import { requirePrivyAuth } from "@/lib/privy/require-auth";
+import { fetchWalletBalances } from "@/lib/wallet/balances";
 import { setWalletEnabledForTests } from "@/lib/wallet/feature-flag";
 import * as historyRoute from "./history/route";
 import * as walletRoute from "./route";
@@ -29,6 +30,10 @@ describe("GET /api/admin/wallet", () => {
     vi.mocked(requirePrivyAuth).mockResolvedValue({
       ok: true,
       user: { userId: "did:privy:admin" },
+    });
+    vi.mocked(fetchWalletBalances).mockResolvedValue({
+      eth: { raw: "1", formatted: "0.001" },
+      usdc: { raw: "2", formatted: "0.000002" },
     });
   });
 
@@ -87,6 +92,31 @@ describe("GET /api/admin/wallet", () => {
     const json = await res.json();
     expect(json.configured).toBe(false);
     expect(json.reason).toBe("unset");
+  });
+
+  it("returns 502 when balance fetch fails after auth", async () => {
+    const logSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(fetchWalletBalances).mockRejectedValue(
+      new Error("rpc timeout"),
+    );
+
+    const res = await GET(
+      new Request("http://localhost/api/admin/wallet", {
+        headers: { Authorization: "Bearer privy-token" },
+      }),
+    );
+
+    expect(res.status).toBe(502);
+    const json = await res.json();
+    expect(json).toEqual({ error: "balances_unavailable" });
+    expect(logSpy).toHaveBeenCalledWith(
+      "[admin-wallet] wallet_balances_fetch_failed",
+      { code: "wallet_balances_fetch_failed" },
+    );
+    expect(requirePrivyAuth).toHaveBeenCalledWith(expect.any(Request), {
+      requireAdmin: true,
+    });
+    logSpy.mockRestore();
   });
 
   it("returns balances for configured address", async () => {
