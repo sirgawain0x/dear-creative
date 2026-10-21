@@ -1,11 +1,14 @@
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  BASE_MAINNET_USDC_ADDRESS,
+  BASE_SEPOLIA_USDC_ADDRESS,
   buildCdpFacilitatorJwt,
   buildX402PaymentRequirements,
   COINBASE_CDP_X402_FACILITATOR_URL,
   extractDirectTxHashFromPaymentHeader,
   getFacilitatorUrl,
+  getX402UsdcAddress,
   PUBLIC_X402_FACILITATOR_URL,
   resetX402PaymentVerifierForTests,
   verifyAgentPaymentHeader,
@@ -38,7 +41,24 @@ describe("buildX402PaymentRequirements", () => {
       scheme: "exact",
       network: "base-sepolia",
       maxAmountRequired: "stub-amount",
+      asset: getX402UsdcAddress("base-sepolia"),
     });
+    expect(body?.accepts[0]?.asset).toBe(BASE_SEPOLIA_USDC_ADDRESS);
+  });
+
+  it("uses Base mainnet USDC contract address when X402_NETWORK=base", () => {
+    vi.stubEnv("X402_PAY_TO_ADDRESS", "0x0000000000000000000000000000000000000001");
+    vi.stubEnv("X402_MAX_AMOUNT_REQUIRED", "stub-amount");
+    vi.stubEnv("X402_NETWORK", "base");
+    const body = buildX402PaymentRequirements({
+      slug: "hello-dear-creative",
+      resourceUrl: "http://localhost/api/posts/hello-dear-creative/full",
+    });
+    expect(body?.accepts[0]?.network).toBe("base");
+    expect(body?.accepts[0]?.asset).toBe(BASE_MAINNET_USDC_ADDRESS);
+    expect(body?.accepts[0]?.asset).toBe(
+      "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    );
   });
 
   it("extracts direct onchain txHash from raw hex, JSON, or base64 headers", () => {
@@ -158,8 +178,19 @@ describe("buildX402PaymentRequirements", () => {
     );
     const verifyInit = fetchMock.mock.calls[0]?.[1] as {
       headers?: Record<string, string>;
+      body?: string;
     };
     expect(verifyInit.headers?.Authorization).toMatch(/^Bearer /);
+    const verifyBody = JSON.parse(verifyInit.body ?? "{}") as {
+      paymentRequirements?: { asset?: string };
+    };
+    expect(verifyBody.paymentRequirements?.asset).toBe(BASE_SEPOLIA_USDC_ADDRESS);
+
+    const settleInit = fetchMock.mock.calls[1]?.[1] as { body?: string };
+    const settleBody = JSON.parse(settleInit.body ?? "{}") as {
+      paymentRequirements?: { asset?: string };
+    };
+    expect(settleBody.paymentRequirements?.asset).toBe(BASE_SEPOLIA_USDC_ADDRESS);
 
     expect(result).toEqual({
       ok: true,
