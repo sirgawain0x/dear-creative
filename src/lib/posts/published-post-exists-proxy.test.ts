@@ -47,6 +47,18 @@ describe("existsPublishedPostBySlugForProxy", () => {
     expect(execute).toHaveBeenCalledTimes(2);
   });
 
+  it("passes published_at cutoff as milliseconds for libsql integer column", async () => {
+    vi.stubEnv("LOCAL_DATABASE_URL", ":memory:");
+    const execute = vi.fn().mockResolvedValue({ rows: [] });
+    vi.mocked(createClient).mockReturnValue({ execute } as never);
+    const before = Date.now();
+    await existsPublishedPostBySlugForProxy("live-post");
+    const asOfArg = execute.mock.calls[0]?.[0]?.args?.[1] as number;
+    expect(asOfArg).toBeGreaterThanOrEqual(before);
+    expect(asOfArg).toBeLessThanOrEqual(Date.now() + 5_000);
+    expect(asOfArg).toBeGreaterThan(1_000_000_000_000);
+  });
+
   it("only executes SELECT statements against libsql", async () => {
     vi.stubEnv("LOCAL_DATABASE_URL", ":memory:");
     const execute = vi.fn().mockResolvedValue({ rows: [{ id: "p1" }] });

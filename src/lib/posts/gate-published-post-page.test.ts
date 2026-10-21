@@ -34,10 +34,13 @@ vi.mock("@/lib/paywall/reader-post", () => ({
   resolveReaderPostView: vi.fn(),
 }));
 
+import { connection } from "next/server";
 import { getDb } from "@/db/client";
 import { getPublishedPostBySlug } from "@/lib/posts/published-posts";
 import {
+  buildStablePublishedAsOf,
   isNextProductionBuildPhase,
+  rejectMissingPublishedPostSlug,
   requirePublishedPostBySlug,
 } from "./gate-published-post-page";
 
@@ -54,6 +57,44 @@ describe("isNextProductionBuildPhase", () => {
   it("is false during live requests", () => {
     delete process.env.NEXT_PHASE;
     expect(isNextProductionBuildPhase()).toBe(false);
+  });
+});
+
+describe("rejectMissingPublishedPostSlug", () => {
+  afterEach(() => {
+    notFoundMock.mockClear();
+    vi.mocked(getPublishedPostBySlug).mockReset();
+    vi.mocked(connection).mockClear();
+    delete process.env.NEXT_PHASE;
+  });
+
+  it("uses stable as-of during production build without connection", async () => {
+    process.env.NEXT_PHASE = "phase-production-build";
+    vi.mocked(getDb).mockReturnValue({} as ReturnType<typeof getDb>);
+    vi.mocked(getPublishedPostBySlug).mockResolvedValue(null);
+    await expect(rejectMissingPublishedPostSlug("bogus-slug")).rejects.toThrow(
+      "NOT_FOUND",
+    );
+    expect(connection).not.toHaveBeenCalled();
+    expect(getPublishedPostBySlug).toHaveBeenCalledWith(
+      expect.anything(),
+      "bogus-slug",
+      { asOf: buildStablePublishedAsOf() },
+    );
+  });
+
+  it("awaits connection before reading current time at request time", async () => {
+    vi.mocked(getDb).mockReturnValue({} as ReturnType<typeof getDb>);
+    vi.mocked(getPublishedPostBySlug).mockResolvedValue({
+      slug: "live-post",
+    } as Awaited<ReturnType<typeof getPublishedPostBySlug>>);
+    await rejectMissingPublishedPostSlug("live-post");
+    expect(connection).toHaveBeenCalledTimes(1);
+    const options = vi.mocked(getPublishedPostBySlug).mock.calls[0]?.[2];
+    expect(options?.asOf).toBeInstanceOf(Date);
+    expect(options?.asOf?.getTime()).not.toBe(
+      buildStablePublishedAsOf().getTime(),
+    );
   });
 });
 
