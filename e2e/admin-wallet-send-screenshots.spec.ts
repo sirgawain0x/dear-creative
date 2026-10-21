@@ -1,6 +1,11 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("admin wallet send fixture screenshots", () => {
+  test.skip(
+    Boolean(process.env.CI) && process.env.CAPTURE_WALLET_SEND_SCREENSHOTS !== "true",
+    "Manual screenshot capture (assets committed under docs/pr-assets/)",
+  );
+
   test.setTimeout(120_000);
 
   test("capture send form and confirm at 390px and 1440px", async ({ page }) => {
