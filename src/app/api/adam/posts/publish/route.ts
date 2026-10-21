@@ -5,6 +5,7 @@ import {
   DuplicateSlugError,
   publishDraftToTurso,
 } from "@/lib/adam/publish-draft";
+import { expirePublishedPostExistenceCache } from "@/lib/posts/expire-published-post-cache";
 import { requireAdamAuth } from "@/lib/adam/require-auth";
 
 export const maxDuration = 300;
@@ -58,6 +59,7 @@ export async function POST(request: Request) {
 
     if (!result.dryRun) {
       revalidateTag("posts-recent", "max");
+      expirePublishedPostExistenceCache(slug);
     }
 
     return NextResponse.json(result);

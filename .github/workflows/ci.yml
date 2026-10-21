@@ -38,6 +38,11 @@ jobs:
         env:
           LOCAL_DATABASE_URL: file:./data/ci-dear-creative.db
         run: ./scripts/post-slug-notfound-noindex.sh
+      - name: Page routes return HTTP 404 for missing records
+        env:
+          LOCAL_DATABASE_URL: file:./data/ci-dear-creative.db
+          PAGE_HTTP_404_TEST: "1"
+        run: npx vitest run src/test/page-route-http-404.test.ts
       - name: Build without database env or local DB file
         run: |
           rm -f data/dear-creative.db data/ci-dear-creative.db

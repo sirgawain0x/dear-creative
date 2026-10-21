@@ -267,6 +267,20 @@ export async function getPublishedPostRowBySlug(
   };
 }
 
+export async function existsPublishedPostBySlug(
+  db: DearCreativeDb,
+  slug: string,
+  options?: { asOf?: Date },
+): Promise<boolean> {
+  const asOf = options?.asOf ?? new Date();
+  const [row] = await db
+    .select({ id: posts.id })
+    .from(posts)
+    .where(and(publishedVisibilityFilter(asOf), eq(posts.slug, slug)))
+    .limit(1);
+  return Boolean(row);
+}
+
 export async function getPublishedPostBySlug(
   db: DearCreativeDb,
   slug: string,
