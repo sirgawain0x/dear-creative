@@ -120,7 +120,7 @@ export async function verifyAndRecordPostUnlock(
       throw new ReaderCheckoutError(
         "tx_hash_reused",
         "This transaction was already used.",
-        402,
+        409,
       );
     }
     const walletMatch =
@@ -131,7 +131,7 @@ export async function verifyAndRecordPostUnlock(
       throw new ReaderCheckoutError(
         "tx_hash_reused",
         "This transaction was already used.",
-        402,
+        409,
       );
     }
     return { recordId: existing.id, idempotent: true };
@@ -170,7 +170,7 @@ export async function verifyAndRecordPostUnlock(
       throw new ReaderCheckoutError(
         "tx_hash_reused",
         "This transaction was already used.",
-        402,
+        409,
       );
     }
     const walletMatch =
@@ -180,7 +180,7 @@ export async function verifyAndRecordPostUnlock(
       throw new ReaderCheckoutError(
         "tx_hash_reused",
         "This transaction was already used.",
-        402,
+        409,
       );
     }
     return { recordId: raced.id, idempotent: true };

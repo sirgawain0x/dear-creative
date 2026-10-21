@@ -147,7 +147,7 @@ describe("reader post unlock service", () => {
         walletAddress: PAYER,
         privyUserId: "did:privy:u1",
       }),
-    ).rejects.toMatchObject({ code: "tx_hash_reused" });
+    ).rejects.toMatchObject({ code: "tx_hash_reused", status: 409 });
   });
 
   it("rejects reused tx hash for the same post from a different wallet", async () => {
@@ -179,7 +179,7 @@ describe("reader post unlock service", () => {
         walletAddress: otherWallet,
         privyUserId: "did:privy:u1",
       }),
-    ).rejects.toMatchObject({ code: "tx_hash_reused" });
+    ).rejects.toMatchObject({ code: "tx_hash_reused", status: 409 });
   });
 
   it("returns idempotent ok when the same wallet retries the same tx", async () => {
