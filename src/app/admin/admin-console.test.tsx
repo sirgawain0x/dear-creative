@@ -88,12 +88,8 @@ describe("AdminConsole owner tools", () => {
     }
   });
 
-  it("shows payouts card after Privy /me returns privy_admin", async () => {
+  it("shows payouts card on load for authenticated Privy admin without clicking Verify", async () => {
     render(<AdminConsole />);
-
-    fireEvent.click(
-      screen.getByRole("button", { name: /Verify Server Token/i }),
-    );
 
     await waitFor(() => {
       expect(globalThis.fetch).toHaveBeenCalledWith(
@@ -107,6 +103,10 @@ describe("AdminConsole owner tools", () => {
     await waitFor(() => {
       expect(screen.getByTestId("admin-payouts-card")).toBeInTheDocument();
     });
+
+    expect(
+      screen.queryByRole("button", { name: /Verify Server Token/i }),
+    ).not.toHaveTextContent("Verifying…");
   });
 
   it("shows Privy sign-in note for studio-key-only sessions", () => {

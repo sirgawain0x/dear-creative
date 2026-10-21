@@ -75,9 +75,11 @@ export function AdminConsole() {
     };
   }, []);
 
-  const refreshSession = useCallback(async () => {
+  const refreshSession = useCallback(async (options?: { silent?: boolean }) => {
     setError(null);
-    setIsVerifying(true);
+    if (!options?.silent) {
+      setIsVerifying(true);
+    }
     try {
       const token = await resolveStudioBearerToken({
         privyConfigured,
@@ -101,9 +103,23 @@ export function AdminConsole() {
     } catch {
       setError("Failed to verify session with server.");
     } finally {
-      setIsVerifying(false);
+      if (!options?.silent) {
+        setIsVerifying(false);
+      }
     }
   }, [authenticated, getAccessToken, privyConfigured]);
+
+  useEffect(() => {
+    if (!ready || !authenticated) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      void refreshSession({ silent: true });
+    }, 0);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [ready, authenticated, refreshSession]);
 
   if (!ready) {
     return <p className="text-zinc-500">Loading authentication status…</p>;
