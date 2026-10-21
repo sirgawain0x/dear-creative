@@ -125,6 +125,17 @@ describe("resolvePageNotFoundProxy", () => {
     expect(result).toEqual({ action: "next" });
   });
 
+  it("returns next when no database env is configured (fail open)", async () => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    vi.stubEnv("TURSO_DATABASE_URL", "");
+    vi.stubEnv("TURSO_AUTH_TOKEN", "");
+    vi.stubEnv("LOCAL_DATABASE_URL", "");
+    publishedPostExistsProxy.resetProxyLibsqlClientForTests();
+    const result = await resolvePageNotFoundProxy("/posts/missing-slug");
+    expect(result).toEqual({ action: "next" });
+  });
+
   it("returns next for index and nested paths without a single post slug", async () => {
     await expect(resolvePageNotFoundProxy("/posts")).resolves.toEqual({
       action: "next",

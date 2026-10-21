@@ -1,26 +1,30 @@
 import { createClient, type Client } from "@libsql/client";
 import { isLocalLibsqlUrl, resolveDatabaseUrl } from "@/db/client";
 
-/**
- * Vercel preview envs in this project do not expose Turso to the proxy runtime.
- * Allow known published slugs so preview can still return HTTP 404 for missing posts.
- */
-const PREVIEW_PROXY_PUBLISHED_SLUG_ALLOWLIST = new Set(["hello-dear-creative"]);
-
-function isTursoConfiguredForRuntime(): boolean {
-  const url = process.env.TURSO_DATABASE_URL?.trim();
-  const token = process.env.TURSO_AUTH_TOKEN?.trim();
-  return Boolean(url && token);
+/** Thrown when proxy cannot run a live lookup (no DB env); caller should fail open. */
+export class ProxyPublishedLookupUnavailableError extends Error {
+  constructor() {
+    super("Proxy published-post lookup unavailable: no database env configured");
+    this.name = "ProxyPublishedLookupUnavailableError";
+  }
 }
 
-function shouldUseLivePublishedLookup(): boolean {
-  if (isTursoConfiguredForRuntime()) {
+export function isProxyDatabaseConfigured(): boolean {
+  const turso = process.env.TURSO_DATABASE_URL?.trim();
+  const token = process.env.TURSO_AUTH_TOKEN?.trim();
+  if (turso && token) {
     return true;
   }
   return Boolean(process.env.LOCAL_DATABASE_URL?.trim());
 }
 
+/** Module-level singleton libsql client for proxy existence checks (reused across requests). */
 let cachedClient: Client | null = null;
+
+/** @internal Test hook to reset the singleton between unit tests. */
+export function resetProxyLibsqlClientForTests(): void {
+  cachedClient = null;
+}
 
 function getProxyLibsqlClient(): Client {
   if (cachedClient) {
@@ -40,23 +44,43 @@ function getProxyLibsqlClient(): Client {
   return cachedClient;
 }
 
-/** Minimal Turso existence probe for proxy (no Drizzle / no \"use cache\"). */
+const PUBLISHED_POST_EXISTS_SQL = `SELECT id FROM posts
+  WHERE slug = ?
+    AND status = 'published'
+    AND published_at IS NOT NULL
+    AND published_at <= ?
+  LIMIT 1`;
+
+/**
+ * Proxy-only read path: libsql client runs this SELECT only (no writes).
+ * @libsql/client has no separate read-only mode; isolation is by SQL shape.
+ */
+function executeProxyReadOnlySelect(
+  client: Client,
+  args: [string, number],
+): ReturnType<Client["execute"]> {
+  const normalized = PUBLISHED_POST_EXISTS_SQL.trim().replace(/\s+/g, " ");
+  if (!normalized.toUpperCase().startsWith("SELECT ")) {
+    throw new Error("Proxy database access is restricted to SELECT statements");
+  }
+  return client.execute({
+    sql: PUBLISHED_POST_EXISTS_SQL,
+    args,
+  });
+}
+
+/** Minimal Turso existence probe for proxy (no Drizzle / no "use cache"). */
 export async function existsPublishedPostBySlugForProxy(
   slug: string,
 ): Promise<boolean> {
-  if (!shouldUseLivePublishedLookup()) {
-    return PREVIEW_PROXY_PUBLISHED_SLUG_ALLOWLIST.has(slug);
+  if (!isProxyDatabaseConfigured()) {
+    throw new ProxyPublishedLookupUnavailableError();
   }
 
   const asOfMs = Date.now();
-  const result = await getProxyLibsqlClient().execute({
-    sql: `SELECT id FROM posts
-      WHERE slug = ?
-        AND status = 'published'
-        AND published_at IS NOT NULL
-        AND published_at <= ?
-      LIMIT 1`,
-    args: [slug, asOfMs],
-  });
+  const result = await executeProxyReadOnlySelect(getProxyLibsqlClient(), [
+    slug,
+    asOfMs,
+  ]);
   return result.rows.length > 0;
 }
