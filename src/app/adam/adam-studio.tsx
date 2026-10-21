@@ -3522,21 +3522,23 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
 
       {/* TAB 2.5: EDIT PUBLISHED & DRAFT POSTS */}
       {activeTab === "posts" ? (
-        <section className="mt-6 grid gap-6 lg:grid-cols-12">
+        <section className="mt-6 grid gap-6 lg:grid-cols-12 lg:items-stretch">
           {/* Left Column: Post Browser */}
-          <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-xs lg:col-span-4 xl:col-span-3 dark:border-zinc-800 dark:bg-zinc-900/60">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-base font-semibold">Posts &amp; Archive</h2>
-              <span className="text-xs text-zinc-500">
-                {adminPosts.length} total
-              </span>
+          <div className="flex h-full min-h-[400px] flex-col rounded-2xl border border-zinc-200 bg-white p-5 shadow-xs lg:col-span-4 lg:min-h-0 xl:col-span-3 dark:border-zinc-800 dark:bg-zinc-900/60">
+            <div className="shrink-0">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-base font-semibold">Posts &amp; Archive</h2>
+                <span className="text-xs text-zinc-500">
+                  {adminPosts.length} total
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+                Select any published post or draft to fix missing headers, clean
+                formatting, or update its title and body.
+              </p>
             </div>
-            <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
-              Select any published post or draft to fix missing headers, clean
-              formatting, or update its title and body.
-            </p>
 
-            <div className="mt-3 space-y-2">
+            <div className="mt-3 shrink-0 space-y-2">
               <input
                 type="search"
                 value={postSearchQuery}
@@ -3564,13 +3566,14 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
             </div>
 
             {adminPosts.length === 0 ? (
-              <p className="mt-6 text-xs text-zinc-500">
+              <p className="mt-4 text-xs text-zinc-500">
                 {authenticated
                   ? "No posts loaded yet."
                   : "Sign In to load and edit posts."}
               </p>
             ) : (
-              <ul className="mt-4 max-h-[600px] space-y-2 overflow-y-auto pr-1">
+              <div className="mt-4 min-h-48 max-h-[60vh] overflow-y-auto lg:relative lg:max-h-none lg:min-h-0 lg:flex-1 lg:overflow-hidden">
+              <ul className="space-y-2 pr-1 lg:absolute lg:inset-0 lg:overflow-y-auto">
                 {adminPosts
                   .filter((p) => {
                     if (
@@ -3628,13 +3631,14 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                     );
                   })}
               </ul>
+              </div>
             )}
           </div>
 
           {/* Right Column: Post Editor */}
           <form
             onSubmit={(e) => void handleSaveEditedPost(e)}
-            className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs lg:col-span-8 xl:col-span-9 dark:border-zinc-800 dark:bg-zinc-900/60"
+            className="h-full min-h-[400px] rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs lg:col-span-8 lg:min-h-0 xl:col-span-9 dark:border-zinc-800 dark:bg-zinc-900/60"
           >
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 pb-4 dark:border-zinc-800">
               <div>

@@ -1,0 +1,11 @@
+{
+  "desktop": {
+    "cardHeight": 1468.65625,
+    "editorHeight": 1468.65625,
+    "listClientHeight": 1260,
+    "listScrollHeight": 4452,
+    "listVisibleHeight": 1260.15625,
+    "listExceedsEditor": true,
+    "cardNotTallerThanEditor": true
+  }
+}

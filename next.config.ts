@@ -14,6 +14,8 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/adam/posts/*/repurpose/*": [
       "./node_modules/ffmpeg-static/**/*",
+      "./node_modules/@img/**/*",
+      "./node_modules/sharp/**/*",
       "./src/assets/fonts/**/*",
     ],
   },
