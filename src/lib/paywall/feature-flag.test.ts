@@ -19,9 +19,28 @@ describe("isPaywallEnabled", () => {
     expect(isPaywallEnabled()).toBe(false);
   });
 
-  it("is true only when value is exactly true", () => {
+  it("is true only when PAYWALL_ENABLED and PAYMENTS_ENABLED are exactly true", () => {
     vi.stubEnv("PAYWALL_ENABLED", "true");
+    vi.stubEnv("PAYMENTS_ENABLED", "true");
     expect(isPaywallEnabled()).toBe(true);
+  });
+
+  it("is false when only PAYWALL_ENABLED is true", () => {
+    vi.stubEnv("PAYWALL_ENABLED", "true");
+    vi.stubEnv("PAYMENTS_ENABLED", "false");
+    expect(isPaywallEnabled()).toBe(false);
+  });
+
+  it("is false when only PAYMENTS_ENABLED is true", () => {
+    vi.stubEnv("PAYWALL_ENABLED", "false");
+    vi.stubEnv("PAYMENTS_ENABLED", "true");
+    expect(isPaywallEnabled()).toBe(false);
+  });
+
+  it("is false when PAYMENTS_ENABLED is truthy but not exactly true", () => {
+    vi.stubEnv("PAYWALL_ENABLED", "true");
+    vi.stubEnv("PAYMENTS_ENABLED", "TRUE");
+    expect(isPaywallEnabled()).toBe(false);
   });
 
   it("respects test override", () => {
