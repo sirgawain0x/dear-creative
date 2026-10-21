@@ -24,6 +24,8 @@ jobs:
       - name: Build with local database
         env:
           LOCAL_DATABASE_URL: file:./data/ci-dear-creative.db
+          READER_WALLET_ENABLED: "true"
+          READER_WALLET_FIXTURE: "true"
         run: |
           npm run db:migrate:local
           npx next build
@@ -31,8 +33,17 @@ jobs:
         env:
           CI: true
           LOCAL_DATABASE_URL: file:./data/ci-dear-creative.db
+          READER_WALLET_ENABLED: "true"
+          READER_WALLET_E2E_AUTH: "true"
+          READER_WALLET_FIXTURE: "true"
         run: |
-          npx playwright install --with-deps chromium
+          for attempt in 1 2 3; do
+            if npx playwright install --with-deps chromium; then
+              break
+            fi
+            echo "Playwright browser install attempt ${attempt} failed; retrying in 15s..."
+            sleep 15
+          done
           npm run test:e2e
       - name: Post slug not-found includes noindex meta
         env:

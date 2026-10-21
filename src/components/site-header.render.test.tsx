@@ -103,6 +103,19 @@ describe("SiteHeader auth control", () => {
     expect(mockLogin).toHaveBeenCalledTimes(1);
   });
 
+  it("shows a single Sign In control on desktop when reader wallet is enabled", async () => {
+    const { SiteHeader } = await import("./site-header");
+    render(<SiteHeader readerWalletEnabled />);
+
+    const desktopSignIn = mainNav().getAllByRole("button", { name: "Sign In" });
+    expect(desktopSignIn).toHaveLength(1);
+    expect(desktopSignIn[0]).toHaveAttribute(
+      "data-testid",
+      "reader-wallet-header-button",
+    );
+    expect(mainNav().queryByRole("link", { name: "Sign In" })).not.toBeInTheDocument();
+  });
+
   it("links Wallet to /admin when signed out and Privy is unavailable", async () => {
     mockPrivyConfigured = false;
     const { SiteHeader } = await import("./site-header");
