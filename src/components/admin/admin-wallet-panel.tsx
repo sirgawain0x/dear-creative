@@ -293,16 +293,16 @@ export function AdminWalletPanel({
             </div>
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="flex flex-col gap-3">
             <div className="min-w-0 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
               <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 Receive on Base
               </p>
-              <code className="mt-2 block break-all text-xs font-mono text-emerald-700 dark:text-emerald-400">
+              <code className="mt-2 block break-all text-xs font-mono leading-relaxed text-emerald-700 dark:text-emerald-400">
                 {summary.address}
               </code>
               {receiveUri ? (
-                <div className="mt-3 inline-flex max-w-full flex-col items-start gap-2">
+                <div className="mt-4 flex max-w-full flex-col items-start gap-3">
                   <span
                     className="rounded-full border border-sky-300 bg-sky-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-sky-900 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-200"
                     data-testid="admin-wallet-receive-network-label"
@@ -314,14 +314,14 @@ export function AdminWalletPanel({
                     size={200}
                     level="M"
                     marginSize={1}
-                    className="max-w-full rounded-lg border border-zinc-200 dark:border-zinc-700"
+                    className="h-auto w-[200px] max-w-full shrink-0 rounded-lg border border-zinc-200 dark:border-zinc-700"
                     data-testid="admin-wallet-receive-qr"
                     title="QR code for Base receive address (EIP-681)"
                   />
                 </div>
               ) : null}
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 w-full">
               {previewSendEnabled ? (
                 <AdminWalletSendForm
                   walletAddress={summary.address}
