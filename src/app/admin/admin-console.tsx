@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { AdminEarnPanel } from "@/components/admin/admin-earn-panel";
 import { AdminWalletPanel } from "@/components/admin/admin-wallet-panel";
 import { OracleIngestForm } from "@/components/admin/oracle-ingest-form";
 import { useAuthSession } from "@/components/providers/app-providers";
@@ -50,14 +51,20 @@ export function AdminConsole() {
   const [error, setError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [walletEnabled, setWalletEnabled] = useState(false);
+  const [earnEnabled, setEarnEnabled] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     void fetch("/api/admin/config")
       .then((r) => (r.ok ? r.json() : null))
       .then((json) => {
-        if (!cancelled && json && typeof json.walletEnabled === "boolean") {
-          setWalletEnabled(json.walletEnabled);
+        if (!cancelled && json) {
+          if (typeof json.walletEnabled === "boolean") {
+            setWalletEnabled(json.walletEnabled);
+          }
+          if (typeof json.earnEnabled === "boolean") {
+            setEarnEnabled(json.earnEnabled);
+          }
         }
       })
       .catch(() => {});
@@ -191,7 +198,10 @@ export function AdminConsole() {
       </div>
 
       {isSignedIn ? (
-        <AdminWalletPanel walletEnabled={walletEnabled} />
+        <div className="grid gap-6 lg:grid-cols-2">
+          <AdminWalletPanel walletEnabled={walletEnabled} />
+          <AdminEarnPanel earnEnabled={earnEnabled} />
+        </div>
       ) : null}
 
       {/* Owner Navigation Links (Gated) */}
