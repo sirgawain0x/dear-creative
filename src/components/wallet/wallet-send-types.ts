@@ -1,7 +1,3 @@
-import type { AdminWalletSendAsset } from "@/lib/wallet/send-validation";
-
-export type WalletSendAsset = AdminWalletSendAsset;
-
 export type WalletSendBalances = {
   eth: { formatted: string };
   usdc: { formatted: string };
@@ -18,23 +14,37 @@ export type WalletSendContext = {
 export type WalletSendEstimateInput = {
   recipient: string;
   amount: string;
-  asset: WalletSendAsset;
 };
 
 export type WalletSendEstimate = {
+  from: string;
   recipient: string;
   amount: string;
-  asset: WalletSendAsset;
   warnings: string[];
   chain: { network: string; chainId: number };
   gas: {
     estimatedEth: string;
-    sponsoredByPaymaster: boolean;
+    gasSponsorshipAvailable: boolean;
   };
 };
 
-export type WalletSendExecuteInput = WalletSendEstimateInput & {
-  idempotencyKey: string;
+export type WalletSendPrepareResponse = {
+  from: string;
+  recipient: string;
+  amount: string;
+  chain: { network: string; chainId: number };
+  transaction: {
+    to: string;
+    data: `0x${string}`;
+    value: string;
+    chainId: number;
+  };
+  gas: WalletSendEstimate["gas"];
+};
+
+export type WalletSendExecuteInput = {
+  recipient: string;
+  amount: string;
 };
 
 export type WalletSendExecuteResult =

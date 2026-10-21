@@ -1,5 +1,5 @@
 import { connection, NextResponse } from "next/server";
-import { resolveAdminWalletSendValidation } from "@/lib/wallet/admin-wallet-send-request";
+import { resolveAdminWalletSendValidationSafe } from "@/lib/wallet/admin-wallet-send-request";
 import { requireAdminWalletSendApi } from "@/lib/wallet/require-admin-wallet-send-api";
 
 export async function POST(request: Request) {
@@ -16,26 +16,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  const parsed = await resolveAdminWalletSendValidation(
+  const parsed = await resolveAdminWalletSendValidationSafe(
     body as Record<string, unknown>,
   );
   if (!parsed.ok) {
     return NextResponse.json(
-      { error: parsed.error, field: parsed.field },
+      { error: parsed.error, ...(parsed.field ? { field: parsed.field } : {}) },
       { status: parsed.status },
     );
   }
 
   return NextResponse.json({
+    from: parsed.fromAddress,
     recipient: parsed.validation.recipient,
     amount: parsed.validation.amountFormatted,
-    asset: parsed.validation.asset,
     warnings: parsed.validation.warnings,
     chain: parsed.chain,
     gas: {
       estimatedWei: parsed.gas.gasWei.toString(),
       estimatedEth: parsed.gas.gasEthFormatted,
-      sponsoredByPaymaster: true,
+      gasSponsorshipAvailable: parsed.gasSponsorshipAvailable,
     },
   });
 }

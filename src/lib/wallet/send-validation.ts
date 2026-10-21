@@ -1,22 +1,20 @@
 import {
   encodeFunctionData,
   erc20Abi,
-  getAddress,
-  isAddress,
   parseUnits,
   type Address,
 } from "viem";
 import { BASE_USDC_ADDRESS, USDC_DECIMALS } from "@/lib/payments/subscription-config";
+import { parseChecksumAddress } from "./parse-checksum-address";
+import { getWalletSendMaxUsdc } from "./send-max-usdc";
 
-export type AdminWalletSendAsset = "USDC" | "ETH";
+export const USDC_AMOUNT_REGEX = /^\d+(\.\d{1,6})?$/;
 
 export type AdminWalletSendValidationInput = {
   recipient: string;
   amount: string;
-  asset: AdminWalletSendAsset;
   fromAddress: Address;
   balances: {
-    ethRaw: bigint;
     usdcRaw: bigint;
   };
 };
@@ -26,14 +24,13 @@ export type AdminWalletSendValidationSuccess = {
   recipient: Address;
   amountRaw: bigint;
   amountFormatted: string;
-  asset: AdminWalletSendAsset;
   warnings: string[];
 };
 
 export type AdminWalletSendValidationFailure = {
   ok: false;
   error: string;
-  field?: "recipient" | "amount" | "asset";
+  field?: "recipient" | "amount";
 };
 
 export type AdminWalletSendValidationResult =
@@ -45,27 +42,15 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 export function validateAdminWalletSendInput(
   input: AdminWalletSendValidationInput,
 ): AdminWalletSendValidationResult {
-  const trimmedRecipient = input.recipient.trim();
-  if (!trimmedRecipient) {
-    return { ok: false, error: "Recipient address is required.", field: "recipient" };
-  }
-  if (!isAddress(trimmedRecipient, { strict: true })) {
+  const parsedRecipient = parseChecksumAddress(input.recipient);
+  if (!parsedRecipient.ok) {
     return {
       ok: false,
-      error: "Recipient must be a checksummed address.",
+      error: parsedRecipient.error,
       field: "recipient",
     };
   }
-  let recipient: Address;
-  try {
-    recipient = getAddress(trimmedRecipient);
-  } catch {
-    return {
-      ok: false,
-      error: "Recipient must be a checksummed address.",
-      field: "recipient",
-    };
-  }
+  const recipient = parsedRecipient.address;
   if (recipient.toLowerCase() === ZERO_ADDRESS.toLowerCase()) {
     return { ok: false, error: "Zero address is not allowed.", field: "recipient" };
   }
@@ -79,31 +64,38 @@ export function validateAdminWalletSendInput(
   if (!amountTrimmed) {
     return { ok: false, error: "Amount is required.", field: "amount" };
   }
-  const numeric = Number(amountTrimmed);
-  if (!Number.isFinite(numeric) || numeric <= 0) {
-    return { ok: false, error: "Amount must be a positive number.", field: "amount" };
+  if (!USDC_AMOUNT_REGEX.test(amountTrimmed)) {
+    return {
+      ok: false,
+      error: "Amount must be a positive USDC value with up to 6 decimal places.",
+      field: "amount",
+    };
+  }
+  if (/^0+(\.0+)?$/.test(amountTrimmed)) {
+    return { ok: false, error: "Amount must be greater than zero.", field: "amount" };
   }
 
   let amountRaw: bigint;
-  let amountFormatted: string;
   try {
-    if (input.asset === "USDC") {
-      amountRaw = parseUnits(amountTrimmed, USDC_DECIMALS);
-      amountFormatted = amountTrimmed;
-    } else {
-      amountRaw = parseUnits(amountTrimmed, 18);
-      amountFormatted = amountTrimmed;
-    }
+    amountRaw = parseUnits(amountTrimmed, USDC_DECIMALS);
   } catch {
     return { ok: false, error: "Amount has too many decimal places.", field: "amount" };
   }
   if (amountRaw <= BigInt(0)) {
-    return { ok: false, error: "Amount must be a positive number.", field: "amount" };
+    return { ok: false, error: "Amount must be greater than zero.", field: "amount" };
   }
 
-  const balance =
-    input.asset === "USDC" ? input.balances.usdcRaw : input.balances.ethRaw;
-  if (amountRaw > balance) {
+  const maxUsdc = getWalletSendMaxUsdc();
+  const maxRaw = parseUnits(String(maxUsdc), USDC_DECIMALS);
+  if (amountRaw > maxRaw) {
+    return {
+      ok: false,
+      error: `Amount exceeds the ${maxUsdc} USDC send limit.`,
+      field: "amount",
+    };
+  }
+
+  if (amountRaw > input.balances.usdcRaw) {
     return { ok: false, error: "Amount exceeds available balance.", field: "amount" };
   }
 
@@ -111,8 +103,7 @@ export function validateAdminWalletSendInput(
     ok: true,
     recipient,
     amountRaw,
-    amountFormatted,
-    asset: input.asset,
+    amountFormatted: amountTrimmed,
     warnings,
   };
 }
@@ -123,27 +114,16 @@ export type AdminWalletSendCall = {
   data: `0x${string}`;
 };
 
-export function buildAdminWalletSendCalls(
+export function buildAdminWalletSendCall(
   validated: AdminWalletSendValidationSuccess,
-): AdminWalletSendCall[] {
-  if (validated.asset === "ETH") {
-    return [
-      {
-        to: validated.recipient,
-        value: validated.amountRaw,
-        data: "0x",
-      },
-    ];
-  }
-  return [
-    {
-      to: BASE_USDC_ADDRESS,
-      value: BigInt(0),
-      data: encodeFunctionData({
-        abi: erc20Abi,
-        functionName: "transfer",
-        args: [validated.recipient, validated.amountRaw],
-      }),
-    },
-  ];
+): AdminWalletSendCall {
+  return {
+    to: BASE_USDC_ADDRESS,
+    value: BigInt(0),
+    data: encodeFunctionData({
+      abi: erc20Abi,
+      functionName: "transfer",
+      args: [validated.recipient, validated.amountRaw],
+    }),
+  };
 }

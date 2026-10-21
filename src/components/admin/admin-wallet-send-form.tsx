@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { adminPrivyAuthorizationHeaders } from "@/lib/admin/admin-api-auth";
 import { createAdminWalletSendPort } from "@/lib/wallet/admin-wallet-send-port";
-import type { SmartWalletSendClient } from "@/lib/wallet/wallet-send-smart-wallet";
+import type { EmbeddedWalletSendExecutor } from "@/lib/wallet/admin-wallet-send-port";
 import { WalletSendForm } from "@/components/wallet/wallet-send-form";
 import type { WalletSendBalances } from "@/components/wallet/wallet-send-types";
 
@@ -17,7 +17,7 @@ export type AdminWalletSendFormProps = {
   getAccessToken: () => Promise<string | null>;
   privyConfigured: boolean;
   authenticated: boolean;
-  smartWalletClient?: SmartWalletSendClient | null;
+  embeddedSend?: EmbeddedWalletSendExecutor | null;
   previewMode?: boolean;
   fixtureInitialStep?: "form" | "confirm";
 };
@@ -32,7 +32,7 @@ export function AdminWalletSendForm({
   getAccessToken,
   privyConfigured,
   authenticated,
-  smartWalletClient,
+  embeddedSend,
   previewMode = false,
   fixtureInitialStep,
 }: AdminWalletSendFormProps) {
@@ -40,7 +40,7 @@ export function AdminWalletSendForm({
     () =>
       createAdminWalletSendPort({
         previewMode,
-        smartWalletClient,
+        embeddedSend,
         getRequestHeaders: async () => {
           const headers = await adminPrivyAuthorizationHeaders({
             privyConfigured,
@@ -52,10 +52,10 @@ export function AdminWalletSendForm({
       }),
     [
       authenticated,
+      embeddedSend,
       getAccessToken,
       previewMode,
       privyConfigured,
-      smartWalletClient,
     ],
   );
 

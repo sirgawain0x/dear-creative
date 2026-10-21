@@ -1,37 +1,76 @@
-import { getAddress } from "viem";
+import { getAddress, type Address, type Hex } from "viem";
 import type {
   WalletSendEstimate,
   WalletSendExecuteInput,
   WalletSendEstimateInput,
   WalletSendPort,
+  WalletSendPrepareResponse,
 } from "@/components/wallet/wallet-send-types";
 import {
-  sendViaSmartWallet,
-  type SmartWalletSendClient,
-} from "./wallet-send-smart-wallet";
+  sendUsdcViaEmbeddedProvider,
+  type EmbeddedEthereumProvider,
+} from "./wallet-send-embedded";
 
-type AdminSendApiEstimate = WalletSendEstimate;
-
-type AdminSendApiResponse =
-  | { txHash: string; duplicate?: boolean }
-  | {
-      mode: "client";
-      calls: Array<{ to: string; value: string; data: `0x${string}` }>;
-      recipient: string;
-      amount: string;
-      asset: "USDC" | "ETH";
-      chain: { network: string; chainId: number };
-      gas: { estimatedEth: string; sponsoredByPaymaster: boolean };
-    };
+export type EmbeddedWalletSendExecutor = {
+  sendPreparedUsdc: (input: {
+    adminWalletAddress: Address;
+    prepare: WalletSendPrepareResponse;
+    gasSponsorshipAvailable: boolean;
+  }) => Promise<Hex>;
+};
 
 export type CreateAdminWalletSendPortOptions = {
   getRequestHeaders: () => Promise<Record<string, string> | null>;
-  smartWalletClient?: SmartWalletSendClient | null;
+  embeddedSend?: EmbeddedWalletSendExecutor | null;
   /** Fixture / screenshot path — no network. */
   previewMode?: boolean;
   estimateUrl?: string;
   sendUrl?: string;
 };
+
+export function createDefaultEmbeddedSendExecutor(
+  getProvider: () => Promise<EmbeddedEthereumProvider | null>,
+  sendTransaction?: (
+    input: {
+      to: Address;
+      data: Hex;
+      value: bigint;
+      chainId: number;
+    },
+    options?: { sponsor?: boolean },
+  ) => Promise<{ hash: Hex }>,
+): EmbeddedWalletSendExecutor {
+  return {
+    async sendPreparedUsdc({ adminWalletAddress, prepare, gasSponsorshipAvailable }) {
+      const tx = prepare.transaction;
+      if (sendTransaction) {
+        const { hash } = await sendTransaction(
+          {
+            to: getAddress(tx.to),
+            data: tx.data,
+            value: BigInt(tx.value),
+            chainId: tx.chainId,
+          },
+          gasSponsorshipAvailable ? { sponsor: true } : undefined,
+        );
+        return hash;
+      }
+      const provider = await getProvider();
+      if (!provider) {
+        throw new Error("Embedded wallet is not ready.");
+      }
+      return sendUsdcViaEmbeddedProvider(provider, {
+        adminWalletAddress,
+        transaction: {
+          to: getAddress(tx.to),
+          data: tx.data,
+          value: BigInt(tx.value),
+          chainId: tx.chainId,
+        },
+      });
+    },
+  };
+}
 
 export function createAdminWalletSendPort(
   options: CreateAdminWalletSendPortOptions,
@@ -42,13 +81,13 @@ export function createAdminWalletSendPort(
   return {
     async estimateSend(input: WalletSendEstimateInput) {
       if (options.previewMode) {
-        const estimate: AdminSendApiEstimate = {
+        const estimate: WalletSendEstimate = {
+          from: getAddress("0xAE48B6dB64772b9CC24e33A79c809896776a20f6"),
           recipient: getAddress(input.recipient.trim()),
           amount: input.amount.trim(),
-          asset: input.asset,
           warnings: [],
           chain: { network: "base", chainId: 8453 },
-          gas: { estimatedEth: "0.000021", sponsoredByPaymaster: true },
+          gas: { estimatedEth: "0.000021", gasSponsorshipAvailable: false },
         };
         return estimate;
       }
@@ -67,7 +106,7 @@ export function createAdminWalletSendPort(
         const json = (await res.json().catch(() => null)) as { error?: string } | null;
         return { error: json?.error ?? "Could not estimate send." };
       }
-      return (await res.json()) as AdminSendApiEstimate;
+      return (await res.json()) as WalletSendEstimate;
     },
 
     async executeSend(input: WalletSendExecuteInput) {
@@ -91,37 +130,35 @@ export function createAdminWalletSendPort(
       });
 
       const json = (await res.json().catch(() => null)) as
-        | (AdminSendApiResponse & { error?: string })
+        | (WalletSendPrepareResponse & { error?: string })
         | null;
 
       if (!res.ok) {
         return { ok: false, error: json?.error ?? "Send request failed." };
       }
 
-      if (json && "txHash" in json && json.txHash) {
-        return { ok: true, txHash: json.txHash };
+      if (!json?.transaction) {
+        return { ok: false, error: "Unexpected send response." };
       }
 
-      if (json && "mode" in json && json.mode === "client") {
-        if (!options.smartWalletClient) {
-          return {
-            ok: false,
-            error:
-              "Smart wallet is not ready. Connect your smart wallet to send.",
-          };
-        }
-        const hash = await sendViaSmartWallet(
-          options.smartWalletClient,
-          json.calls.map((c) => ({
-            to: getAddress(c.to),
-            value: c.value,
-            data: c.data,
-          })),
-        );
+      if (!options.embeddedSend) {
+        return {
+          ok: false,
+          error: "Embedded admin wallet is not ready. Sign in with the admin account.",
+        };
+      }
+
+      try {
+        const hash = await options.embeddedSend.sendPreparedUsdc({
+          adminWalletAddress: getAddress(json.from),
+          prepare: json,
+          gasSponsorshipAvailable: json.gas.gasSponsorshipAvailable,
+        });
         return { ok: true, txHash: hash };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Send failed.";
+        return { ok: false, error: message };
       }
-
-      return { ok: false, error: "Unexpected send response." };
     },
   };
 }

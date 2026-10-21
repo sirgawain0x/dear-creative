@@ -12,14 +12,10 @@ import { getAddress } from "viem";
 import { setWalletEnabledForTests } from "@/lib/wallet/feature-flag";
 import { setWalletSendEnabledForTests } from "@/lib/wallet/send-feature-flag";
 import {
-  resetExecuteAdminWalletSendForTests,
-  setExecuteAdminWalletSendForTests,
-} from "@/lib/wallet/execute-admin-wallet-send";
-import { resetSendIdempotencyStoreForTests } from "@/lib/wallet/send-idempotency";
-import {
   resetWalletSendGasEstimateForTests,
   setWalletSendGasEstimateForTests,
 } from "@/lib/wallet/send-gas-estimate";
+import { ADMIN_WALLET_SEND_VALIDATION_ERROR } from "@/lib/wallet/admin-wallet-send-request";
 
 vi.mock("@/lib/privy/require-auth", () => ({
   requirePrivyAuth: vi.fn(),
@@ -28,7 +24,7 @@ vi.mock("@/lib/privy/require-auth", () => ({
 vi.mock("@/lib/wallet/balances", () => ({
   fetchWalletBalances: vi.fn().mockResolvedValue({
     eth: { raw: "1000000000000000000", formatted: "1" },
-    usdc: { raw: "5000000", formatted: "5" },
+    usdc: { raw: "500000000", formatted: "500" },
   }),
 }));
 
@@ -38,14 +34,14 @@ import { POST as POST_ESTIMATE } from "./estimate/route";
 
 const RECIPIENT = getAddress("0x1111111111111111111111111111111111111111");
 
-function authRequest(body: Record<string, unknown>, key = "idem-key-12345678") {
+function authRequest(body: Record<string, unknown>) {
   return new Request("http://localhost/api/admin/wallet/send", {
     method: "POST",
     headers: {
       Authorization: "Bearer admin-token",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ ...body, idempotencyKey: key }),
+    body: JSON.stringify(body),
   });
 }
 
@@ -53,8 +49,6 @@ describe("POST /api/admin/wallet/send", () => {
   beforeEach(() => {
     setWalletEnabledForTests(true);
     setWalletSendEnabledForTests(true);
-    resetSendIdempotencyStoreForTests();
-    resetExecuteAdminWalletSendForTests();
     resetWalletSendGasEstimateForTests();
     setWalletSendGasEstimateForTests(async () => BigInt(21_000));
     vi.stubEnv(
@@ -65,17 +59,11 @@ describe("POST /api/admin/wallet/send", () => {
       ok: true,
       user: { userId: "did:privy:admin" },
     });
-    setExecuteAdminWalletSendForTests(async () => ({
-      mode: "submitted",
-      txHash: "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
-    }));
   });
 
   afterEach(() => {
     setWalletEnabledForTests(undefined);
     setWalletSendEnabledForTests(undefined);
-    resetExecuteAdminWalletSendForTests();
-    resetSendIdempotencyStoreForTests();
     resetWalletSendGasEstimateForTests();
     vi.unstubAllEnvs();
     vi.clearAllMocks();
@@ -84,7 +72,7 @@ describe("POST /api/admin/wallet/send", () => {
   it("returns 404 when send flag is disabled", async () => {
     setWalletSendEnabledForTests(false);
     const res = await POST(
-      authRequest({ recipient: RECIPIENT, amount: "1", asset: "USDC" }),
+      authRequest({ recipient: RECIPIENT, amount: "1" }),
     );
     expect(res.status).toBe(404);
   });
@@ -95,74 +83,28 @@ describe("POST /api/admin/wallet/send", () => {
       response: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
     });
     const res = await POST(
-      authRequest({ recipient: RECIPIENT, amount: "1", asset: "USDC" }),
+      authRequest({ recipient: RECIPIENT, amount: "1" }),
     );
     expect(res.status).toBe(403);
   });
 
-  it("submits send via mocked executor and returns tx hash", async () => {
+  it("returns prepared USDC transaction for client signing", async () => {
     const res = await POST(
-      authRequest({ recipient: RECIPIENT, amount: "1", asset: "USDC" }),
+      authRequest({ recipient: RECIPIENT, amount: "1" }),
     );
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json.txHash).toMatch(/^0x/);
-    expect(json.explorerUrl).toContain("basescan.org/tx/");
+    expect(json.from).toBe(getAddress("0xAE48B6dB64772b9CC24e33A79c809896776a20f6"));
+    expect(json.transaction.chainId).toBe(8453);
+    expect(json.transaction.data).toMatch(/^0x/);
+    expect(json.gas.gasSponsorshipAvailable).toBe(false);
   });
 
-  it("returns same tx hash for duplicate idempotency key", async () => {
-    const payload = { recipient: RECIPIENT, amount: "1", asset: "USDC" };
-    const key = "duplicate-key-123456";
-    const first = await POST(authRequest(payload, key));
-    expect(first.status).toBe(200);
-    const second = await POST(authRequest(payload, key));
-    expect(second.status).toBe(200);
-    const a = await first.json();
-    const b = await second.json();
-    expect(b.duplicate).toBe(true);
-    expect(b.txHash).toBe(a.txHash);
-  });
-
-  it("blocks concurrent duplicate idempotency while pending", async () => {
-    setExecuteAdminWalletSendForTests(
-      () =>
-        new Promise((resolve) => {
-          setTimeout(
-            () =>
-              resolve({
-                mode: "submitted",
-                txHash:
-                  "0x1111111111111111111111111111111111111111111111111111111111111111",
-              }),
-            50,
-          );
-        }),
+  it("rejects amount above WALLET_SEND_MAX_USDC", async () => {
+    const res = await POST(
+      authRequest({ recipient: RECIPIENT, amount: "150" }),
     );
-    const key = "pending-key-1234567";
-    const body = { recipient: RECIPIENT, amount: "1", asset: "USDC", idempotencyKey: key };
-    const p1 = POST(
-      new Request("http://localhost/api/admin/wallet/send", {
-        method: "POST",
-        headers: {
-          Authorization: "Bearer admin-token",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      }),
-    );
-    await new Promise((r) => setTimeout(r, 5));
-    const p2 = await POST(
-      new Request("http://localhost/api/admin/wallet/send", {
-        method: "POST",
-        headers: {
-          Authorization: "Bearer admin-token",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      }),
-    );
-    expect(p2.status).toBe(409);
-    await p1;
+    expect(res.status).toBe(400);
   });
 });
 
@@ -198,10 +140,30 @@ describe("POST /api/admin/wallet/send/estimate", () => {
         body: JSON.stringify({
           recipient: RECIPIENT,
           amount: "1",
-          asset: "USDC",
         }),
       }),
     );
     expect(res.status).toBe(404);
+  });
+
+  it("returns 502 with fixed text when gas estimate throws", async () => {
+    const secret = "https://alchemy.example/SECRET_RPC_KEY/leak";
+    setWalletSendGasEstimateForTests(async () => {
+      throw new Error(secret);
+    });
+    const res = await POST_ESTIMATE(
+      new Request("http://localhost/api/admin/wallet/send/estimate", {
+        method: "POST",
+        headers: { Authorization: "Bearer x", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          recipient: RECIPIENT,
+          amount: "1",
+        }),
+      }),
+    );
+    expect(res.status).toBe(502);
+    const text = await res.text();
+    expect(text).toContain(ADMIN_WALLET_SEND_VALIDATION_ERROR);
+    expect(text).not.toContain(secret);
   });
 });

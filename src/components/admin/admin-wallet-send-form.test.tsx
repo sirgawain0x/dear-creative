@@ -55,7 +55,7 @@ describe("AdminWalletSendForm", () => {
       fireEvent.change(screen.getByLabelText(/^recipient$/i), {
         target: { value: RECIPIENT },
       });
-      fireEvent.change(screen.getByLabelText(/^amount$/i), {
+      fireEvent.change(screen.getByLabelText(/^amount \(usdc\)$/i), {
         target: { value: "1.25" },
       });
       fireEvent.click(screen.getByRole("button", { name: /review send/i }));

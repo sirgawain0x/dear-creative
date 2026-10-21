@@ -13,16 +13,13 @@ describe("createAdminWalletSendPort", () => {
     const estimate = await port.estimateSend({
       recipient: getAddress("0x2222222222222222222222222222222222222222"),
       amount: "1",
-      asset: "USDC",
     });
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(estimate).toMatchObject({ asset: "USDC" });
+    expect(estimate).toMatchObject({ amount: "1" });
 
     const sent = await port.executeSend({
       recipient: getAddress("0x2222222222222222222222222222222222222222"),
       amount: "1",
-      asset: "USDC",
-      idempotencyKey: "test-key-12345678",
     });
     expect(sent.ok).toBe(true);
     fetchMock.mockRestore();

@@ -1,7 +1,7 @@
 import { getAddress } from "viem";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  buildAdminWalletSendCalls,
+  buildAdminWalletSendCall,
   validateAdminWalletSendInput,
 } from "./send-validation";
 
@@ -13,17 +13,19 @@ describe("validateAdminWalletSendInput", () => {
   const base = {
     fromAddress: FROM,
     balances: {
-      ethRaw: BigInt(10) ** BigInt(18),
-      usdcRaw: BigInt(1_000_000),
+      usdcRaw: BigInt(1_000_000_000),
     },
   };
 
-  it("rejects non-checksummed recipient", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("rejects non-checksummed mixed-case recipient", () => {
     const result = validateAdminWalletSendInput({
       ...base,
       recipient: BAD_CHECKSUM,
       amount: "1",
-      asset: "USDC",
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -31,12 +33,20 @@ describe("validateAdminWalletSendInput", () => {
     }
   });
 
+  it("accepts all-lowercase recipient", () => {
+    const result = validateAdminWalletSendInput({
+      ...base,
+      recipient: RECIPIENT.toLowerCase(),
+      amount: "1",
+    });
+    expect(result.ok).toBe(true);
+  });
+
   it("rejects zero address", () => {
     const result = validateAdminWalletSendInput({
       ...base,
       recipient: "0x0000000000000000000000000000000000000000",
       amount: "1",
-      asset: "USDC",
     });
     expect(result.ok).toBe(false);
   });
@@ -46,7 +56,6 @@ describe("validateAdminWalletSendInput", () => {
       ...base,
       recipient: FROM,
       amount: "1",
-      asset: "USDC",
     });
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -58,8 +67,38 @@ describe("validateAdminWalletSendInput", () => {
     const result = validateAdminWalletSendInput({
       ...base,
       recipient: RECIPIENT,
-      amount: "2",
-      asset: "USDC",
+      amount: "2000",
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("rejects amount over WALLET_SEND_MAX_USDC default", () => {
+    const result = validateAdminWalletSendInput({
+      ...base,
+      recipient: RECIPIENT,
+      amount: "101",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("100 USDC");
+    }
+  });
+
+  it("respects WALLET_SEND_MAX_USDC override", () => {
+    vi.stubEnv("WALLET_SEND_MAX_USDC", "50");
+    const result = validateAdminWalletSendInput({
+      ...base,
+      recipient: RECIPIENT,
+      amount: "51",
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("rejects invalid decimal format", () => {
+    const result = validateAdminWalletSendInput({
+      ...base,
+      recipient: RECIPIENT,
+      amount: "1.1234567",
     });
     expect(result.ok).toBe(false);
   });
@@ -69,7 +108,6 @@ describe("validateAdminWalletSendInput", () => {
       ...base,
       recipient: RECIPIENT,
       amount: "0.000001",
-      asset: "USDC",
     });
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -82,14 +120,12 @@ describe("validateAdminWalletSendInput", () => {
       ...base,
       recipient: RECIPIENT,
       amount: "1",
-      asset: "USDC",
     });
     expect(validated.ok).toBe(true);
     if (!validated.ok) {
       return;
     }
-    const calls = buildAdminWalletSendCalls(validated);
-    expect(calls).toHaveLength(1);
-    expect(calls[0]!.data.startsWith("0xa9059cbb")).toBe(true);
+    const call = buildAdminWalletSendCall(validated);
+    expect(call.data.startsWith("0xa9059cbb")).toBe(true);
   });
 });

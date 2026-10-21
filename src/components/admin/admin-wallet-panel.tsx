@@ -5,7 +5,7 @@ import QRCode from "qrcode";
 import { useAuthSession } from "@/components/providers/app-providers";
 import { adminPrivyAuthorizationHeaders } from "@/lib/admin/admin-api-auth";
 import { AdminWalletSendForm } from "./admin-wallet-send-form";
-import { AdminWalletSendSmartWalletBridge } from "./admin-wallet-send-smart-wallet-bridge";
+import { AdminWalletSendEmbeddedBridge } from "./admin-wallet-send-embedded-bridge";
 import {
   resolveWalletPanelLoadErrors,
   WALLET_HISTORY_ERROR_MESSAGE,
@@ -337,8 +337,8 @@ export function AdminWalletPanel({
                   previewMode
                 />
               ) : (
-                <AdminWalletSendSmartWalletBridge>
-                  {(smartWalletClient) => (
+                <AdminWalletSendEmbeddedBridge adminWalletAddress={summary.address}>
+                  {(embeddedSend) => (
                     <AdminWalletSendForm
                       walletAddress={summary.address}
                       balances={summary.balances}
@@ -349,10 +349,10 @@ export function AdminWalletPanel({
                       getAccessToken={getAccessToken}
                       privyConfigured={privyConfigured}
                       authenticated={authenticated}
-                      smartWalletClient={smartWalletClient}
+                      embeddedSend={embeddedSend}
                     />
                   )}
-                </AdminWalletSendSmartWalletBridge>
+                </AdminWalletSendEmbeddedBridge>
               )}
             </div>
           </div>
