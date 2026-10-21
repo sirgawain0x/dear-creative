@@ -653,4 +653,31 @@ export const linkedinMemberCredentials = sqliteTable("linkedin_member_credential
 export type LinkedInMemberCredentialRecord =
   typeof linkedinMemberCredentials.$inferSelect;
 
+export const earnAuditActionEnum = ["deposit", "withdraw"] as const;
+
+/** Append-only audit trail for Privy Earn admin actions (written by actions PR). */
+export const earnAuditLog = sqliteTable(
+  "earn_audit_log",
+  {
+    id: text("id").primaryKey(),
+    adminPrivyUserId: text("admin_privy_user_id").notNull(),
+    adminWalletId: text("admin_wallet_id").notNull(),
+    action: text("action", { enum: earnAuditActionEnum }).notNull(),
+    vaultId: text("vault_id").notNull(),
+    asset: text("asset").notNull(),
+    amount: text("amount").notNull(),
+    txHash: text("tx_hash"),
+    status: text("status").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("earn_audit_log_created_at_idx").on(table.createdAt),
+    index("earn_audit_log_vault_id_idx").on(table.vaultId),
+  ],
+);
+
+export type EarnAuditLogRecord = typeof earnAuditLog.$inferSelect;
+
 

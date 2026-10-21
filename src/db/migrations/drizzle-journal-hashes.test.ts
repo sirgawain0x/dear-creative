@@ -61,6 +61,12 @@ const RECONCILE_0018 = {
   hash: "ac80efa6c47c09486194cd8cb34fabefcb3e4c1980bd3a1f0e9ad4087360adea",
 } as const;
 
+const RECONCILE_0019 = {
+  tag: "0019_earn_audit_log",
+  when: 1792524500000,
+  hash: "41ea9b3e0cf2e58708029b86ea94db760825339fab931ec89d06c756e4186c74",
+} as const;
+
 describe("drizzle journal reconciliation hashes (0009–0014)", () => {
   it("matches drizzle-orm readMigrationFiles hash algorithm", () => {
     const migrations = readMigrationFiles({ migrationsFolder: "./drizzle" });
@@ -136,5 +142,25 @@ describe("drizzle journal reconciliation hashes (0018 linkedin credentials)", ()
     );
     expect(linkedinEntry?.idx).toBe(17);
     expect(linkedinEntry?.when).toBeGreaterThan(RECONCILE_0017.when);
+  });
+});
+
+describe("drizzle journal reconciliation hashes (0019 earn audit log)", () => {
+  it("matches drizzle-orm readMigrationFiles hash algorithm", () => {
+    const migrations = readMigrationFiles({ migrationsFolder: "./drizzle" });
+    const fromLib = migrations.find((m) => m.folderMillis === RECONCILE_0019.when);
+    expect(fromLib?.hash).toBe(RECONCILE_0019.hash);
+    expect(hashMigrationSqlFile(RECONCILE_0019.tag)).toBe(RECONCILE_0019.hash);
+  });
+
+  it("registers 0019 at journal idx 18 after 0018", () => {
+    const journal = JSON.parse(
+      readFileSync(join(process.cwd(), "drizzle/meta/_journal.json"), "utf8"),
+    ) as { entries: Array<{ idx: number; tag: string; when: number }> };
+    const earnAuditEntry = journal.entries.find(
+      (entry) => entry.tag === RECONCILE_0019.tag,
+    );
+    expect(earnAuditEntry?.idx).toBe(18);
+    expect(earnAuditEntry?.when).toBeGreaterThan(RECONCILE_0018.when);
   });
 });

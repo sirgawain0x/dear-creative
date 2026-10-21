@@ -61,7 +61,7 @@ describe("GET /api/admin/earn/position", () => {
     expect(res.status).toBe(404);
   });
 
-  it("returns 403 for non-admin", async () => {
+  it("returns 404 for non-admin (same as flag off)", async () => {
     vi.mocked(requirePrivyAuth).mockResolvedValue({
       ok: false,
       response: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
@@ -72,7 +72,7 @@ describe("GET /api/admin/earn/position", () => {
         { headers: { Authorization: "Bearer x" } },
       ),
     );
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
   });
 
   it("rejects unknown vault ids", async () => {
