@@ -3,6 +3,9 @@ export const READER_WALLET_E2E_STORAGE_KEY = "dear_creative_reader_wallet_e2e";
 
 /** Server-only: gate before passing `readerWalletE2eAuthEnabled` into the client tree. */
 export function isReaderWalletE2eAuthEnabled(): boolean {
+  if (process.env.NODE_ENV === "production") {
+    return false;
+  }
   if (process.env.VERCEL_ENV === "production") {
     return false;
   }

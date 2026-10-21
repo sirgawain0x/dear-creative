@@ -95,37 +95,49 @@ export function ReaderAccountMenuBody({
     void signOut();
   };
 
+  const actions = (
+    <div
+      className="flex shrink-0 flex-col gap-1 border-b border-zinc-200 bg-white pb-2 dark:border-zinc-800 dark:bg-zinc-950"
+      data-testid="reader-account-menu-actions"
+    >
+      <button
+        type="button"
+        data-testid="reader-account-copy-address"
+        disabled={!walletAddress}
+        onClick={() => void handleCopyAddress()}
+        className="rounded-lg px-2 py-2 text-left text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-zinc-900"
+      >
+        {copyLabel}
+      </button>
+      {isAdmin ? (
+        <Link
+          href="/admin"
+          data-testid="reader-account-admin-console"
+          onClick={() => onNavigate?.()}
+          className="rounded-lg px-2 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-900"
+        >
+          Admin Console
+        </Link>
+      ) : null}
+      <button
+        type="button"
+        data-testid="reader-account-sign-out"
+        onClick={handleSignOut}
+        className="rounded-lg px-2 py-2 text-left text-sm font-semibold text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+      >
+        Sign Out
+      </button>
+    </div>
+  );
+
   return (
-    <div className="flex flex-col gap-4" data-testid="reader-account-menu-body">
-      <ReaderWalletPanel previewData={previewData} />
-      <div className="flex flex-col gap-1 border-t border-zinc-200 pt-3 dark:border-zinc-800">
-        <button
-          type="button"
-          data-testid="reader-account-copy-address"
-          disabled={!walletAddress}
-          onClick={() => void handleCopyAddress()}
-          className="rounded-lg px-2 py-2 text-left text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-zinc-900"
-        >
-          {copyLabel}
-        </button>
-        {isAdmin ? (
-          <Link
-            href="/admin"
-            data-testid="reader-account-admin-console"
-            onClick={() => onNavigate?.()}
-            className="rounded-lg px-2 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-900"
-          >
-            Admin Console
-          </Link>
-        ) : null}
-        <button
-          type="button"
-          data-testid="reader-account-sign-out"
-          onClick={handleSignOut}
-          className="rounded-lg px-2 py-2 text-left text-sm font-semibold text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
-        >
-          Sign Out
-        </button>
+    <div
+      className="flex min-h-0 flex-col"
+      data-testid="reader-account-menu-body"
+    >
+      {actions}
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 pt-3">
+        <ReaderWalletPanel previewData={previewData} />
       </div>
     </div>
   );

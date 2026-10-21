@@ -57,21 +57,22 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
   const showReaderWalletButton = readerWalletEnabled;
 
   const visibleLinks = getVisibleNavLinks(isSignedIn);
+  const hideNavSignInForReaderWallet = showReaderWalletButton && !isSignedIn;
 
   return (
     <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white/90 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90">
-      <div className="mx-auto flex w-full max-w-[1800px] items-center justify-between px-4 sm:px-6 lg:px-8 py-3.5">
-        <div className="flex items-center gap-3">
+      <div className="mx-auto flex w-full max-w-[1800px] items-center justify-between gap-2 px-4 sm:px-6 lg:px-8 py-3.5">
+        <div className="flex min-w-0 shrink items-center gap-2 sm:gap-3">
           <Link
             href="/"
-            className="flex items-center gap-2.5 text-lg font-semibold tracking-tight text-zinc-900 hover:opacity-80 dark:text-zinc-50"
+            className="flex min-w-0 shrink items-center gap-2.5 text-lg font-semibold tracking-tight text-zinc-900 hover:opacity-80 dark:text-zinc-50"
           >
             <img
               src="/images/dear-creative-logo.png"
               alt="Dear Creative Logo"
-              className="h-8 w-8 rounded-full border border-zinc-200/80 object-cover shadow-2xs dark:border-zinc-800"
+              className="h-8 w-8 shrink-0 rounded-full border border-zinc-200/80 object-cover shadow-2xs dark:border-zinc-800"
             />
-            <span>Dear Creative</span>
+            <span className="whitespace-nowrap">Dear Creative</span>
           </Link>
           <span className="hidden rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-medium text-zinc-600 sm:inline-block dark:bg-zinc-900 dark:text-zinc-400">
             Creative Platform
@@ -84,6 +85,10 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
             const active = isNavLinkActive(pathname, link);
             const isAuthAction = link.href === "/admin";
             const label = isAuthAction && isSignedIn ? "Sign Out" : link.label;
+
+            if (isAuthAction && hideNavSignInForReaderWallet) {
+              return null;
+            }
 
             if (isAuthAction && isSignedIn) {
               return (
@@ -174,6 +179,10 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
               const active = isNavLinkActive(pathname, link);
               const isAuthAction = link.href === "/admin";
               const label = isAuthAction && isSignedIn ? "Sign Out" : link.label;
+
+              if (isAuthAction && hideNavSignInForReaderWallet) {
+                return null;
+              }
 
               if (isAuthAction && isSignedIn) {
                 return (

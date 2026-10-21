@@ -101,14 +101,18 @@ export function ReaderAccountDropdown({
               data-testid="reader-wallet-header-button"
               className="outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 rounded-full"
             >
-              <ReaderAccountTrigger address={displayAddress} loading={loading} />
+              <ReaderAccountTrigger
+                address={displayAddress}
+                loading={loading}
+                showAddress
+              />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align="end"
             data-radix-menu-content
             data-testid="reader-account-dropdown"
-            className="w-[min(calc(100vw-2rem),24rem)] max-h-[min(70vh,36rem)] overflow-y-auto p-3"
+            className="flex w-[min(calc(100vw-2rem),24rem)] max-h-[min(70vh,36rem)] flex-col overflow-hidden p-0"
             onCloseAutoFocus={dropdownFocusHandlers.onCloseAutoFocus}
           >
             <ReaderAccountMenuBody
@@ -132,7 +136,11 @@ export function ReaderAccountDropdown({
             data-testid={testId}
             className="outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 rounded-full"
           >
-            <ReaderAccountTrigger address={displayAddress} loading={loading} />
+            <ReaderAccountTrigger
+              address={displayAddress}
+              loading={loading}
+              showAddress={false}
+            />
           </button>
         </SheetTrigger>
         <SheetContent side="bottom">

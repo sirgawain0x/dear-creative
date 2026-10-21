@@ -23,7 +23,7 @@ const walletMe = {
   },
 };
 
-async function mockWallet(page) {
+async function mockWallet(page, { isAdmin = false } = {}) {
   await page.route("**/api/wallet/me", (route) =>
     route.fulfill({
       status: 200,
@@ -39,7 +39,11 @@ async function mockWallet(page) {
     }),
   );
   await page.route("**/api/admin/me", (route) =>
-    route.fulfill({ status: 403, body: "{}" }),
+    route.fulfill({
+      status: isAdmin ? 200 : 403,
+      contentType: "application/json",
+      body: JSON.stringify(isAdmin ? { isAdmin: true } : {}),
+    }),
   );
 }
 
@@ -47,8 +51,8 @@ await mkdir(assetDir, { recursive: true });
 const browser = await chromium.launch();
 
 const signedOutShots = [
-  { label: "signed-out-390", width: 390 },
-  { label: "signed-out-840", width: 840 },
+  { label: "header-390", width: 390 },
+  { label: "header-840", width: 840 },
   { label: "signed-out-desktop", width: 1280 },
 ];
 
@@ -97,9 +101,36 @@ for (const shot of openMenuShots) {
   } else {
     await page.getByTestId("reader-account-dropdown").waitFor({ state: "visible" });
   }
+  if (!shot.mobile) {
+    await page
+      .getByTestId("reader-account-menu-actions")
+      .waitFor({ state: "visible" });
+    await page.getByTestId("reader-account-copy-address").waitFor({ state: "visible" });
+    await page.getByTestId("reader-account-sign-out").waitFor({ state: "visible" });
+  }
   await page.waitForTimeout(300);
   await page.screenshot({
     path: path.join(assetDir, `${shot.label}.png`),
+    fullPage: false,
+  });
+  await page.close();
+}
+
+// Desktop dropdown with Admin Console (admin session)
+{
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await page.addInitScript((key) => {
+    window.localStorage.setItem(key, "1");
+  }, E2E_KEY);
+  await mockWallet(page, { isAdmin: true });
+  await page.goto(`${baseUrl}/`, { waitUntil: "networkidle" });
+  const trigger = page.getByTestId("reader-wallet-header-button");
+  await trigger.waitFor({ state: "visible", timeout: 20_000 });
+  await trigger.click();
+  await page.getByTestId("reader-account-dropdown").waitFor({ state: "visible" });
+  await page.getByTestId("reader-account-admin-console").waitFor({ state: "visible" });
+  await page.screenshot({
+    path: path.join(assetDir, "menu-open-desktop-admin.png"),
     fullPage: false,
   });
   await page.close();
