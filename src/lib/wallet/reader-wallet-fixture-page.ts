@@ -12,5 +12,5 @@ export function isReaderWalletFixturePageEnabled(): boolean {
   if (process.env.NODE_ENV === "development") {
     return true;
   }
-  return process.env.READER_WALLET_FIXTURE?.trim().toLowerCase() === "true";
+  return process.env.READER_WALLET_FIXTURE?.trim() === "true";
 }

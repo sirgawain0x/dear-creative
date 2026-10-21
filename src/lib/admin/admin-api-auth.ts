@@ -1,10 +1,10 @@
+import {
+  privyAuthorizationHeaders,
+  type PrivyAuthorizationSession,
+} from "@/lib/privy/privy-authorization-headers";
 import { resolveStudioBearerToken } from "./studio-bearer-token";
 
-export type AdminApiAuthSession = {
-  privyConfigured: boolean;
-  authenticated: boolean;
-  getAccessToken: () => Promise<string | null>;
-};
+export type AdminApiAuthSession = PrivyAuthorizationSession;
 
 /** Same bearer resolution as Metrics and Payouts admin cards. */
 export async function resolveAdminApiBearerToken(
@@ -31,17 +31,5 @@ export async function adminApiAuthorizationHeaders(
 export async function adminPrivyAuthorizationHeaders(
   session: AdminApiAuthSession,
 ): Promise<{ Authorization: string } | null> {
-  if (!session.privyConfigured || !session.authenticated) {
-    return null;
-  }
-  try {
-    const token = await session.getAccessToken();
-    const trimmed = token?.trim();
-    if (!trimmed) {
-      return null;
-    }
-    return { Authorization: `Bearer ${trimmed}` };
-  } catch {
-    return null;
-  }
+  return privyAuthorizationHeaders(session);
 }

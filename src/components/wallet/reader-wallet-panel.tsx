@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { adminPrivyAuthorizationHeaders } from "@/lib/admin/admin-api-auth";
+import { privyAuthorizationHeaders } from "@/lib/privy/privy-authorization-headers";
 import { buildEip681BaseUsdcReceiveUri } from "@/lib/wallet/eip681-receive-uri";
 import { useAuthSession } from "@/components/providers/app-providers";
 
@@ -74,7 +74,7 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
     }
 
     try {
-      const headers = await adminPrivyAuthorizationHeaders({
+      const headers = await privyAuthorizationHeaders({
         privyConfigured,
         authenticated,
         getAccessToken,

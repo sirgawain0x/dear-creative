@@ -48,7 +48,14 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [walletSheetOpen, setWalletSheetOpen] = useState(false);
   const mobileMenuId = useId();
-  const { isSignedIn, authenticated, signOut } = useAuthSession();
+  const {
+    isSignedIn,
+    authenticated,
+    signOut,
+    login,
+    privyConfigured,
+    privyTimedOut,
+  } = useAuthSession();
   const showReaderWallet = readerWalletEnabled && authenticated;
 
   const visibleLinks = getVisibleNavLinks(isSignedIn);
@@ -104,6 +111,20 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
                     Sign Out
                   </button>
                 </div>
+              );
+            }
+
+            if (isAuthAction && !isSignedIn && privyConfigured && !privyTimedOut) {
+              return (
+                <button
+                  key={link.href}
+                  type="button"
+                  onClick={login}
+                  disabled={privyTimedOut}
+                  className="rounded-full border border-zinc-300 bg-zinc-900 px-3.5 py-1.5 text-sm font-medium text-white shadow-2xs transition-colors hover:bg-zinc-800 dark:border-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                >
+                  {label}
+                </button>
               );
             }
 
@@ -196,6 +217,24 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
                       className="block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
                     >
                       Sign Out
+                    </button>
+                  </li>
+                );
+              }
+
+              if (isAuthAction && !isSignedIn && privyConfigured && !privyTimedOut) {
+                return (
+                  <li key={link.href}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        login();
+                      }}
+                      disabled={privyTimedOut}
+                      className="block w-full rounded-lg bg-zinc-900 px-3 py-2 text-left text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+                    >
+                      {label}
                     </button>
                   </li>
                 );

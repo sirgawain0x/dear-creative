@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { requirePrivyAuth } from "@/lib/privy/require-auth";
+import {
+  assertReaderWalletChainId,
+  READER_WALLET_CHAIN_ID,
+} from "./reader-wallet-chain";
 import { isReaderWalletEnabled } from "./reader-wallet-feature-flag";
 import {
   resolveReaderEmbeddedWalletFromAuthorization,
@@ -39,7 +43,7 @@ export async function requireReaderWalletApi(
           configured: false,
           reason: "no_embedded_wallet",
           network: "base",
-          chainId: 8453,
+          chainId: READER_WALLET_CHAIN_ID,
         },
         { status: 404 },
       ),

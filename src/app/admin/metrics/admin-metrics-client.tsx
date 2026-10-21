@@ -190,11 +190,9 @@ export function AdminMetricsClient() {
   if (needsSignIn) {
     return (
       <p className="text-sm text-zinc-600 dark:text-zinc-400">
-        Sign in on the{" "}
-        <Link href="/admin" className="font-semibold text-zinc-900 underline dark:text-zinc-100">
-          admin page
-        </Link>{" "}
-        to view metrics.
+        Use{" "}
+        <span className="font-semibold text-zinc-900 dark:text-zinc-100">Sign In</span> in the
+        site header to view metrics.
       </p>
     );
   }

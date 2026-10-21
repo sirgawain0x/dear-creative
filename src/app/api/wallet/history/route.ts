@@ -1,6 +1,5 @@
 import { connection, NextResponse } from "next/server";
 import {
-  AlchemyTransfersError,
   isWalletReadFixtureEnabled,
   walletReadFixtureResponse,
 } from "@/lib/wallet/asset-transfers";
@@ -77,13 +76,10 @@ export async function GET(request: Request) {
       transfers,
       pagination,
     });
-  } catch (error) {
-    if (error instanceof AlchemyTransfersError) {
-      return readerWalletJson(
-        { error: "transfer_history_unavailable" },
-        { status: 502 },
-      );
-    }
+  } catch {
+    console.error("[reader-wallet] transfer_history_fetch_failed", {
+      code: "transfer_history_fetch_failed",
+    });
     return readerWalletJson(
       { error: "transfer_history_unavailable" },
       { status: 502 },

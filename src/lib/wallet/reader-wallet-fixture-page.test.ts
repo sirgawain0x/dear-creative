@@ -36,4 +36,11 @@ describe("isReaderWalletFixturePageEnabled", () => {
     vi.stubEnv("VERCEL_ENV", "preview");
     expect(isReaderWalletFixturePageEnabled()).toBe(false);
   });
+
+  it("is false when READER_WALLET_FIXTURE is not exactly true", () => {
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("READER_WALLET_FIXTURE", "TRUE");
+    expect(isReaderWalletFixturePageEnabled()).toBe(false);
+  });
 });
