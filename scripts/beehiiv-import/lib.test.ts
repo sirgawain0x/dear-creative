@@ -183,7 +183,7 @@ drop-1,Drop Post,confirmed,https://example.test/p/drop,Sub,Preview,"<img src=${s
 
     const { db, url } = await createTestDb();
     const uploadFn = vi.fn();
-    const fetchFn = vi.fn(async (requestUrl: string) => {
+    const fetchFn = vi.fn(async (requestUrl: RequestInfo | URL) => {
       if (String(requestUrl).includes("missing.png")) {
         return new Response(null, { status: 403 });
       }
@@ -191,7 +191,7 @@ drop-1,Drop Post,confirmed,https://example.test/p/drop,Sub,Preview,"<img src=${s
         status: 200,
         headers: { "content-type": "image/png" },
       });
-    });
+    }) as typeof fetch;
 
     const summary = await runBeehiivImport({
       db,
