@@ -10,7 +10,6 @@ import {
   buildNarratedSlidesMp4,
   defaultFfmpegRunner,
   probeAudioDurationSeconds,
-  tailFfmpegStderrForLog,
 } from "../ffmpeg";
 import { synthesizeSlideNarrationMp3 } from "./audio-overview";
 
@@ -27,20 +26,6 @@ afterEach(async () => {
     workDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
   );
 });
-
-async function ffmpegSupportsDrawtext(): Promise<boolean> {
-  if (!ffmpegPath) {
-    return false;
-  }
-  try {
-    const { stdout } = await execFile(ffmpegPath, ["-filters"], {
-      maxBuffer: 8 * 1024 * 1024,
-    });
-    return String(stdout).includes("drawtext");
-  } catch {
-    return false;
-  }
-}
 
 function makeGeminiPcmFixture(byteLength = 24000 * 2 * 2): Buffer {
   const pcm = Buffer.alloc(byteLength);
@@ -65,7 +50,7 @@ describe("video overview PCM + ffmpeg integration", () => {
     ).rejects.toThrow(/Could not probe audio duration|ffmpeg failed/);
   });
 
-  it("runs slide ffmpeg with Gemini-shaped PCM normalized to real MP3", async () => {
+  it("builds overview.mp4 from PNG slides and normalized MP3 narration", async () => {
     if (!ffmpegPath) {
       return;
     }
@@ -96,10 +81,6 @@ describe("video overview PCM + ffmpeg integration", () => {
     });
     expect(durationSeconds).toBeGreaterThan(0.1);
 
-    if (!(await ffmpegSupportsDrawtext())) {
-      return;
-    }
-
     const outputPath = join(workDir, "overview.mp4");
     await buildNarratedSlidesMp4({
       workDir,
@@ -113,6 +94,8 @@ describe("video overview PCM + ffmpeg integration", () => {
     }).catch((error: { stderr?: string }) => {
       const stderr = String(error.stderr ?? "");
       expect(stderr).toContain("Duration:");
+      expect(stderr).toMatch(/Video:/);
+      expect(stderr).toMatch(/Audio:/);
     });
   });
 });

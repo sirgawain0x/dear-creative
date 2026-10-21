@@ -37,7 +37,10 @@ import {
   resolvePostCoverImage,
 } from "@/lib/posts/post-cover-image";
 import { resolveGroveOrIpfsUrl } from "@/lib/storage/lens-grove";
+import { useStopAudioOnLeave } from "@/hooks/use-stop-audio-on-leave";
 import { NARRATION_VOICES, voiceLabel } from "@/lib/audio/narration-voices";
+import { playAdamGoogleTts } from "@/app/adam/adam-message-tts";
+import { stopDispatchAudioResources } from "@/lib/audio/stop-active-audio";
 import { RepurposePanel } from "@/app/adam/repurpose-panel";
 
 export type StudioTab = "chat" | "ideas" | "posts" | "approvals" | "schedule";
@@ -376,6 +379,9 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
   const browserRecognitionRef =
     useRef<BrowserSpeechRecognitionInstance | null>(null);
   const activeAudioRef = useRef<HTMLAudioElement | null>(null);
+  const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const ttsAbortRef = useRef<AbortController | null>(null);
+  const ttsSessionActiveRef = useRef(false);
 
   // Ideas & Rough Drafts state
   const [ideas, setIdeas] = useState<AdamIdeaRecord[]>([]);
@@ -766,41 +772,28 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
     }
   }, [authenticated, logout]);
 
-  // Stop any playing speech on unmount
-  useEffect(() => {
-    return () => {
-      if (activeAudioRef.current) {
-        activeAudioRef.current.onended = null;
-        activeAudioRef.current.onerror = null;
-        activeAudioRef.current.pause();
-        activeAudioRef.current.removeAttribute?.("src");
-        activeAudioRef.current.load?.();
-        activeAudioRef.current = null;
-      }
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-      }
-    };
-  }, []);
-
   // --- TTS (Text-to-Speech) ---
   const stopSpeaking = useCallback(() => {
-    if (activeAudioRef.current) {
-      activeAudioRef.current.onended = null;
-      activeAudioRef.current.onerror = null;
-      activeAudioRef.current.pause();
-      activeAudioRef.current.removeAttribute?.("src");
-      activeAudioRef.current.load?.();
-      activeAudioRef.current = null;
-    }
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
+    ttsSessionActiveRef.current = false;
+    const abort = ttsAbortRef.current;
+    ttsAbortRef.current = null;
+    stopDispatchAudioResources({
+      audio: activeAudioRef.current,
+      utterance: activeUtteranceRef.current,
+      abortController: abort,
+    });
+    activeAudioRef.current = null;
+    activeUtteranceRef.current = null;
     setSpeakingMessageIdx(null);
   }, []);
 
+  useStopAudioOnLeave(stopSpeaking);
+
   const speakWithBrowserFallback = useCallback(
     (text: string, messageIndex: number) => {
+      if (!ttsSessionActiveRef.current) {
+        return;
+      }
       if (typeof window === "undefined" || !("speechSynthesis" in window)) {
         setStatusBanner({
           kind: "error",
@@ -813,6 +806,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.onend = () => setSpeakingMessageIdx(null);
       utterance.onerror = () => setSpeakingMessageIdx(null);
+      activeUtteranceRef.current = utterance;
       setSpeakingMessageIdx(messageIndex);
       window.speechSynthesis.speak(utterance);
     },
@@ -827,52 +821,40 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
       }
       stopSpeaking();
       setSpeakingMessageIdx(messageIndex);
+      ttsSessionActiveRef.current = true;
 
       if (voiceEngine === "browser") {
         speakWithBrowserFallback(text, messageIndex);
         return;
       }
 
-      try {
-        const res = await authFetch("/api/adam/voice/tts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text,
-            voiceName: googleVoiceName,
+      await playAdamGoogleTts({
+        text,
+        messageIndex,
+        isSessionActive: () => ttsSessionActiveRef.current,
+        abortRef: ttsAbortRef,
+        fetchTts: (signal) =>
+          authFetch("/api/adam/voice/tts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text,
+              voiceName: googleVoiceName,
+            }),
+            signal,
           }),
-        });
-
-        if (!res.ok) {
-          speakWithBrowserFallback(text, messageIndex);
-          return;
-        }
-
-        const data = (await res.json()) as {
-          audioBase64?: string;
-          mimeType?: string;
-        };
-        if (!data.audioBase64) {
-          speakWithBrowserFallback(text, messageIndex);
-          return;
-        }
-
-        const audio = new Audio(
-          `data:${data.mimeType || "audio/wav"};base64,${data.audioBase64}`,
-        );
-        activeAudioRef.current = audio;
-        audio.onended = () => {
-          setSpeakingMessageIdx(null);
-          activeAudioRef.current = null;
-        };
-        audio.onerror = () => {
-          activeAudioRef.current = null;
-          speakWithBrowserFallback(text, messageIndex);
-        };
-        await audio.play();
-      } catch {
-        speakWithBrowserFallback(text, messageIndex);
-      }
+        speakBrowserFallback: speakWithBrowserFallback,
+        onAudioCreated: (audio) => {
+          activeAudioRef.current = audio;
+          audio.onended = () => {
+            setSpeakingMessageIdx(null);
+            activeAudioRef.current = null;
+          };
+          audio.onerror = () => {
+            activeAudioRef.current = null;
+          };
+        },
+      });
     },
     [
       authFetch,
@@ -3497,21 +3479,23 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
 
       {/* TAB 2.5: EDIT PUBLISHED & DRAFT POSTS */}
       {activeTab === "posts" ? (
-        <section className="mt-6 grid gap-6 lg:grid-cols-12">
+        <section className="mt-6 grid gap-6 lg:grid-cols-12 lg:items-stretch">
           {/* Left Column: Post Browser */}
-          <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-xs lg:col-span-4 xl:col-span-3 dark:border-zinc-800 dark:bg-zinc-900/60">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-base font-semibold">Posts &amp; Archive</h2>
-              <span className="text-xs text-zinc-500">
-                {adminPosts.length} total
-              </span>
+          <div className="flex h-full min-h-[400px] flex-col rounded-2xl border border-zinc-200 bg-white p-5 shadow-xs lg:col-span-4 lg:min-h-0 xl:col-span-3 dark:border-zinc-800 dark:bg-zinc-900/60">
+            <div className="shrink-0">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-base font-semibold">Posts &amp; Archive</h2>
+                <span className="text-xs text-zinc-500">
+                  {adminPosts.length} total
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+                Select any published post or draft to fix missing headers, clean
+                formatting, or update its title and body.
+              </p>
             </div>
-            <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
-              Select any published post or draft to fix missing headers, clean
-              formatting, or update its title and body.
-            </p>
 
-            <div className="mt-3 space-y-2">
+            <div className="mt-3 shrink-0 space-y-2">
               <input
                 type="search"
                 value={postSearchQuery}
@@ -3539,13 +3523,14 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
             </div>
 
             {adminPosts.length === 0 ? (
-              <p className="mt-6 text-xs text-zinc-500">
+              <p className="mt-4 text-xs text-zinc-500">
                 {authenticated
                   ? "No posts loaded yet."
                   : "Sign In to load and edit posts."}
               </p>
             ) : (
-              <ul className="mt-4 max-h-[600px] space-y-2 overflow-y-auto pr-1">
+              <div className="mt-4 min-h-48 max-h-[60vh] overflow-y-auto lg:relative lg:max-h-none lg:min-h-0 lg:flex-1 lg:overflow-hidden">
+              <ul className="space-y-2 pr-1 lg:absolute lg:inset-0 lg:overflow-y-auto">
                 {adminPosts
                   .filter((p) => {
                     if (
@@ -3603,13 +3588,14 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                     );
                   })}
               </ul>
+              </div>
             )}
           </div>
 
           {/* Right Column: Post Editor */}
           <form
             onSubmit={(e) => void handleSaveEditedPost(e)}
-            className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs lg:col-span-8 xl:col-span-9 dark:border-zinc-800 dark:bg-zinc-900/60"
+            className="h-full min-h-[400px] rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs lg:col-span-8 lg:min-h-0 xl:col-span-9 dark:border-zinc-800 dark:bg-zinc-900/60"
           >
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 pb-4 dark:border-zinc-800">
               <div>
