@@ -31,6 +31,7 @@ type ReaderAccountDropdownProps = {
   /** Fixture/screenshot pages only — simulates a signed-in Privy session. */
   fixtureAuthenticated?: boolean;
   fixturePreviewData?: ReaderWalletPreviewData;
+  fixtureShowAdmin?: boolean;
 };
 
 export function ReaderAccountDropdown({
@@ -38,6 +39,7 @@ export function ReaderAccountDropdown({
   className,
   fixtureAuthenticated = false,
   fixturePreviewData,
+  fixtureShowAdmin = false,
 }: ReaderAccountDropdownProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [desktopOpen, setDesktopOpen] = useState(false);
@@ -117,7 +119,7 @@ export function ReaderAccountDropdown({
           >
             <ReaderAccountMenuBody
               previewData={fixturePreviewData}
-              fixtureShowAdmin={fixtureAuthenticated}
+              fixtureShowAdmin={fixtureShowAdmin}
               onNavigate={() => setDesktopOpen(false)}
             />
           </DropdownMenuContent>
@@ -150,7 +152,7 @@ export function ReaderAccountDropdown({
           <div className="overflow-y-auto pr-1">
             <ReaderAccountMenuBody
               previewData={fixturePreviewData}
-              fixtureShowAdmin={fixtureAuthenticated}
+              fixtureShowAdmin={fixtureShowAdmin}
               onNavigate={() => setMobileOpen(false)}
             />
           </div>

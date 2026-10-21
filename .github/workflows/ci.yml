@@ -33,6 +33,7 @@ jobs:
           LOCAL_DATABASE_URL: file:./data/ci-dear-creative.db
           READER_WALLET_ENABLED: "true"
           READER_WALLET_E2E_AUTH: "true"
+          READER_WALLET_FIXTURE: "true"
         run: |
           npx playwright install --with-deps chromium
           npm run test:e2e

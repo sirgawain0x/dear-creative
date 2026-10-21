@@ -7,7 +7,6 @@ import {
   useEffect,
   useMemo,
   useState,
-  useSyncExternalStore,
 } from "react";
 import { PrivyBridgeContext, PrivyRootProvider } from "./privy-root-provider";
 import { ToastProvider } from "@/components/ui/toast";
@@ -80,21 +79,20 @@ export function useSafePrivy() {
   const privy = useContext(PrivyBridgeContext);
   const { privyConfigured, adamTokenConfigured, configLoaded, readerWalletE2eAuthEnabled } =
     useContext(AuthRuntimeConfigContext);
-  const e2eAuthActive = useSyncExternalStore(
-    (onStoreChange) => {
-      if (!readerWalletE2eAuthEnabled) {
-        return () => {};
-      }
-      const onStorage = () => onStoreChange();
-      window.addEventListener("storage", onStorage);
-      return () => window.removeEventListener("storage", onStorage);
-    },
-    () =>
-      readerWalletE2eAuthEnabled
-        ? isReaderWalletE2eSessionActive(readerWalletE2eAuthEnabled)
-        : false,
-    () => false,
-  );
+  const [e2eAuthActive, setE2eAuthActive] = useState(false);
+
+  useEffect(() => {
+    if (!readerWalletE2eAuthEnabled) {
+      setE2eAuthActive(false);
+      return;
+    }
+    const syncE2eSession = () => {
+      setE2eAuthActive(isReaderWalletE2eSessionActive(readerWalletE2eAuthEnabled));
+    };
+    syncE2eSession();
+    window.addEventListener("storage", syncE2eSession);
+    return () => window.removeEventListener("storage", syncE2eSession);
+  }, [readerWalletE2eAuthEnabled]);
   const [privyTimedOut, setPrivyTimedOut] = useState(false);
 
   const isPrivyMounted = Boolean(privy);

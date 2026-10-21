@@ -3,7 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { BotIdProtect } from "@/components/botid-protect";
 import { AppProviders } from "@/components/providers/app-providers";
 import { SiteFooter } from "@/components/site-footer";
-import { SiteHeader } from "@/components/site-header";
+import { SiteHeaderShell } from "@/components/site-header-shell";
 import { getPrivyAppId } from "@/lib/privy/config";
 import { isReaderWalletEnabled } from "@/lib/wallet/reader-wallet-feature-flag";
 import { isReaderWalletE2eAuthEnabled } from "@/lib/wallet/reader-wallet-e2e-auth";
@@ -50,7 +50,7 @@ export default function RootLayout({
           privyAppId={privyAppId}
           readerWalletE2eAuthEnabled={readerWalletE2eAuthEnabled}
         >
-          <SiteHeader readerWalletEnabled={readerWalletEnabled} />
+          <SiteHeaderShell readerWalletEnabled={readerWalletEnabled} />
           <div className="min-w-0 flex-1">{children}</div>
         </AppProviders>
         <SiteFooter />

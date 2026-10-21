@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useId, useState } from "react";
 import { useAuthSession } from "./providers/app-providers";
 import { ReaderAccountDropdown } from "./wallet/reader-account-dropdown";
+import type { ReaderWalletPreviewData } from "./wallet/reader-wallet-panel";
 
 export type SiteNavLink = {
   href: string;
@@ -41,9 +42,18 @@ export function getVisibleNavLinks(isSignedIn: boolean): readonly SiteNavLink[] 
 
 export type SiteHeaderProps = {
   readerWalletEnabled?: boolean;
+  /** Dev fixture pages — simulates signed-in reader wallet in the real header chrome. */
+  fixtureAuthenticated?: boolean;
+  fixturePreviewData?: ReaderWalletPreviewData;
+  fixtureShowAdmin?: boolean;
 };
 
-export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
+export function SiteHeader({
+  readerWalletEnabled = false,
+  fixtureAuthenticated = false,
+  fixturePreviewData,
+  fixtureShowAdmin = false,
+}: SiteHeaderProps) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const mobileMenuId = useId();
@@ -54,10 +64,18 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
     privyConfigured,
     privyTimedOut,
   } = useAuthSession();
-  const showReaderWalletButton = readerWalletEnabled;
+  const showReaderWalletButton = readerWalletEnabled || fixtureAuthenticated;
+  const readerDropdownFixture = fixtureAuthenticated
+    ? {
+        fixtureAuthenticated: true as const,
+        fixturePreviewData,
+        fixtureShowAdmin,
+      }
+    : {};
 
   const visibleLinks = getVisibleNavLinks(isSignedIn);
-  const hideNavSignInForReaderWallet = showReaderWalletButton && !isSignedIn;
+  const hideNavSignInForReaderWallet =
+    showReaderWalletButton && !isSignedIn && !fixtureAuthenticated;
 
   return (
     <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white/90 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90">
@@ -136,7 +154,11 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
             );
           })}
           {showReaderWalletButton ? (
-            <ReaderAccountDropdown surface="desktop" className="ml-0.5" />
+            <ReaderAccountDropdown
+              surface="desktop"
+              className="ml-0.5"
+              {...readerDropdownFixture}
+            />
           ) : null}
           <a
             href={process.env.NEXT_PUBLIC_X_URL || "https://x.com/CreativeCrtv"}
@@ -152,7 +174,7 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
 
         <div className="flex items-center gap-2 lg:hidden">
           {showReaderWalletButton ? (
-            <ReaderAccountDropdown surface="mobile" />
+            <ReaderAccountDropdown surface="mobile" {...readerDropdownFixture} />
           ) : null}
           <button
             type="button"

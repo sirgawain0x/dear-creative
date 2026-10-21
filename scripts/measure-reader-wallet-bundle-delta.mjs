@@ -1,10 +1,6 @@
 /**
- * Compare gzipped client bundle weight: origin/main vs current HEAD.
- * Builds twice with READER_WALLET_ENABLED=true (clean .next each run).
- *
- * Metrics:
- * - staticChunksGzip: sum of gzip(file) for every file under .next/static/chunks
- * - rootLayoutClientGzip: gzip sum of JS chunks listed for app/layout in the app build manifest
+ * Compare gzipped client bundle weight: origin/main vs HEAD (current checkout).
+ * Builds each ref in an isolated git worktree with READER_WALLET_ENABLED=true.
  */
 import { execSync } from "node:child_process";
 import {
@@ -20,10 +16,11 @@ import { gzipSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
+const worktreeRoot = join(repoRoot, ".bundle-worktrees");
 
-function run(cmd, env = {}) {
+function run(cmd, cwd = repoRoot, env = {}) {
   execSync(cmd, {
-    cwd: repoRoot,
+    cwd,
     stdio: "inherit",
     env: { ...process.env, ...env },
   });
@@ -33,7 +30,7 @@ function walkFiles(dir, acc = []) {
   if (!existsSync(dir)) {
     return acc;
   }
-  for (const ent of readdirSafe(dir)) {
+  for (const ent of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, ent.name);
     if (ent.isDirectory()) {
       walkFiles(full, acc);
@@ -44,17 +41,12 @@ function walkFiles(dir, acc = []) {
   return acc;
 }
 
-function readdirSafe(dir) {
-  return readdirSync(dir, { withFileTypes: true });
-}
-
 function gzipBytes(filePath) {
-  const buf = readFileSync(filePath);
-  return gzipSync(buf).length;
+  return gzipSync(readFileSync(filePath)).length;
 }
 
-function measureBuild(label) {
-  const chunksDir = join(repoRoot, ".next/static/chunks");
+function measureBuild(root) {
+  const chunksDir = join(root, ".next/static/chunks");
   const chunkFiles = walkFiles(chunksDir);
   let staticChunksGzip = 0;
   for (const file of chunkFiles) {
@@ -62,18 +54,13 @@ function measureBuild(label) {
   }
 
   let rootLayoutClientGzip = 0;
-  const manifestPath = join(repoRoot, ".next/app-build-manifest.json");
+  const manifestPath = join(root, ".next/app-build-manifest.json");
   if (existsSync(manifestPath)) {
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-    const layoutEntry =
-      manifest.pages?.["/layout"] ??
-      manifest.pages?.["app/layout"] ??
-      manifest.rootMainFiles;
+    const layoutEntry = manifest.pages?.["/layout"] ?? manifest.rootMainFiles;
     const files = Array.isArray(layoutEntry) ? layoutEntry : [];
     for (const rel of files) {
-      const normalized = rel.startsWith("static/")
-        ? join(repoRoot, ".next", rel)
-        : join(repoRoot, ".next", rel.replace(/^\//, ""));
+      const normalized = join(root, ".next", rel.replace(/^\//, ""));
       if (existsSync(normalized) && normalized.endsWith(".js")) {
         rootLayoutClientGzip += gzipBytes(normalized);
       }
@@ -81,7 +68,6 @@ function measureBuild(label) {
   }
 
   return {
-    label,
     staticChunksGzip,
     rootLayoutClientGzip,
     combinedGzip: staticChunksGzip + rootLayoutClientGzip,
@@ -89,48 +75,67 @@ function measureBuild(label) {
   };
 }
 
-function buildAtRef(ref) {
-  run(`git checkout ${ref}`);
-  rmSync(join(repoRoot, ".next"), { recursive: true, force: true });
-  run("npm run build", { READER_WALLET_ENABLED: "true" });
+function buildInDir(dir, label) {
+  rmSync(join(dir, ".next"), { recursive: true, force: true });
+  run("npm run db:migrate:local", dir, {
+    LOCAL_DATABASE_URL: "file:./data/ci-dear-creative.db",
+  });
+  run("npx next build", dir, {
+    READER_WALLET_ENABLED: "true",
+    LOCAL_DATABASE_URL: "file:./data/ci-dear-creative.db",
+  });
+  const metrics = measureBuild(dir);
+  return { label, ...metrics };
 }
 
-const startRef = execSync("git rev-parse --abbrev-ref HEAD", {
-  cwd: repoRoot,
-  encoding: "utf8",
-}).trim();
-
-try {
-  buildAtRef("origin/main");
-  const main = measureBuild("origin/main");
-
-  buildAtRef(startRef);
-  const head = measureBuild("HEAD");
-
-  const delta = {
-    staticChunksGzip: head.staticChunksGzip - main.staticChunksGzip,
-    rootLayoutClientGzip: head.rootLayoutClientGzip - main.rootLayoutClientGzip,
-    combinedGzip: head.combinedGzip - main.combinedGzip,
-  };
-
-  const report = { main, head, delta, generatedAt: new Date().toISOString() };
-  const outPath =
-    process.env.BUNDLE_REPORT_PATH ??
-    join(repoRoot, "artifacts/reader-wallet-bundle-delta.json");
-  mkdirSync(join(repoRoot, "artifacts"), { recursive: true });
-  writeFileSync(outPath, `${JSON.stringify(report, null, 2)}\n`);
-
-  console.log("\nReader wallet bundle delta (READER_WALLET_ENABLED=true, gzip bytes):");
-  console.log(
-    `  static/chunks: main=${main.staticChunksGzip} head=${head.staticChunksGzip} Δ=${delta.staticChunksGzip}`,
-  );
-  console.log(
-    `  root layout client: main=${main.rootLayoutClientGzip} head=${head.rootLayoutClientGzip} Δ=${delta.rootLayoutClientGzip}`,
-  );
-  console.log(
-    `  combined: main=${main.combinedGzip} head=${head.combinedGzip} Δ=${delta.combinedGzip}`,
-  );
-  console.log(`Report: ${outPath}`);
-} finally {
-  run(`git checkout ${startRef}`);
+function prepareWorktree(name, ref) {
+  const dir = join(worktreeRoot, name);
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(worktreeRoot, { recursive: true });
+  run(`git worktree add ${dir} ${ref}`);
+  run("npm ci", dir);
+  return dir;
 }
+
+const headRef = execSync("git rev-parse HEAD", { cwd: repoRoot, encoding: "utf8" }).trim();
+const mainDir = prepareWorktree("main", "origin/main");
+const headDir = prepareWorktree("head", headRef);
+
+const main = buildInDir(mainDir, "origin/main");
+const head = buildInDir(headDir, "HEAD");
+
+const delta = {
+  staticChunksGzip: head.staticChunksGzip - main.staticChunksGzip,
+  rootLayoutClientGzip: head.rootLayoutClientGzip - main.rootLayoutClientGzip,
+  combinedGzip: head.combinedGzip - main.combinedGzip,
+};
+
+const report = {
+  mainRef: "origin/main",
+  headRef,
+  main,
+  head,
+  delta,
+  generatedAt: new Date().toISOString(),
+};
+
+const outPath =
+  process.env.BUNDLE_REPORT_PATH ??
+  join(repoRoot, "artifacts/reader-wallet-bundle-delta.json");
+mkdirSync(join(repoRoot, "artifacts"), { recursive: true });
+writeFileSync(outPath, `${JSON.stringify(report, null, 2)}\n`);
+
+console.log("\nReader wallet bundle delta (READER_WALLET_ENABLED=true, gzip bytes):");
+console.log(
+  `  static/chunks: main=${main.staticChunksGzip} head=${head.staticChunksGzip} Δ=${delta.staticChunksGzip}`,
+);
+console.log(
+  `  root layout client: main=${main.rootLayoutClientGzip} head=${head.rootLayoutClientGzip} Δ=${delta.rootLayoutClientGzip}`,
+);
+console.log(
+  `  combined: main=${main.combinedGzip} head=${head.combinedGzip} Δ=${delta.combinedGzip}`,
+);
+console.log(`Report: ${outPath}`);
+
+run(`git worktree remove --force ${mainDir}`);
+run(`git worktree remove --force ${headDir}`);

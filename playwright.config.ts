@@ -20,6 +20,7 @@ export default defineConfig({
       ...process.env,
       READER_WALLET_ENABLED: "true",
       READER_WALLET_E2E_AUTH: "true",
+      READER_WALLET_FIXTURE: "true",
     },
   },
   projects: [
