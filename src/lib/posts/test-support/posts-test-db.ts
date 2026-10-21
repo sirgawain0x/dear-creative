@@ -28,6 +28,9 @@ export async function insertPost(
     teaserText?: string | null;
     bodyHtml?: string | null;
     freeContent?: string | null;
+    gatedContent?: string | null;
+    isGated?: boolean;
+    authorId?: string | null;
     canonicalUrl?: string | null;
   },
 ) {
@@ -40,6 +43,9 @@ export async function insertPost(
     teaserText: input.teaserText ?? null,
     bodyHtml: input.bodyHtml ?? null,
     freeContent: input.freeContent ?? null,
+    gatedContent: input.gatedContent ?? null,
+    isGated: input.isGated ?? false,
+    authorId: input.authorId ?? null,
     canonicalUrl: input.canonicalUrl ?? null,
   });
 }

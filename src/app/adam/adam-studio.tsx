@@ -25,7 +25,16 @@ import {
   ensureArticleHtml,
   renderMarkdownToSafeHtml,
 } from "@/lib/html/markdown-to-html";
+import {
+  EditorPaywallSidebar,
+  type PaywallSettings,
+} from "@/components/admin/EditorPaywallSidebar";
 import type { AdminPostRecord } from "@/lib/posts/manage-posts";
+import { DEFAULT_PAYWALL_SETTINGS } from "@/lib/posts/paywall-editor-defaults";
+import {
+  PAYWALL_GATE_END_TAG,
+  PAYWALL_GATE_START_TAG,
+} from "@/lib/posts/paywall-split";
 import {
   removeLeadingBannerFromHtml,
   removeLeadingBannerFromMarkdown,
@@ -439,6 +448,8 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
   const bannerFileInputRef = useRef<HTMLInputElement>(null);
   const videoFileInputRef = useRef<HTMLInputElement>(null);
   const [editPostMode, setEditPostMode] = useState<PostEditorMode>("markdown");
+  const [editPaywallSettings, setEditPaywallSettings] =
+    useState<PaywallSettings>(DEFAULT_PAYWALL_SETTINGS);
   const [isSavingPost, setIsSavingPost] = useState(false);
   const [isPolishingPost, setIsPolishingPost] = useState(false);
 
@@ -502,6 +513,13 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
     if (post.audioVoice) {
       setNarrationVoice(post.audioVoice);
     }
+    setEditPaywallSettings({
+      isGated: post.isGated ?? false,
+      gatePriceUsdc: post.gatePriceUsdc ?? 1.0,
+      payoutAddress: "",
+      freeContent: post.freeContent ?? "",
+      gatedContent: post.gatedContent ?? "",
+    });
   }, []);
 
   const authFetch = useCallback(
@@ -1909,6 +1927,12 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
       setStatusBanner(null);
 
       try {
+        const paywallPayload = {
+          isGated: editPaywallSettings.isGated,
+          freeContent: editPaywallSettings.freeContent.trim() || null,
+          gatedContent: editPaywallSettings.gatedContent.trim() || null,
+          gatePriceUsdc: editPaywallSettings.gatePriceUsdc,
+        };
         const payload =
           editPostMode === "html"
             ? {
@@ -1919,6 +1943,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                 emailSubject: editPostEmailSubject.trim() || null,
                 bodyHtml: editPostHtml,
                 syncEmailWithBody: true,
+                ...paywallPayload,
               }
             : {
                 title: editPostTitle.trim(),
@@ -1928,6 +1953,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                 emailSubject: editPostEmailSubject.trim() || null,
                 markdown: editPostMarkdown,
                 syncEmailWithBody: true,
+                ...paywallPayload,
               };
 
         const res = await authFetch(`/api/adam/posts/${selectedEditPostId}`, {
@@ -1974,10 +2000,27 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
       editPostStatus,
       editPostTeaser,
       editPostTitle,
+      editPaywallSettings,
       loadStudioData,
       selectPostForEditing,
       selectedEditPostId,
     ],
+  );
+
+  const handleInsertPaywallGateTag = useCallback(
+    (tagType: "wrapper" | "split") => {
+      const insertion =
+        tagType === "wrapper"
+          ? `\n\n${PAYWALL_GATE_START_TAG}\n\n${PAYWALL_GATE_END_TAG}\n\n`
+          : `\n\n${PAYWALL_GATE_START_TAG}\n\n`;
+      setEditPostMarkdown((prev) => `${prev}${insertion}`);
+      if (editPostMode === "html") {
+        setEditPostHtml((prev) =>
+          ensureArticleHtml(`${htmlToMarkdown(prev)}${insertion}`),
+        );
+      }
+    },
+    [editPostMode],
   );
 
   // --- Ask Adam to Fix Missing Headers & Formatting on Selected Post ---
@@ -3706,6 +3749,14 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                   className="mt-1 w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                 />
               </div>
+
+              {selectedEditPostId ? (
+                <EditorPaywallSidebar
+                  settings={editPaywallSettings}
+                  onChange={setEditPaywallSettings}
+                  onInsertGateTag={handleInsertPaywallGateTag}
+                />
+              ) : null}
 
               {/* Post Banner & Thumbnail (Lens Grove) */}
               <div className="rounded-xl border border-zinc-200 bg-zinc-50/70 p-4 dark:border-zinc-800 dark:bg-zinc-950/50">

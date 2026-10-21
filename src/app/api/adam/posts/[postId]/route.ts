@@ -42,6 +42,10 @@ type PatchPostBody = {
   markdown?: string | null;
   audioUrl?: string | null;
   audioVoice?: string | null;
+  isGated?: boolean;
+  freeContent?: string | null;
+  gatedContent?: string | null;
+  gatePriceUsdc?: number | null;
   syncEmailWithBody?: boolean;
 };
 
@@ -82,6 +86,10 @@ export async function PATCH(request: Request, context: RouteContext) {
         markdown: body.markdown,
         audioUrl: body.audioUrl,
         audioVoice: body.audioVoice,
+        isGated: body.isGated,
+        freeContent: body.freeContent,
+        gatedContent: body.gatedContent,
+        gatePriceUsdc: body.gatePriceUsdc,
         syncEmailWithBody: body.syncEmailWithBody,
       },
       auth.actor,
