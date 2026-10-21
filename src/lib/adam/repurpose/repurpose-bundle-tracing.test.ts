@@ -9,5 +9,6 @@ describe("repurpose route output tracing", () => {
     );
     expect(configSource).toContain('"/api/adam/posts/*/repurpose/*"');
     expect(configSource).toContain("./src/assets/fonts/**/*");
+    expect(configSource).toContain("./node_modules/sharp/**/*");
   });
 });

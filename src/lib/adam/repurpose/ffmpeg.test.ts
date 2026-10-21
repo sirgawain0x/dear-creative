@@ -1,39 +1,12 @@
 import { mkdtempSync } from "node:fs";
-import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildNarratedSlidesMp4,
   probeAudioDurationSeconds,
-  resetRepurposeFfmpegEnvCacheForTests,
-  resolveRepurposeFfmpegEnv,
   tailFfmpegStderrForLog,
 } from "./ffmpeg";
-
-describe("resolveRepurposeFfmpegEnv", () => {
-  afterEach(() => {
-    resetRepurposeFfmpegEnvCacheForTests();
-  });
-
-  it("writes fonts.conf under tmpdir when cwd is read-only", async () => {
-    const roCwd = await mkdtemp(join(tmpdir(), "dear-ro-cwd-"));
-    await chmod(roCwd, 0o555);
-    const previous = process.cwd();
-    process.chdir(roCwd);
-    try {
-      resetRepurposeFfmpegEnvCacheForTests();
-      const env = await resolveRepurposeFfmpegEnv();
-      expect(env.FONTCONFIG_FILE).toContain("dear-creative-fontconfig");
-      expect(env.FONTCONFIG_FILE).toContain(tmpdir());
-      expect(env.FONTCONFIG_FILE).not.toContain("repurpose-fontconfig.conf");
-    } finally {
-      process.chdir(previous);
-      await chmod(roCwd, 0o755);
-      await rm(roCwd, { recursive: true, force: true });
-    }
-  });
-});
 
 describe("tailFfmpegStderrForLog", () => {
   it("keeps the last 2KB of stderr for error messages", () => {
@@ -62,12 +35,13 @@ describe("probeAudioDurationSeconds", () => {
 });
 
 describe("buildNarratedSlidesMp4", () => {
-  it("invokes ffmpeg per slide and concat without final -shortest", async () => {
+  it("renders PNG slides and encodes with loop stillimage + shortest per segment", async () => {
     const workDir = mkdtempSync(join(tmpdir(), "ffmpeg-test-"));
     const calls: string[][] = [];
     const ffmpeg = vi.fn(async (args: string[]) => {
       calls.push(args);
     });
+    const renderSlidePng = vi.fn(async () => undefined);
 
     await buildNarratedSlidesMp4({
       workDir,
@@ -85,14 +59,16 @@ describe("buildNarratedSlidesMp4", () => {
       ],
       outputPath: join(workDir, "out.mp4"),
       ffmpeg,
+      renderSlidePng,
     });
 
+    expect(renderSlidePng).toHaveBeenCalledTimes(2);
     expect(ffmpeg).toHaveBeenCalledTimes(3);
-    expect(calls[0]?.join(" ")).toContain("drawtext");
-    expect(calls[0]?.join(" ")).toContain("expansion=none");
-    expect(calls[0]?.join(" ")).toContain("textfile=");
-    expect(calls[0]?.join(" ")).not.toContain("-shortest");
+    expect(calls[0]?.join(" ")).toContain("-loop 1");
+    expect(calls[0]?.join(" ")).toContain("slide-0.png");
+    expect(calls[0]?.join(" ")).toContain("-shortest");
+    expect(calls[0]?.join(" ")).toContain("-tune stillimage");
+    expect(calls[0]?.join(" ")).not.toContain("drawtext");
     expect(calls.at(-1)?.join(" ")).toContain("out.mp4");
-    expect(calls.at(-1)?.join(" ")).not.toContain("-shortest");
   });
 });
