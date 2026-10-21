@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { useAuthSession } from "@/components/providers/app-providers";
 import { adminPrivyAuthorizationHeaders } from "@/lib/admin/admin-api-auth";
-import { buildEip681BaseReceiveUri } from "@/lib/wallet/eip681-receive-uri";
+import { buildEip681BaseUsdcReceiveUri } from "@/lib/wallet/eip681-receive-uri";
 import { AdminWalletSendForm } from "./admin-wallet-send-form";
 import { AdminWalletSendEmbeddedBridge } from "./admin-wallet-send-embedded-bridge";
 import {
@@ -175,7 +175,7 @@ export function AdminWalletPanel({
     if (!summary || !summary.configured) {
       return null;
     }
-    return buildEip681BaseReceiveUri(summary.address);
+    return buildEip681BaseUsdcReceiveUri(summary.address);
   }, [summary]);
 
   const handleRefresh = () => {
@@ -307,7 +307,7 @@ export function AdminWalletPanel({
                     className="rounded-full border border-sky-300 bg-sky-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-sky-900 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-200"
                     data-testid="admin-wallet-receive-network-label"
                   >
-                    Base network only
+                    USDC on Base only
                   </span>
                   <QRCodeSVG
                     value={receiveUri}

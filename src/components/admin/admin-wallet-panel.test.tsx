@@ -5,7 +5,7 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getAddress } from "viem";
 import { STUDIO_TOKEN_STORAGE_KEY } from "@/components/providers/app-providers";
-import { buildEip681BaseReceiveUri } from "@/lib/wallet/eip681-receive-uri";
+import { buildEip681BaseUsdcReceiveUri } from "@/lib/wallet/eip681-receive-uri";
 import { AdminWalletPanel, type AdminWalletPreviewData } from "./admin-wallet-panel";
 
 const mockUseAuthSession = vi.fn();
@@ -191,17 +191,19 @@ describe("AdminWalletPanel receive QR", () => {
     vi.unstubAllGlobals();
   });
 
-  it("encodes EIP-681 Base URI in the QR and shows Base network only", async () => {
+  it("encodes EIP-681 USDC transfer URI in the QR and shows USDC on Base only", async () => {
     await act(async () => {
       render(<AdminWalletPanel walletEnabled previewData={previewFixture} />);
     });
 
-    const expectedUri = buildEip681BaseReceiveUri(previewFixture.summary.address);
+    const expectedUri = buildEip681BaseUsdcReceiveUri(
+      previewFixture.summary.address,
+    );
     const qr = screen.getByTestId("admin-wallet-receive-qr");
     expect(qr).toHaveAttribute("data-value", expectedUri);
 
     expect(
       screen.getByTestId("admin-wallet-receive-network-label"),
-    ).toHaveTextContent("Base network only");
+    ).toHaveTextContent("USDC on Base only");
   });
 });
