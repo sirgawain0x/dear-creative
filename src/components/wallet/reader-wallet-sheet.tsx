@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId } from "react";
 import { createPortal } from "react-dom";
 import { ReaderWalletPanel } from "./reader-wallet-panel";
 
@@ -11,11 +11,6 @@ type ReaderWalletSheetProps = {
 
 export function ReaderWalletSheet({ open, onOpenChange }: ReaderWalletSheetProps) {
   const titleId = useId();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   useEffect(() => {
     if (!open) {
@@ -30,7 +25,7 @@ export function ReaderWalletSheet({ open, onOpenChange }: ReaderWalletSheetProps
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, onOpenChange]);
 
-  if (!open || !mounted) {
+  if (!open || typeof document === "undefined") {
     return null;
   }
 
