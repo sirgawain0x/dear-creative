@@ -1,17 +1,26 @@
+import { createInterface } from "node:readline/promises";
+import { stdin as input, stdout as output } from "node:process";
 import { readFileSync } from "node:fs";
 import { drizzle } from "drizzle-orm/libsql";
-import { migrate } from "drizzle-orm/libsql/migrator";
 import { createDbClient } from "../src/db/client";
 import * as schema from "../src/db/schema";
 import { uploadToLensGrove } from "../src/lib/storage/lens-grove";
+import { parseImportBeehiivArgs } from "./beehiiv-import/parse-import-args";
 import {
   assertImportDatabaseUrl,
   formatBeehiivImportSummaryForLog,
   runBeehiivImport,
   type UploadImageFn,
 } from "./beehiiv-import/lib";
+import {
+  assertProdLiveConfirmationPhrase,
+  isRemoteTursoUrl,
+  PROD_LIVE_CONFIRMATION_PHRASE,
+  resolveProdDatabaseUrl,
+  safeDatabaseHost,
+} from "./beehiiv-import/prod-mode";
 
-function resolveImportDatabaseUrl(): string {
+function resolveLocalImportDatabaseUrl(): string {
   const explicit = process.env.IMPORT_DATABASE_URL?.trim();
   if (explicit) {
     assertImportDatabaseUrl(explicit);
@@ -29,32 +38,33 @@ function resolveImportDatabaseUrl(): string {
   return fallback;
 }
 
-function assertSafeImportEnv(): void {
-  if (process.env.TURSO_DATABASE_URL?.trim()) {
-    const tursoUrl = process.env.TURSO_DATABASE_URL.trim();
-    if (!tursoUrl.startsWith("file:") && !tursoUrl.startsWith(":memory:")) {
-      console.error(
-        "Refusing import: unset TURSO_DATABASE_URL or use a local file: URL only.",
-      );
-      process.exit(1);
-    }
-  }
-}
-
-function parseArgs(argv: string[]): {
-  live: boolean;
-  postsPath: string;
-  subscribersPath: string;
-} {
-  const live = argv.includes("--live");
-  const paths = argv.filter((arg) => !arg.startsWith("-"));
-  if (paths.length < 2) {
+function assertNonProdSafeEnv(): void {
+  const turso = process.env.TURSO_DATABASE_URL?.trim();
+  if (turso && isRemoteTursoUrl(turso)) {
     console.error(
-      "Usage: npm run import:beehiiv -- [--live] <posts.csv> <subscribers.csv>",
+      "Refusing import: remote TURSO_DATABASE_URL is set. Use --prod for Turso (read-only dry-run or confirmed --live).",
     );
     process.exit(1);
   }
-  return { live, postsPath: paths[0]!, subscribersPath: paths[1]! };
+}
+
+async function readProdLiveConfirmation(
+  argvConfirmation: string | undefined,
+): Promise<void> {
+  if (argvConfirmation) {
+    assertProdLiveConfirmationPhrase(argvConfirmation);
+    return;
+  }
+
+  const rl = createInterface({ input, output });
+  try {
+    const typed = await rl.question(
+      `Type "${PROD_LIVE_CONFIRMATION_PHRASE}" to import into production Turso: `,
+    );
+    assertProdLiveConfirmationPhrase(typed);
+  } finally {
+    rl.close();
+  }
 }
 
 const groveUploadFn: UploadImageFn = async (bytes, fileName, contentType) => {
@@ -62,27 +72,56 @@ const groveUploadFn: UploadImageFn = async (bytes, fileName, contentType) => {
   return uploadToLensGrove(blob, fileName);
 };
 
-async function main() {
-  assertSafeImportEnv();
-  const { live, postsPath, subscribersPath } = parseArgs(process.argv.slice(2));
-  const databaseUrl = resolveImportDatabaseUrl();
-  const postsCsv = readFileSync(postsPath, "utf8");
-  const subscribersCsv = readFileSync(subscribersPath, "utf8");
+export async function runImportBeehiivMain(
+  argv: string[],
+  deps?: {
+    readProdLiveConfirmation?: (confirmation?: string) => Promise<void>;
+  },
+): Promise<void> {
+  const mode = parseImportBeehiivArgs(argv);
+  const postsCsv = readFileSync(mode.postsPath, "utf8");
+  const subscribersCsv = readFileSync(mode.subscribersPath, "utf8");
+
+  let databaseUrl: string;
+  if (mode.prod) {
+    databaseUrl = resolveProdDatabaseUrl();
+  } else {
+    assertNonProdSafeEnv();
+    databaseUrl = resolveLocalImportDatabaseUrl();
+  }
+
+  if (mode.prod && mode.live) {
+    const confirm = deps?.readProdLiveConfirmation ?? readProdLiveConfirmation;
+    await confirm(mode.prodLiveConfirmation);
+  }
 
   const client = createDbClient(databaseUrl);
   const db = drizzle({ client, schema });
-  await migrate(db, { migrationsFolder: "./drizzle" });
 
   const summary = await runBeehiivImport({
     db,
     databaseUrl,
     postsCsv,
     subscribersCsv,
-    live,
-    uploadFn: live ? groveUploadFn : undefined,
+    live: mode.live,
+    prod: mode.prod,
+    uploadFn: mode.live ? groveUploadFn : undefined,
   });
 
-  console.log(JSON.stringify(formatBeehiivImportSummaryForLog(summary), null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        ...formatBeehiivImportSummaryForLog(summary),
+        databaseHost: safeDatabaseHost(databaseUrl),
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+async function main() {
+  await runImportBeehiivMain(process.argv.slice(2));
 }
 
 main().catch((error: unknown) => {

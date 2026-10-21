@@ -12,14 +12,19 @@ import { parseCsvRows } from "./csv";
 import { isBeehiivHostedImageUrl } from "./images";
 import {
   applyBeehiivSlugRules,
+  assertLiveImportCollisions,
+  BeehiivLiveCollisionError,
   countBeehiivPostStatuses,
   countBeehiivSubscriberStatuses,
   formatBeehiivImportSummaryForLog,
+  KNOWN_DROPPED_BEEHIIV_IMAGE_MARKERS,
   maskEmail,
   parseBeehiivPosts,
   parseBeehiivSubscriberRow,
+  preparePostImagesForLive,
   runBeehiivImport,
 } from "./lib";
+import { slugifyBeehiivTitle } from "./slug";
 
 async function createTestDb() {
   const dir = mkdtempSync(join(tmpdir(), "beehiiv-import-"));
@@ -74,6 +79,15 @@ describe("beehiiv CSV parsing", () => {
 });
 
 describe("beehiiv slug rules", () => {
+  it("uses a title-based slug when post URL is missing", () => {
+    const csv = `id,web_title,status,url,email_subject_line,email_preview_text,content_html,created_at
+a67e8e9e-0000-4000-8000-000000000001,Black Friday Exclusive,confirmed,,Sub,Preview,"<p>sale</p>",2023-11-01 12:00:00 UTC
+`;
+    const rows = parseBeehiivPosts(csv);
+    expect(rows[0]?.slug).toBe(slugifyBeehiivTitle("Black Friday Exclusive"));
+    expect(rows[0]?.slug).toBe("black-friday-exclusive");
+  });
+
   it("renames welcome to welcome-2023", () => {
     expect(applyBeehiivSlugRules("welcome")).toEqual({
       slug: "welcome-2023",
@@ -124,7 +138,100 @@ describe("runBeehiivImport", () => {
     expect(subCount).toHaveLength(0);
   });
 
-  it("is idempotent for posts, subscribers, and images on live re-run", async () => {
+  it("aborts live import on slug or sourceGuid collisions", async () => {
+    const { db, url } = await createTestDb();
+    await db.insert(posts).values({
+      id: "existing-post",
+      slug: "second",
+      title: "Existing",
+      status: "published",
+      sourceGuid: "beehiiv:other",
+      source: "beehiiv",
+    });
+
+    await expect(
+      runBeehiivImport({
+        db,
+        databaseUrl: url,
+        postsCsv: samplePostsCsv,
+        subscribersCsv: sampleSubsCsv,
+        live: true,
+        uploadFn: vi.fn(),
+        fetchFn: vi.fn(async () => new Response(null, { status: 200 })),
+      }),
+    ).rejects.toBeInstanceOf(BeehiivLiveCollisionError);
+
+    expect(() =>
+      assertLiveImportCollisions({
+        slugCollisionsAmongImport: ["dup"],
+        slugCollisionsWithExisting: [],
+        existingSourceGuids: [],
+      }),
+    ).toThrow(BeehiivLiveCollisionError);
+  });
+
+  it("skips posts with image upload failures but keeps known-dropped images", async () => {
+    const storyThumb =
+      "https://media.beehiiv.com/cdn-cgi/image/fit=scale-down/uploads/publication/thumbnail/landscape_Story_telling__1280_x_720_px_.jpg";
+    const postsCsv = `id,web_title,status,url,email_subject_line,email_preview_text,content_html,created_at
+ok-1,OK Post,confirmed,https://example.test/p/ok,Sub,Preview,"<p>ok</p>",2023-03-01 12:00:00 UTC
+bad-1,Bad Post,confirmed,https://example.test/p/bad,Sub,Preview,"<img src=https://media.beehiiv.com/cdn/img/missing.png />",2023-03-02 12:00:00 UTC
+drop-1,Drop Post,confirmed,https://example.test/p/drop,Sub,Preview,"<img src=${storyThumb} /><p>text</p>",2023-03-03 12:00:00 UTC
+`;
+    const subsCsv = `subscriber_id,email,status,created_at,updated_at,unsubscribed_at
+`;
+
+    const { db, url } = await createTestDb();
+    const uploadFn = vi.fn();
+    const fetchFn = vi.fn(async (requestUrl: string) => {
+      if (String(requestUrl).includes("missing.png")) {
+        return new Response(null, { status: 403 });
+      }
+      return new Response(Buffer.from("x"), {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
+    });
+
+    const summary = await runBeehiivImport({
+      db,
+      databaseUrl: url,
+      postsCsv,
+      subscribersCsv: subsCsv,
+      live: true,
+      fetchFn,
+      uploadFn,
+    });
+
+    expect(summary.posts.postsSkippedDueToImageFailures).toHaveLength(1);
+    expect(summary.posts.postsSkippedDueToImageFailures[0]?.slug).toBe("bad");
+    expect(summary.posts.knownDroppedImageMarkers).toEqual(
+      KNOWN_DROPPED_BEEHIIV_IMAGE_MARKERS,
+    );
+    expect(summary.posts.knownDroppedImagesApplied.length).toBeGreaterThan(0);
+
+    const inserted = await db.select().from(posts);
+    expect(inserted.map((row) => row.slug).sort()).toEqual(["drop", "ok"]);
+    expect(
+      inserted.find((row) => row.slug === "drop")?.bodyHtml,
+    ).not.toContain("landscape_Story_telling");
+  });
+
+  it("preparePostImagesForLive drops known Story_telling thumbnail", async () => {
+    const storyThumb =
+      "https://media.beehiiv.com/x/landscape_Story_telling__1280_x_720_px_.jpg";
+    const result = await preparePostImagesForLive({
+      html: `<img src="${storyThumb}" /><p>hi</p>`,
+      fetchFn: vi.fn(),
+      uploadFn: vi.fn(),
+      urlMapping: new Map(),
+    });
+    expect(result.knownDropped).toHaveLength(1);
+    expect(result.hardFailures).toHaveLength(0);
+    expect(result.html).not.toContain("Story_telling");
+  });
+
+  it("live import commits posts and subscribers in one transaction", async () => {
     const { db, url } = await createTestDb();
     const uploadFn = vi.fn(async () => ({
       uri: "lens://abc",
@@ -152,27 +259,31 @@ describe("runBeehiivImport", () => {
     expect(first.posts.imagesUploaded).toBe(1);
     expect(uploadFn).toHaveBeenCalledTimes(1);
 
-    uploadFn.mockClear();
-    fetchFn.mockClear();
+    await expect(
+      runBeehiivImport({
+        db,
+        databaseUrl: url,
+        postsCsv: samplePostsCsv,
+        subscribersCsv: sampleSubsCsv,
+        live: true,
+        fetchFn,
+        uploadFn,
+      }),
+    ).rejects.toBeInstanceOf(BeehiivLiveCollisionError);
 
-    const second = await runBeehiivImport({
+    const secondDry = await runBeehiivImport({
       db,
       databaseUrl: url,
       postsCsv: samplePostsCsv,
       subscribersCsv: sampleSubsCsv,
-      live: true,
+      live: false,
       fetchFn,
       uploadFn,
     });
-
-    expect(second.posts.existingSourceGuids).toHaveLength(2);
-    expect(second.posts.toInsert).toBe(0);
-    expect(second.subscribers.existingEmails).toEqual(
+    expect(secondDry.posts.existingSourceGuids).toHaveLength(2);
+    expect(secondDry.subscribers.existingEmails).toEqual(
       expect.arrayContaining(["active@example.test", "quiet@example.test"]),
     );
-    expect(second.subscribers.toInsertActive).toBe(0);
-    expect(second.subscribers.toInsertSuppressed).toBe(0);
-    expect(uploadFn).not.toHaveBeenCalled();
 
     const welcome = await db
       .select()
@@ -184,7 +295,8 @@ describe("runBeehiivImport", () => {
   it("masks emails in formatted summary", () => {
     const masked = formatBeehiivImportSummaryForLog({
       mode: "dry-run",
-      databaseUrl: "file:test.db",
+      prod: true,
+      databaseHost: "file:local",
       posts: {
         csvRows: 0,
         draftSkipped: 0,
@@ -200,6 +312,9 @@ describe("runBeehiivImport", () => {
         imagesUploaded: 0,
         imagesSkippedMapped: 0,
         imageUploadFailures: [],
+        postsSkippedDueToImageFailures: [],
+        knownDroppedImageMarkers: KNOWN_DROPPED_BEEHIIV_IMAGE_MARKERS,
+        knownDroppedImagesApplied: [],
       },
       subscribers: {
         csvRows: 1,

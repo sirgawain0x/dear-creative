@@ -33,6 +33,18 @@ export function extractBeehiivImageUrls(html: string): string[] {
   return [...found];
 }
 
+export function stripImageTagsContainingUrls(
+  html: string,
+  urls: readonly string[],
+): string {
+  let result = html;
+  for (const url of urls) {
+    const escaped = url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    result = result.replace(new RegExp(`<img[^>]*${escaped}[^>]*>`, "gi"), "");
+  }
+  return result;
+}
+
 export function rewriteHtmlImageUrls(
   html: string,
   mapping: ReadonlyMap<string, string>,

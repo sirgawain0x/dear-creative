@@ -8,7 +8,14 @@ import {
   extractBeehiivImageUrls,
   isBeehiivHostedImageUrl,
   rewriteHtmlImageUrls,
+  stripImageTagsContainingUrls,
 } from "./images";
+import {
+  isKnownDroppedBeehiivImageUrl,
+  KNOWN_DROPPED_BEEHIIV_IMAGE_MARKERS,
+} from "./known-dropped-images";
+import { safeDatabaseHost } from "./prod-mode";
+import { slugifyBeehiivTitle } from "./slug";
 
 import {
   assertImportDatabaseUrl,
@@ -32,9 +39,24 @@ export type BeehiivPostRow = {
   sourceGuid: string;
 };
 
+export class BeehiivLiveCollisionError extends Error {
+  constructor(
+    message: string,
+    readonly collisions: {
+      slugCollisionsAmongImport: string[];
+      slugCollisionsWithExisting: string[];
+      existingSourceGuids: string[];
+    },
+  ) {
+    super(message);
+    this.name = "BeehiivLiveCollisionError";
+  }
+}
+
 export type BeehiivImportSummary = {
   mode: "dry-run" | "live";
-  databaseUrl: string;
+  prod: boolean;
+  databaseHost: string;
   posts: {
     csvRows: number;
     draftSkipped: number;
@@ -54,6 +76,13 @@ export type BeehiivImportSummary = {
     imagesUploaded: number;
     imagesSkippedMapped: number;
     imageUploadFailures: string[];
+    postsSkippedDueToImageFailures: Array<{
+      sourceGuid: string;
+      slug: string;
+      failedUrls: string[];
+    }>;
+    knownDroppedImageMarkers: readonly string[];
+    knownDroppedImagesApplied: string[];
   };
   subscribers: {
     csvRows: number;
@@ -148,15 +177,17 @@ export function parseBeehiivPosts(content: string): BeehiivPostRow[] {
       continue;
     }
 
+    const title =
+      (row.web_title ?? row.title ?? "Untitled").trim() || "Untitled";
     let rawSlug = slugFromBeehiivUrl(row.url);
     if (!rawSlug) {
-      rawSlug = beehiivId.slice(0, 8);
+      rawSlug = slugifyBeehiivTitle(title);
     }
     const slugRules = applyBeehiivSlugRules(rawSlug);
 
     parsed.push({
       beehiivId,
-      title: (row.web_title ?? row.title ?? "Untitled").trim() || "Untitled",
+      title,
       slug: slugRules.slug,
       status,
       bodyHtml: row.content_html ?? "",
@@ -330,36 +361,44 @@ function extensionFromContentType(contentType: string | null): string {
   return "bin";
 }
 
-async function migratePostImages(input: {
+export type PreparePostImagesResult = {
   html: string;
-  live: boolean;
+  hardFailures: string[];
+  knownDropped: string[];
+  imagesUploaded: number;
+  imagesSkippedMapped: number;
+};
+
+export async function preparePostImagesForLive(input: {
+  html: string;
   fetchFn: FetchLike;
-  uploadFn?: UploadImageFn;
+  uploadFn: UploadImageFn;
   urlMapping: Map<string, string>;
-  onUpload?: () => void;
-  onSkipped?: () => void;
-  onFailure?: (url: string) => void;
-}): Promise<string> {
-  const urls = extractBeehiivImageUrls(input.html);
-  for (const sourceUrl of urls) {
+}): Promise<PreparePostImagesResult> {
+  let html = input.html;
+  const knownDropped: string[] = [];
+  const hardFailures: string[] = [];
+  let imagesUploaded = 0;
+  let imagesSkippedMapped = 0;
+
+  const urls = extractBeehiivImageUrls(html);
+  const droppedThisPost = urls.filter(isKnownDroppedBeehiivImageUrl);
+  if (droppedThisPost.length > 0) {
+    html = stripImageTagsContainingUrls(html, droppedThisPost);
+    knownDropped.push(...droppedThisPost);
+  }
+
+  const remainingUrls = extractBeehiivImageUrls(html);
+  for (const sourceUrl of remainingUrls) {
     if (input.urlMapping.has(sourceUrl)) {
-      input.onSkipped?.();
-      continue;
-    }
-
-    if (!input.live) {
-      continue;
-    }
-
-    if (!input.uploadFn) {
-      input.onFailure?.(sourceUrl);
+      imagesSkippedMapped += 1;
       continue;
     }
 
     try {
       const response = await input.fetchFn(sourceUrl);
       if (!response.ok) {
-        input.onFailure?.(sourceUrl);
+        hardFailures.push(sourceUrl);
         continue;
       }
       const bytes = Buffer.from(await response.arrayBuffer());
@@ -367,16 +406,58 @@ async function migratePostImages(input: {
         response.headers.get("content-type") ?? "application/octet-stream";
       const hash = createHash("sha256").update(sourceUrl).digest("hex").slice(0, 16);
       const ext = extensionFromContentType(contentType);
-      const uploaded = await input.uploadFn(bytes, `beehiiv-${hash}.${ext}`, contentType);
+      const uploaded = await input.uploadFn(
+        bytes,
+        `beehiiv-${hash}.${ext}`,
+        contentType,
+      );
       input.urlMapping.set(sourceUrl, uploaded.gatewayUrl);
-      input.onUpload?.();
+      imagesUploaded += 1;
     } catch {
-      input.onFailure?.(sourceUrl);
+      hardFailures.push(sourceUrl);
     }
   }
 
-  return rewriteHtmlImageUrls(input.html, input.urlMapping);
+  html = rewriteHtmlImageUrls(html, input.urlMapping);
+  const remainingBeehiiv = extractBeehiivImageUrls(html);
+  for (const url of remainingBeehiiv) {
+    if (!hardFailures.includes(url)) {
+      hardFailures.push(url);
+    }
+  }
+
+  return {
+    html,
+    hardFailures,
+    knownDropped,
+    imagesUploaded,
+    imagesSkippedMapped,
+  };
 }
+
+export function assertLiveImportCollisions(input: {
+  slugCollisionsAmongImport: string[];
+  slugCollisionsWithExisting: string[];
+  existingSourceGuids: string[];
+}): void {
+  const hasSlugCollision =
+    input.slugCollisionsAmongImport.length > 0 ||
+    input.slugCollisionsWithExisting.length > 0;
+  const hasGuidCollision = input.existingSourceGuids.length > 0;
+  if (!hasSlugCollision && !hasGuidCollision) {
+    return;
+  }
+  throw new BeehiivLiveCollisionError(
+    "Refusing --live: resolve slug or sourceGuid collisions before importing.",
+    {
+      slugCollisionsAmongImport: input.slugCollisionsAmongImport,
+      slugCollisionsWithExisting: input.slugCollisionsWithExisting,
+      existingSourceGuids: input.existingSourceGuids,
+    },
+  );
+}
+
+export { KNOWN_DROPPED_BEEHIIV_IMAGE_MARKERS };
 
 export async function runBeehiivImport(input: {
   db: DearCreativeDb;
@@ -384,9 +465,12 @@ export async function runBeehiivImport(input: {
   postsCsv: string;
   subscribersCsv: string;
   live: boolean;
+  prod?: boolean;
   fetchFn?: FetchLike;
   uploadFn?: UploadImageFn;
 }): Promise<BeehiivImportSummary> {
+  const prod = input.prod ?? false;
+  const databaseHost = safeDatabaseHost(input.databaseUrl);
   const fetchFn = input.fetchFn ?? fetch;
   const postStatusCounts = countBeehiivPostStatuses(input.postsCsv);
   const subscriberStatusCounts = countBeehiivSubscriberStatuses(
@@ -438,6 +522,9 @@ export async function runBeehiivImport(input: {
   let imagesUploaded = 0;
   let imagesSkippedMapped = 0;
   const imageUploadFailures: string[] = [];
+  const postsSkippedDueToImageFailures: BeehiivImportSummary["posts"]["postsSkippedDueToImageFailures"] =
+    [];
+  const knownDroppedImagesApplied: string[] = [];
 
   const subscriberRows = parseCsvRows(input.subscribersCsv).rows;
   let activeImported = 0;
@@ -506,41 +593,49 @@ export async function runBeehiivImport(input: {
   let writesPerformed = false;
 
   if (input.live) {
+    assertLiveImportCollisions({
+      slugCollisionsAmongImport,
+      slugCollisionsWithExisting,
+      existingSourceGuids,
+    });
+
+    if (!input.uploadFn) {
+      throw new Error("uploadFn is required for --live Beehiiv import.");
+    }
+
+    const postsReadyForInsert: Array<{ row: BeehiivPostRow; bodyHtml: string }> =
+      [];
+
     for (const row of postsToInsert) {
-      const bodyHtml = await migratePostImages({
+      const prepared = await preparePostImagesForLive({
         html: row.bodyHtml,
-        live: true,
         fetchFn,
         uploadFn: input.uploadFn,
         urlMapping,
-        onUpload: () => {
-          imagesUploaded += 1;
-        },
-        onSkipped: () => {
-          imagesSkippedMapped += 1;
-        },
-        onFailure: (url) => {
-          imageUploadFailures.push(url);
-        },
       });
+      imagesUploaded += prepared.imagesUploaded;
+      imagesSkippedMapped += prepared.imagesSkippedMapped;
+      knownDroppedImagesApplied.push(...prepared.knownDropped);
 
-      await input.db.insert(posts).values({
-        id: randomUUID(),
-        slug: row.slug,
-        title: row.title,
-        status: "published",
-        publishedAt: row.publishedAt,
-        teaserText: row.teaserText,
-        emailSubject: row.emailSubject,
-        emailHtml: null,
-        bodyHtml,
-        canonicalUrl: row.canonicalUrl,
-        sourceGuid: row.sourceGuid,
-        source: "beehiiv",
-        sponsorId: null,
-      });
-      writesPerformed = true;
+      if (prepared.hardFailures.length > 0) {
+        imageUploadFailures.push(...prepared.hardFailures);
+        postsSkippedDueToImageFailures.push({
+          sourceGuid: row.sourceGuid,
+          slug: row.slug,
+          failedUrls: prepared.hardFailures,
+        });
+        continue;
+      }
+
+      postsReadyForInsert.push({ row, bodyHtml: prepared.html });
     }
+
+    const subscriberInserts: Array<{
+      email: string;
+      status: "subscribed" | "unsubscribed";
+      subscribedAt: Date | null;
+      unsubscribedAt: Date | null;
+    }> = [];
 
     for (const row of subscriberRows) {
       const parsed = parseBeehiivSubscriberRow(row);
@@ -555,31 +650,62 @@ export async function runBeehiivImport(input: {
       }
 
       if (parsed.status === "active") {
-        await input.db.insert(subscribers).values({
-          id: randomUUID(),
+        subscriberInserts.push({
           email: parsed.email,
           status: "subscribed",
-          source: "beehiiv_import",
           subscribedAt: parsed.subscribedAt ?? new Date(),
+          unsubscribedAt: null,
         });
-        writesPerformed = true;
       } else if (parsed.status === "inactive") {
-        await input.db.insert(subscribers).values({
-          id: randomUUID(),
+        subscriberInserts.push({
           email: parsed.email,
           status: "unsubscribed",
-          source: "beehiiv_import",
           subscribedAt: parsed.subscribedAt,
-          unsubscribedAt: parsed.unsubscribedAt ?? parsed.subscribedAt ?? new Date(),
+          unsubscribedAt:
+            parsed.unsubscribedAt ?? parsed.subscribedAt ?? new Date(),
         });
-        writesPerformed = true;
       }
+    }
+
+    if (postsReadyForInsert.length > 0 || subscriberInserts.length > 0) {
+      await input.db.transaction(async (tx) => {
+        for (const { row, bodyHtml } of postsReadyForInsert) {
+          await tx.insert(posts).values({
+            id: randomUUID(),
+            slug: row.slug,
+            title: row.title,
+            status: "published",
+            publishedAt: row.publishedAt,
+            teaserText: row.teaserText,
+            emailSubject: row.emailSubject,
+            emailHtml: null,
+            bodyHtml,
+            canonicalUrl: row.canonicalUrl,
+            sourceGuid: row.sourceGuid,
+            source: "beehiiv",
+            sponsorId: null,
+          });
+        }
+
+        for (const sub of subscriberInserts) {
+          await tx.insert(subscribers).values({
+            id: randomUUID(),
+            email: sub.email,
+            status: sub.status,
+            source: "beehiiv_import",
+            subscribedAt: sub.subscribedAt,
+            unsubscribedAt: sub.unsubscribedAt,
+          });
+        }
+      });
+      writesPerformed = true;
     }
   }
 
   return {
     mode: input.live ? "live" : "dry-run",
-    databaseUrl: input.databaseUrl,
+    prod,
+    databaseHost,
     posts: {
       csvRows: postStatusCounts.total,
       draftSkipped: postStatusCounts.draftSkipped,
@@ -595,6 +721,9 @@ export async function runBeehiivImport(input: {
       imagesUploaded,
       imagesSkippedMapped,
       imageUploadFailures,
+      postsSkippedDueToImageFailures,
+      knownDroppedImageMarkers: KNOWN_DROPPED_BEEHIIV_IMAGE_MARKERS,
+      knownDroppedImagesApplied: [...new Set(knownDroppedImagesApplied)],
     },
     subscribers: {
       csvRows: subscriberStatusCounts.total,
