@@ -8,6 +8,7 @@ import { buildPublicPostTeaser } from "./post-public-teaser";
 import { calculateReadingTime } from "./reading-time";
 import { classifyArticleTopic } from "./topic-tagging";
 import type { PostMeta } from "./types";
+import { bodyHtmlForPublicSurfaces } from "@/lib/paywall/public-body";
 
 export const DEFAULT_PUBLISHED_PAGE_SIZE = 20;
 
@@ -49,12 +50,21 @@ function mapListRow(row: {
   teaserText: string | null;
   canonicalUrl: string | null;
   freeContent: string | null;
+  gatedContent?: string | null;
+  isGated?: boolean;
   bodyHtml?: string | null;
 }): PublishedPostListItem {
+  const publicBodyHtml = bodyHtmlForPublicSurfaces({
+    isGated: row.isGated ?? false,
+    bodyHtml: row.bodyHtml ?? null,
+    freeContent: row.freeContent,
+    gatedContent: row.gatedContent ?? null,
+  });
+
   const coverImage = resolvePublicPostCoverImage({
     slug: row.slug,
     title: row.title,
-    bodyHtml: row.bodyHtml,
+    bodyHtml: publicBodyHtml,
   });
 
   const teaser = buildPublicPostTeaser({
@@ -62,11 +72,11 @@ function mapListRow(row: {
     publicPreview: row.freeContent,
   });
 
-  const metrics = calculateReadingTime(row.bodyHtml ?? row.teaserText);
+  const metrics = calculateReadingTime(publicBodyHtml ?? row.teaserText);
   const topic = classifyArticleTopic({
     title: row.title,
     excerpt: row.teaserText,
-    bodyHtml: row.bodyHtml,
+    bodyHtml: publicBodyHtml,
   });
 
   return {
@@ -120,6 +130,8 @@ export async function listPublishedPosts(
       teaserText: posts.teaserText,
       canonicalUrl: posts.canonicalUrl,
       freeContent: posts.freeContent,
+      gatedContent: posts.gatedContent,
+      isGated: posts.isGated,
       bodyHtml: posts.bodyHtml,
     })
     .from(posts)
@@ -152,6 +164,8 @@ export async function listRecentPublishedPosts(
       teaserText: posts.teaserText,
       canonicalUrl: posts.canonicalUrl,
       freeContent: posts.freeContent,
+      gatedContent: posts.gatedContent,
+      isGated: posts.isGated,
       bodyHtml: posts.bodyHtml,
     })
     .from(posts)
@@ -162,20 +176,33 @@ export async function listRecentPublishedPosts(
   return rows.map(mapListRow);
 }
 
-export async function getPublishedPostBySlug(
+export async function getPublishedPostRowBySlug(
   db: DearCreativeDb,
   slug: string,
   options?: { asOf?: Date },
-): Promise<PublishedPostDetail | null> {
+): Promise<
+  | (PublishedPostDetail & {
+      postId: string;
+      authorId: string | null;
+      isGated: boolean;
+      freeContent: string | null;
+      gatedContent: string | null;
+    })
+  | null
+> {
   const asOf = options?.asOf ?? new Date();
   const [row] = await db
     .select({
+      id: posts.id,
       slug: posts.slug,
       title: posts.title,
       publishedAt: posts.publishedAt,
       teaserText: posts.teaserText,
       canonicalUrl: posts.canonicalUrl,
+      authorId: posts.authorId,
       freeContent: posts.freeContent,
+      gatedContent: posts.gatedContent,
+      isGated: posts.isGated,
       bodyHtml: posts.bodyHtml,
       authorName: authors.name,
       authorSlug: authors.slug,
@@ -207,19 +234,58 @@ export async function getPublishedPostBySlug(
         })
       : null;
 
+  const listFields = mapListRow({
+    slug: row.slug,
+    title: row.title,
+    publishedAt: row.publishedAt,
+    teaserText: row.teaserText,
+    canonicalUrl: row.canonicalUrl,
+    freeContent: row.freeContent,
+    gatedContent: row.gatedContent,
+    isGated: row.isGated,
+    bodyHtml: row.bodyHtml,
+  });
+
   return {
-    ...mapListRow({
-      slug: row.slug,
-      title: row.title,
-      publishedAt: row.publishedAt,
-      teaserText: row.teaserText,
-      canonicalUrl: row.canonicalUrl,
-      freeContent: row.freeContent,
-      bodyHtml: row.bodyHtml,
-    }),
+    ...listFields,
     bodyHtml: row.bodyHtml,
     audioUrl: audio.audioUrl,
     audioVoice: audio.audioVoice,
     author,
+    postId: row.id,
+    authorId: row.authorId,
+    isGated: row.isGated,
+    freeContent: row.freeContent,
+    gatedContent: row.gatedContent,
   };
+}
+
+export async function getPublishedPostBySlug(
+  db: DearCreativeDb,
+  slug: string,
+  options?: { asOf?: Date },
+): Promise<PublishedPostDetail | null> {
+  const row = await getPublishedPostRowBySlug(db, slug, options);
+  if (!row) {
+    return null;
+  }
+  return stripPaywallFieldsFromDetail(row);
+}
+
+function stripPaywallFieldsFromDetail(
+  row: PublishedPostDetail & {
+    postId: string;
+    authorId: string | null;
+    isGated: boolean;
+    freeContent: string | null;
+    gatedContent: string | null;
+  },
+): PublishedPostDetail {
+  const detail = { ...row };
+  delete (detail as { postId?: string }).postId;
+  delete (detail as { authorId?: string | null }).authorId;
+  delete (detail as { isGated?: boolean }).isGated;
+  delete (detail as { freeContent?: string | null }).freeContent;
+  delete (detail as { gatedContent?: string | null }).gatedContent;
+  return detail;
 }
