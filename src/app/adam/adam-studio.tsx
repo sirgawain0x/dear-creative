@@ -39,6 +39,7 @@ import {
 import { resolveGroveOrIpfsUrl } from "@/lib/storage/lens-grove";
 import { useStopAudioOnLeave } from "@/hooks/use-stop-audio-on-leave";
 import { NARRATION_VOICES, voiceLabel } from "@/lib/audio/narration-voices";
+import { playAdamGoogleTts } from "@/app/adam/adam-message-tts";
 import { stopDispatchAudioResources } from "@/lib/audio/stop-active-audio";
 import { RepurposePanel } from "@/app/adam/repurpose-panel";
 
@@ -380,6 +381,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
   const activeAudioRef = useRef<HTMLAudioElement | null>(null);
   const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const ttsAbortRef = useRef<AbortController | null>(null);
+  const ttsSessionActiveRef = useRef(false);
 
   // Ideas & Rough Drafts state
   const [ideas, setIdeas] = useState<AdamIdeaRecord[]>([]);
@@ -772,6 +774,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
 
   // --- TTS (Text-to-Speech) ---
   const stopSpeaking = useCallback(() => {
+    ttsSessionActiveRef.current = false;
     const abort = ttsAbortRef.current;
     ttsAbortRef.current = null;
     stopDispatchAudioResources({
@@ -788,6 +791,9 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
 
   const speakWithBrowserFallback = useCallback(
     (text: string, messageIndex: number) => {
+      if (!ttsSessionActiveRef.current) {
+        return;
+      }
       if (typeof window === "undefined" || !("speechSynthesis" in window)) {
         setStatusBanner({
           kind: "error",
@@ -815,73 +821,40 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
       }
       stopSpeaking();
       setSpeakingMessageIdx(messageIndex);
+      ttsSessionActiveRef.current = true;
 
       if (voiceEngine === "browser") {
         speakWithBrowserFallback(text, messageIndex);
         return;
       }
 
-      const ttsAbort = new AbortController();
-      ttsAbortRef.current = ttsAbort;
-
-      try {
-        const res = await authFetch("/api/adam/voice/tts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text,
-            voiceName: googleVoiceName,
+      await playAdamGoogleTts({
+        text,
+        messageIndex,
+        isSessionActive: () => ttsSessionActiveRef.current,
+        abortRef: ttsAbortRef,
+        fetchTts: (signal) =>
+          authFetch("/api/adam/voice/tts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text,
+              voiceName: googleVoiceName,
+            }),
+            signal,
           }),
-          signal: ttsAbort.signal,
-        });
-
-        if (ttsAbort.signal.aborted) {
-          return;
-        }
-
-        if (!res.ok) {
-          speakWithBrowserFallback(text, messageIndex);
-          return;
-        }
-
-        const data = (await res.json()) as {
-          audioBase64?: string;
-          mimeType?: string;
-        };
-        if (ttsAbort.signal.aborted) {
-          return;
-        }
-        if (!data.audioBase64) {
-          speakWithBrowserFallback(text, messageIndex);
-          return;
-        }
-
-        const audio = new Audio(
-          `data:${data.mimeType || "audio/wav"};base64,${data.audioBase64}`,
-        );
-        activeAudioRef.current = audio;
-        if (ttsAbortRef.current === ttsAbort) {
-          ttsAbortRef.current = null;
-        }
-        audio.onended = () => {
-          setSpeakingMessageIdx(null);
-          activeAudioRef.current = null;
-        };
-        audio.onerror = () => {
-          activeAudioRef.current = null;
-          speakWithBrowserFallback(text, messageIndex);
-        };
-        await audio.play();
-      } catch {
-        if (ttsAbort.signal.aborted) {
-          return;
-        }
-        speakWithBrowserFallback(text, messageIndex);
-      } finally {
-        if (ttsAbortRef.current === ttsAbort) {
-          ttsAbortRef.current = null;
-        }
-      }
+        speakBrowserFallback: speakWithBrowserFallback,
+        onAudioCreated: (audio) => {
+          activeAudioRef.current = audio;
+          audio.onended = () => {
+            setSpeakingMessageIdx(null);
+            activeAudioRef.current = null;
+          };
+          audio.onerror = () => {
+            activeAudioRef.current = null;
+          };
+        },
+      });
     },
     [
       authFetch,

@@ -38,6 +38,12 @@ describe("useStopAudioOnLeave", () => {
     vi.clearAllMocks();
   });
 
+  it("does not call stop on initial mount", () => {
+    const stop = vi.fn();
+    renderHook(() => useStopAudioOnLeave(stop));
+    expect(stop).not.toHaveBeenCalled();
+  });
+
   it("calls stop on unmount and tears down audio + speech synthesis", () => {
     const { stop, mockAudio, mockSpeechSynthesis } = createStopSpy();
     const { unmount } = renderHook(() => useStopAudioOnLeave(stop));

@@ -65,7 +65,12 @@ export function DispatchAudioPlayer({
     setCurrentTime(0);
   }, []);
 
-  useStopAudioOnLeave(stopAllPlayback);
+  const stopOnLeave = useCallback(() => {
+    isActiveRef.current = false;
+    stopAllPlayback();
+  }, [stopAllPlayback]);
+
+  useStopAudioOnLeave(stopOnLeave);
 
   useLayoutEffect(() => {
     isActiveRef.current = true;
