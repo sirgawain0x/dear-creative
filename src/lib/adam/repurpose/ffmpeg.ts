@@ -1,7 +1,6 @@
 import { execFile as execFileCb } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
 import ffmpegStatic from "ffmpeg-static";
 import { promisify } from "node:util";
 import { REPURPOSE_FFMPEG_EXEC_TIMEOUT_MS } from "./constants";
@@ -9,6 +8,7 @@ import {
   assertRepurposePipelineBudget,
   remainingRepurposePipelineMs,
 } from "./pipeline-deadline";
+import { renderSlideTitlePng } from "./slide-image";
 
 const execFile = promisify(execFileCb);
 
@@ -32,43 +32,6 @@ function rethrowFfmpegExecError(error: unknown): never {
   throw error;
 }
 
-let repurposeFontconfigEnvPromise: Promise<Record<string, string>> | null =
-  null;
-
-/** @internal */
-export function resetRepurposeFfmpegEnvCacheForTests(): void {
-  repurposeFontconfigEnvPromise = null;
-}
-
-async function writeRepurposeFontconfigEnv(): Promise<Record<string, string>> {
-  const fontDir = join(process.cwd(), "src/assets/fonts");
-  const configDir = join(tmpdir(), "dear-creative-fontconfig");
-  const configPath = join(configDir, "fonts.conf");
-  const cacheDir = join(tmpdir(), "fontconfig-cache-dear-creative");
-  await mkdir(configDir, { recursive: true });
-  const xml = `<?xml version="1.0"?>
-<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
-<fontconfig>
-  <dir>${fontDir}</dir>
-  <cachedir>${cacheDir}</cachedir>
-</fontconfig>
-`;
-  await writeFile(configPath, xml, "utf8");
-  return {
-    FONTCONFIG_FILE: configPath,
-  };
-}
-
-/** Minimal fontconfig for Lambda (ffmpeg-static builds enable fontconfig). */
-export async function resolveRepurposeFfmpegEnv(): Promise<
-  Record<string, string>
-> {
-  if (!repurposeFontconfigEnvPromise) {
-    repurposeFontconfigEnvPromise = writeRepurposeFontconfigEnv();
-  }
-  return repurposeFontconfigEnvPromise;
-}
-
 export function resolveFfmpegBinaryPath(): string {
   const bundled = ffmpegStatic;
   if (typeof bundled === "string" && bundled.length > 0) {
@@ -77,18 +40,13 @@ export function resolveFfmpegBinaryPath(): string {
   return "ffmpeg";
 }
 
-export function resolveRepurposeDrawtextFontPath(): string {
-  return join(process.cwd(), "src/assets/fonts/DejaVuSans.ttf");
-}
-
 async function execFfmpeg(args: string[], timeoutMs: number): Promise<void> {
   const binary = resolveFfmpegBinaryPath();
-  const fontEnv = await resolveRepurposeFfmpegEnv();
   try {
     await execFile(binary, args, {
       maxBuffer: 16 * 1024 * 1024,
       timeout: timeoutMs,
-      env: { ...process.env, ...fontEnv },
+      env: process.env,
     });
   } catch (error) {
     rethrowFfmpegExecError(error);
@@ -175,49 +133,53 @@ export function createDeadlineAwareFfmpegRunner(input: {
   };
 }
 
-/** Builds a narrated slide MP4; one segment per slide timed to its narration. */
+/** Builds a narrated slide MP4 from PNG stills + narration audio per slide. */
 export async function buildNarratedSlidesMp4(input: {
   workDir: string;
   slides: SlideNarrationSpec[];
   outputPath: string;
   ffmpeg?: FfmpegRunner;
+  renderSlidePng?: (slide: {
+    title: string;
+    outputPath: string;
+  }) => Promise<void>;
 }): Promise<void> {
   if (input.slides.length === 0) {
     throw new Error("No slides for video overview.");
   }
 
   const ffmpeg = input.ffmpeg ?? defaultFfmpegRunner;
-  const fontfile = resolveRepurposeDrawtextFontPath();
+  const renderSlide =
+    input.renderSlidePng ??
+    (async (slide: { title: string; outputPath: string }) => {
+      await renderSlideTitlePng(slide);
+    });
   const segmentPaths: string[] = [];
 
   for (let i = 0; i < input.slides.length; i++) {
     const slide = input.slides[i]!;
-    const duration = Math.max(0.5, slide.durationSeconds);
-    const textPath = join(input.workDir, `slide-${i}.txt`);
-    await writeFile(textPath, slide.title.slice(0, 200), "utf8");
+    const pngPath = join(input.workDir, `slide-${i}.png`);
+    await renderSlide({ title: slide.title, outputPath: pngPath });
     const segmentPath = join(input.workDir, `slide-${i}.mp4`);
     segmentPaths.push(segmentPath);
 
     await ffmpeg([
       "-y",
-      "-f",
-      "lavfi",
+      "-loop",
+      "1",
       "-i",
-      `color=c=0x1e1b4b:s=1280x720:d=${duration}`,
+      pngPath,
       "-i",
       slide.audioPath,
-      "-vf",
-      `drawtext=fontfile=${fontfile}:textfile=${textPath}:expansion=none:fontsize=42:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2`,
+      "-shortest",
       "-c:v",
       "libx264",
       "-pix_fmt",
       "yuv420p",
+      "-tune",
+      "stillimage",
       "-c:a",
       "aac",
-      "-map",
-      "0:v:0",
-      "-map",
-      "1:a:0",
       segmentPath,
     ]);
   }

@@ -4,6 +4,7 @@ import type { StudioAuthSuccess } from "@/lib/adam/studio-auth";
 import { uploadToLensGrove } from "@/lib/storage/lens-grove";
 import { assertRepurposeCallerAccess } from "./access";
 import type { FfmpegRunner } from "./ffmpeg";
+import { RepurposeInfrastructureError } from "./repurpose-infrastructure-error";
 import { isRepurposeEnabled } from "./feature-flag";
 import {
   generateMediaRepurposeOutput,
@@ -164,6 +165,13 @@ export async function runRepurposeGeneration(input: {
     }
     if (error instanceof RepurposeGenerationError) {
       throw error;
+    }
+    if (error instanceof RepurposeInfrastructureError) {
+      throw new RepurposeGenerationError(
+        error.httpStatus,
+        error.clientMessage,
+        `${error.code}: ${error.message}`,
+      );
     }
     throw new RepurposeGenerationError(
       500,
