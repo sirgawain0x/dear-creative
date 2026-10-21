@@ -22,6 +22,18 @@ export function getLinkedInRedirectUri(): string | undefined {
   return process.env.LINKEDIN_REDIRECT_URI?.trim() || undefined;
 }
 
+export function getLinkedInStateSecret(): Buffer | undefined {
+  const raw = process.env.LINKEDIN_STATE_SECRET?.trim();
+  if (!raw) {
+    return undefined;
+  }
+  const secret = Buffer.from(raw, "base64");
+  if (secret.length < 32) {
+    throw new Error("LINKEDIN_STATE_SECRET must decode to at least 32 bytes");
+  }
+  return secret;
+}
+
 export function getLinkedInTokenEncryptionKey(): Buffer | undefined {
   const raw = process.env.LINKEDIN_TOKEN_ENCRYPTION_KEY?.trim();
   if (!raw) {
@@ -44,7 +56,8 @@ export function isLinkedInOAuthConfigured(): boolean {
       getLinkedInClientId() &&
         getLinkedInClientSecret() &&
         getLinkedInRedirectUri() &&
-        getLinkedInTokenEncryptionKey(),
+        getLinkedInTokenEncryptionKey() &&
+        getLinkedInStateSecret(),
     );
   } catch {
     return false;

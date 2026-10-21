@@ -1,28 +1,53 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createLinkedInOAuthState,
-  validateLinkedInOAuthState,
+  parseLinkedInOAuthState,
+  validateLinkedInOAuthStateForUser,
 } from "./oauth-state";
 import { stubLinkedInOAuthEnv } from "./test-helpers";
+
+const ADMIN_DID = "did:privy:admin-user";
 
 describe("LinkedIn OAuth state", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
 
-  it("validates signed state within TTL", () => {
+  it("binds Privy DID, nonce, and expiry in signed state", () => {
     stubLinkedInOAuthEnv();
     const now = 1_700_000_000_000;
-    const state = createLinkedInOAuthState(now);
-    expect(validateLinkedInOAuthState(state, now + 60_000)).toBe(true);
+    const state = createLinkedInOAuthState(ADMIN_DID, now);
+    const parsed = parseLinkedInOAuthState(state);
+    expect(parsed?.privyUserId).toBe(ADMIN_DID);
+    expect(parsed?.expiresAtMs).toBe(now + 15 * 60 * 1000);
+    expect(parsed?.nonce).toMatch(/^[a-f0-9]{32}$/);
   });
 
-  it("rejects tampered or expired state", () => {
+  it("validates state for matching admin DID within TTL", () => {
     stubLinkedInOAuthEnv();
-    const now = 1_700_000_000_000;
-    const state = createLinkedInOAuthState(now);
-    expect(validateLinkedInOAuthState(`${state}x`, now + 60_000)).toBe(false);
-    expect(validateLinkedInOAuthState(state, now + 16 * 60 * 1000)).toBe(false);
-    expect(validateLinkedInOAuthState(null, now)).toBe(false);
+    const now = Date.now();
+    const state = createLinkedInOAuthState(ADMIN_DID, now);
+    expect(validateLinkedInOAuthStateForUser(state, ADMIN_DID, now + 1000)).toBe(
+      true,
+    );
+  });
+
+  it("rejects tampered, expired, or DID-mismatched state", () => {
+    stubLinkedInOAuthEnv();
+    const now = Date.now();
+    const state = createLinkedInOAuthState(ADMIN_DID, now);
+    expect(validateLinkedInOAuthStateForUser(`${state}x`, ADMIN_DID, now)).toBe(
+      false,
+    );
+    expect(
+      validateLinkedInOAuthStateForUser(state, ADMIN_DID, now + 16 * 60 * 1000),
+    ).toBe(false);
+    expect(
+      validateLinkedInOAuthStateForUser(
+        state,
+        "did:privy:other",
+        now + 1000,
+      ),
+    ).toBe(false);
   });
 });

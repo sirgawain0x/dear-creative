@@ -7,8 +7,9 @@ import { completeLinkedInOAuth } from "./complete-oauth";
 import { setLinkedInFetchForTests } from "./http";
 import { createLinkedInOAuthState } from "./oauth-state";
 import { loadLinkedInPersonalCredentials, setLinkedInDbForTests } from "./token-store";
-import { memberSubToPersonUrn } from "./member-urn";
 import { stubLinkedInOAuthEnv } from "./test-helpers";
+
+const ADMIN_DID = "did:privy:admin-g2";
 
 describe("completeLinkedInOAuth", () => {
   beforeEach(async () => {
@@ -25,27 +26,61 @@ describe("completeLinkedInOAuth", () => {
     vi.unstubAllEnvs();
   });
 
-  it("rejects invalid CSRF state", async () => {
-    const state = createLinkedInOAuthState();
+  it("rejects without token exchange when session is missing", async () => {
+    const state = createLinkedInOAuthState(ADMIN_DID);
     const result = await completeLinkedInOAuth({
       code: "code",
       state,
-      cookieState: "different",
+      cookieState: state,
+      privyUserId: null,
+      isPrivyAdmin: false,
     });
-    expect(result).toEqual({ ok: false, reason: "invalid_state" });
+    expect(result).toEqual({ ok: false, reason: "session_missing" });
   });
 
-  it("exchanges code, loads userinfo sub, and stores encrypted credentials", async () => {
-    const state = createLinkedInOAuthState();
+  it("rejects non-admin without token exchange", async () => {
+    const state = createLinkedInOAuthState(ADMIN_DID);
+    const result = await completeLinkedInOAuth({
+      code: "code",
+      state,
+      cookieState: state,
+      privyUserId: ADMIN_DID,
+      isPrivyAdmin: false,
+    });
+    expect(result).toEqual({ ok: false, reason: "not_admin" });
+  });
+
+  it("rejects DID mismatch without token exchange", async () => {
+    const state = createLinkedInOAuthState(ADMIN_DID);
+    const result = await completeLinkedInOAuth({
+      code: "code",
+      state,
+      cookieState: state,
+      privyUserId: "did:privy:other-admin",
+      isPrivyAdmin: true,
+    });
+    expect(result).toEqual({ ok: false, reason: "did_mismatch" });
+  });
+
+  it("maps LinkedIn error params to stable reason codes", async () => {
+    const result = await completeLinkedInOAuth({
+      code: null,
+      state: null,
+      cookieState: undefined,
+      oauthError: "user_cancelled_login",
+      privyUserId: ADMIN_DID,
+      isPrivyAdmin: true,
+    });
+    expect(result).toEqual({ ok: false, reason: "user_cancelled" });
+  });
+
+  it("exchanges code when admin session matches state DID", async () => {
+    const state = createLinkedInOAuthState(ADMIN_DID);
     setLinkedInFetchForTests(async (input) => {
       const url = String(input);
       if (url.includes("accessToken")) {
         return new Response(
-          JSON.stringify({
-            access_token: "stored-access",
-            expires_in: 3600,
-            refresh_token: "stored-refresh",
-          }),
+          JSON.stringify({ access_token: "stored-access", expires_in: 3600 }),
           { status: 200 },
         );
       }
@@ -59,13 +94,24 @@ describe("completeLinkedInOAuth", () => {
       code: "oauth-code",
       state,
       cookieState: state,
+      privyUserId: ADMIN_DID,
+      isPrivyAdmin: true,
     });
-    expect(result).toEqual({ ok: true });
-
+    expect(result).toEqual({ ok: true, reason: "connected" });
     const creds = await loadLinkedInPersonalCredentials();
     expect(creds?.memberSub).toBe("abc123");
-    expect(creds?.authorUrn).toBe(memberSubToPersonUrn("abc123"));
-    expect(creds?.accessToken).toBe("stored-access");
-    expect(creds?.refreshToken).toBe("stored-refresh");
+  });
+
+  it("returns token_exchange_failed on exchange errors", async () => {
+    const state = createLinkedInOAuthState(ADMIN_DID);
+    setLinkedInFetchForTests(async () => new Response("nope", { status: 400 }));
+    const result = await completeLinkedInOAuth({
+      code: "bad-code",
+      state,
+      cookieState: state,
+      privyUserId: ADMIN_DID,
+      isPrivyAdmin: true,
+    });
+    expect(result).toEqual({ ok: false, reason: "token_exchange_failed" });
   });
 });

@@ -2,16 +2,25 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { completeLinkedInOAuth } from "@/lib/linkedin/complete-oauth";
 import { isLinkedInOAuthConfigured } from "@/lib/linkedin/config";
-import { LINKEDIN_OAUTH_STATE_COOKIE } from "../auth/route";
+import { LINKEDIN_OAUTH_STATE_COOKIE } from "@/lib/linkedin/auth-response";
+import {
+  createCookieReaderFromHeader,
+  getPrivyUserIdFromCookies,
+  isPrivyAdminUserId,
+} from "@/lib/privy/session-from-cookies";
 
-function redirectWithStatus(
+function redirectWithReason(
   request: Request,
-  params: Record<string, string>,
+  reason: string,
+  connected = false,
 ): NextResponse {
   const base = new URL(request.url);
   const target = new URL("/admin", base.origin);
-  for (const [key, value] of Object.entries(params)) {
-    target.searchParams.set(key, value);
+  if (connected) {
+    target.searchParams.set("linkedin", "connected");
+  } else {
+    target.searchParams.set("linkedin", "error");
+    target.searchParams.set("reason", reason);
   }
   return NextResponse.redirect(target);
 }
@@ -24,22 +33,32 @@ export async function GET(request: Request) {
     );
   }
 
-  const url = new URL(request.url);
   const cookieStore = await cookies();
-  const cookieState = cookieStore.get(LINKEDIN_OAUTH_STATE_COOKIE)?.value;
+  const headerReader = createCookieReaderFromHeader(
+    request.headers.get("cookie"),
+  );
+  const readCookie = (name: string) =>
+    cookieStore.get(name)?.value ?? headerReader(name);
+
+  const privyUserId = await getPrivyUserIdFromCookies(readCookie);
+  const isPrivyAdmin = privyUserId ? isPrivyAdminUserId(privyUserId) : false;
+
+  const url = new URL(request.url);
+  const cookieState = readCookie(LINKEDIN_OAUTH_STATE_COOKIE);
 
   const result = await completeLinkedInOAuth({
     code: url.searchParams.get("code"),
     state: url.searchParams.get("state"),
     cookieState,
     oauthError: url.searchParams.get("error"),
+    privyUserId,
+    isPrivyAdmin,
   });
 
   cookieStore.delete(LINKEDIN_OAUTH_STATE_COOKIE);
 
-  if (!result.ok) {
-    return redirectWithStatus(request, { linkedin: "error", reason: result.reason });
+  if (result.ok) {
+    return redirectWithReason(request, result.reason, true);
   }
-
-  return redirectWithStatus(request, { linkedin: "connected" });
+  return redirectWithReason(request, result.reason);
 }
