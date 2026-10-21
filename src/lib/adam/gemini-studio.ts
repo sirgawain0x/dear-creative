@@ -66,7 +66,7 @@ export type GeneratedBannerResult = {
   storageKey: string;
   mimeType: string;
   promptUsed: string;
-  provider: "gemini-image" | "nano-banana" | "deterministic-svg";
+  provider: "nano-banana" | "deterministic-svg";
 };
 
 export type GeneratedVideoResult = {
@@ -89,7 +89,7 @@ function resolveAdamGeminiVideoModel(): string {
   );
 }
 
-function resolveAdamImageFallbackModel(): string {
+function resolveAdamBannerImageModel(): string {
   return (
     process.env.ADAM_IMAGEN_MODEL?.trim() || DEFAULT_ADAM_IMAGEN_MODEL
   );
@@ -1518,98 +1518,55 @@ export async function generateBannerWithGemini(input: {
 
   let imageBytes: Buffer | null = null;
   let mimeType = "image/png";
-  let provider: "gemini-image" | "nano-banana" | "deterministic-svg" =
-    "deterministic-svg";
+  let provider: "nano-banana" | "deterministic-svg" = "deterministic-svg";
 
   if (apiKey) {
-    // 1. Try Gemini Native Image Generation (gemini-2.5-flash-image / ADAM_GEMINI_IMAGE_MODEL)
-    const imageModel =
-      process.env.ADAM_GEMINI_IMAGE_MODEL?.trim() || "gemini-2.5-flash-image";
-    const geminiImageUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-      imageModel,
-    )}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    // Primary: Nano Banana 2.1 via Interactions (ADAM_IMAGEN_MODEL override)
+    const imageModel = resolveAdamBannerImageModel();
+    const interactionsUrl = geminiInteractionsUrl();
+    const bannerAspect = aspectRatio === "21:9" ? "16:9" : aspectRatio;
+    const imageFetchTimeoutMs =
+      input.fetchTimeoutMs ?? ADAM_VIDEO_DEFAULT_FETCH_TIMEOUT_MS;
 
     try {
-      const geminiRes = await fetchImpl(geminiImageUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: effectivePrompt }],
+      const imageRes = await fetchWithPerRequestTimeout(
+        fetchImpl,
+        interactionsUrl,
+        {
+          method: "POST",
+          headers: geminiApiKeyHeaders(apiKey),
+          body: JSON.stringify({
+            model: imageModel,
+            input: [{ type: "text", text: effectivePrompt }],
+            response_format: {
+              type: "image",
+              mime_type: "image/jpeg",
+              aspect_ratio: bannerAspect,
             },
-          ],
-          generationConfig: {
-            responseModalities: ["TEXT", "IMAGE"],
-          },
-        }),
-      });
-
-      if (geminiRes.ok) {
-        const json = await geminiRes.json();
-        const extracted = extractImageFromGeminiResponse(json);
-        if (extracted) {
-          imageBytes = Buffer.from(extracted.imageBase64, "base64");
-          mimeType = extracted.mimeType;
-          provider = "gemini-image";
-        }
-      } else {
-        logGeminiHttpFailure(geminiRes.status);
+          }),
+        },
+        imageFetchTimeoutMs,
+      );
+      const json = await readGeminiResponseOrThrow(
+        imageRes,
+        "Gemini image interaction failed",
+      );
+      assertGeminiInteractionCompleted(json);
+      const extracted = extractImageFromGeminiResponse(json);
+      if (extracted) {
+        imageBytes = Buffer.from(extracted.imageBase64, "base64");
+        mimeType =
+          extracted.mimeType === "image/jpeg" || !extracted.mimeType
+            ? "image/jpeg"
+            : extracted.mimeType;
+        provider = "nano-banana";
       }
     } catch {
-      // Fall through to Nano Banana fallback
-    }
-
-    // 2. Fallback to Nano Banana 2.1 (Interactions API)
-    if (!imageBytes) {
-      const imageModel = resolveAdamImageFallbackModel();
-      const interactionsUrl = geminiInteractionsUrl();
-      const bannerAspect =
-        aspectRatio === "21:9" ? "16:9" : aspectRatio;
-      const imageFetchTimeoutMs =
-        input.fetchTimeoutMs ?? ADAM_VIDEO_DEFAULT_FETCH_TIMEOUT_MS;
-
-      try {
-        const imageRes = await fetchWithPerRequestTimeout(
-          fetchImpl,
-          interactionsUrl,
-          {
-            method: "POST",
-            headers: geminiApiKeyHeaders(apiKey),
-            body: JSON.stringify({
-              model: imageModel,
-              input: [{ type: "text", text: effectivePrompt }],
-              response_format: {
-                type: "image",
-                mime_type: "image/jpeg",
-                aspect_ratio: bannerAspect,
-              },
-            }),
-          },
-          imageFetchTimeoutMs,
-        );
-        const json = await readGeminiResponseOrThrow(
-          imageRes,
-          "Gemini image interaction failed",
-        );
-        assertGeminiInteractionCompleted(json);
-        const extracted = extractImageFromGeminiResponse(json);
-        if (extracted) {
-          imageBytes = Buffer.from(extracted.imageBase64, "base64");
-          mimeType =
-            extracted.mimeType === "image/jpeg" || !extracted.mimeType
-              ? "image/jpeg"
-              : extracted.mimeType;
-          provider = "nano-banana";
-        }
-      } catch {
-        // Fall through to deterministic SVG banner
-      }
+      // Fall through to deterministic SVG banner
     }
   }
 
-  // 3. Deterministic SVG fallback when no API key or upstream image model unavailable
+  // Deterministic SVG fallback when no API key or upstream image model unavailable
   if (!imageBytes) {
     const svg = generateDeterministicBannerSvg({
       title,
