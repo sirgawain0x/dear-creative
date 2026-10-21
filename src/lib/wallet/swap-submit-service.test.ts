@@ -87,10 +87,10 @@ describe("submitAdminSwapPreparedCall", () => {
     const txItem = (prepared as unknown[])[1] as Record<string, unknown>;
     txItem._swapQuoteSeal = seal;
 
-    let captured: unknown;
+    let captured: unknown = undefined;
     setAlchemyWalletRpcForTests(async (method, params) => {
       if (method === "wallet_sendPreparedCalls") {
-        captured = params?.[0];
+        captured = Array.isArray(params) ? params[0] : undefined;
         return { id: "call-7702" };
       }
       throw new Error("unexpected");
@@ -110,8 +110,9 @@ describe("submitAdminSwapPreparedCall", () => {
 
     expect(result.ok).toBe(true);
     expect(Array.isArray(captured)).toBe(true);
-    expect((captured as unknown[])[0]).toEqual(signedAuth);
-    expect((captured as unknown[])[1]).toMatchObject({
+    const sent = captured as unknown[];
+    expect(sent[0]).toEqual(signedAuth);
+    expect(sent[1]).toMatchObject({
       signature: { type: "secp256k1", data: "0x22" },
     });
   });

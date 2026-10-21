@@ -109,7 +109,7 @@ describe("POST /api/admin/wallet/swap/quote", () => {
     const callData = encodeFunctionData({
       abi: MAV2_EXECUTE_ABI,
       functionName: "execute",
-      args: [evil, 0n, "0x095ea7b3"],
+      args: [evil, BigInt(0), "0x095ea7b3"],
     });
     setAlchemyWalletRpcForTests(async () => ({
       type: "user-operation-v070",

@@ -15,7 +15,7 @@ export function buildMockSwapPreparedUserOp(input: {
   const callData = encodeFunctionData({
     abi: MAV2_EXECUTE_ABI,
     functionName: "execute",
-    args: [target, 0n, inner],
+    args: [target, BigInt(0), inner],
   });
 
   const tx = {
@@ -49,7 +49,7 @@ export function buildMockSwapPreparedWethExecute(input: {
   const callData = encodeFunctionData({
     abi: MAV2_EXECUTE_ABI,
     functionName: "execute",
-    args: [BASE_WETH_ADDRESS, 0n, "0x"],
+    args: [BASE_WETH_ADDRESS, BigInt(0), "0x"],
   });
   return {
     type: "user-operation-v070",

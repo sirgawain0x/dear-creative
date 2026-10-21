@@ -33,7 +33,7 @@ export type SwapValidationFailure = {
 
 export type SwapValidationResult = SwapValidationSuccess | SwapValidationFailure;
 
-const BPS_DENOMINATOR = 10_000n;
+const BPS_DENOMINATOR = BigInt(10_000);
 
 function applySlippageMinimum(outputRaw: bigint, slippageBps: number): bigint {
   const bps = BigInt(slippageBps);
@@ -41,11 +41,11 @@ function applySlippageMinimum(outputRaw: bigint, slippageBps: number): bigint {
 }
 
 function usdcMicroFromEthRaw(ethRaw: bigint, ethUsdMicro: bigint): bigint {
-  return (ethRaw * ethUsdMicro) / 10n ** 18n;
+  return (ethRaw * ethUsdMicro) / BigInt(10 ** 18);
 }
 
 function ethWeiFromUsdcRaw(usdcRaw: bigint, ethUsdMicro: bigint): bigint {
-  return (usdcRaw * 10n ** 18n) / ethUsdMicro;
+  return (usdcRaw * BigInt(10 ** 18)) / ethUsdMicro;
 }
 
 export async function validateSwapRequestInput(

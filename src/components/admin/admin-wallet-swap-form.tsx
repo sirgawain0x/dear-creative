@@ -4,8 +4,10 @@ import { useMemo } from "react";
 import { adminPrivyAuthorizationHeaders } from "@/lib/admin/admin-api-auth";
 import { createAdminWalletSwapPort } from "@/lib/wallet/admin-wallet-swap-port";
 import { WalletSwapForm } from "@/components/wallet/wallet-swap-form";
-import type { WalletSwapQuoteSummary } from "@/components/wallet/wallet-swap-types";
-import type { Hex } from "viem";
+import type {
+  SignPreparedSwapResult,
+  WalletSwapQuoteSummary,
+} from "@/components/wallet/wallet-swap-types";
 
 export type AdminWalletSwapFormProps = {
   walletAddress: string;
@@ -14,7 +16,9 @@ export type AdminWalletSwapFormProps = {
   getAccessToken: () => Promise<string | null>;
   privyConfigured: boolean;
   authenticated: boolean;
-  signPreparedSwap?: (prepared: Record<string, unknown>) => Promise<Hex>;
+  signPreparedSwap?: (
+    prepared: Record<string, unknown> | unknown[],
+  ) => Promise<SignPreparedSwapResult>;
   previewMode?: boolean;
   fixtureInitialStep?: "form" | "confirm" | "pending" | "success";
   fixtureQuote?: WalletSwapQuoteSummary;
@@ -27,6 +31,7 @@ const DEFAULT_FIXTURE_QUOTE: WalletSwapQuoteSummary = {
   slippageBps: 50,
   chainId: 8453,
   needsWalletUpgrade: true,
+  quoteSeal: null,
   quote: {
     expiry: new Date(Date.now() + 120_000).toISOString(),
     minimumToAmount: "0x38d7ea4c68000",

@@ -30,7 +30,7 @@ describe("swap allowlist", () => {
     const callData = encodeFunctionData({
       abi: MAV2_EXECUTE_ABI,
       functionName: "execute",
-      args: [evil, 0n, inner as `0x${string}`],
+      args: [evil, BigInt(0), inner as `0x${string}`],
     });
     const prepared = {
       type: "user-operation-v070",
@@ -45,7 +45,7 @@ describe("swap allowlist", () => {
     const callData = encodeFunctionData({
       abi: MAV2_EXECUTE_ABI,
       functionName: "execute",
-      args: [BASE_WETH_ADDRESS, 0n, "0xdeadbeef"],
+      args: [BASE_WETH_ADDRESS, BigInt(0), "0xdeadbeef"],
     });
     const prepared = { type: "user-operation-v070", from: ADMIN, data: callData, quote: QUOTE };
     expect(assertPreparedSwapAllowlisted(prepared, ADMIN).ok).toBe(false);
