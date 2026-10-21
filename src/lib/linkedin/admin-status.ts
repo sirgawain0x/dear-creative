@@ -13,10 +13,6 @@ export function toLinkedInAdminConnectionStatus(
     return { connected: false };
   }
   const status: LinkedInAdminConnectionStatus = { connected: true };
-  const memberName = creds.memberDisplayName?.trim();
-  if (memberName) {
-    status.memberName = memberName;
-  }
   if (creds.expiresAtMs != null) {
     status.expiresAt = new Date(creds.expiresAtMs).toISOString();
   }

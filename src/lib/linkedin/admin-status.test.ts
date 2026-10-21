@@ -11,7 +11,6 @@ describe("toLinkedInAdminConnectionStatus", () => {
       toLinkedInAdminConnectionStatus({
         id: "g2-personal",
         memberSub: "782bbtaQ",
-        memberDisplayName: "Ada Lovelace",
         authorUrn: "urn:li:person:782bbtaQ",
         accessToken: "secret",
         refreshToken: null,
@@ -19,7 +18,6 @@ describe("toLinkedInAdminConnectionStatus", () => {
       }),
     ).toEqual({
       connected: true,
-      memberName: "Ada Lovelace",
       expiresAt: new Date(1_700_000_000_000).toISOString(),
     });
   });

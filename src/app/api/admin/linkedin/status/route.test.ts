@@ -68,7 +68,6 @@ describe("GET /api/admin/linkedin/status", () => {
     vi.mocked(loadLinkedInPersonalCredentials).mockResolvedValue({
       id: "g2-personal",
       memberSub: "782bbtaQ",
-      memberDisplayName: "Ada Lovelace",
       authorUrn: "urn:li:person:782bbtaQ",
       accessToken: "secret-access-token",
       refreshToken: "secret-refresh-token",
@@ -83,7 +82,6 @@ describe("GET /api/admin/linkedin/status", () => {
     const body = await res.json();
     expect(body).toEqual({
       connected: true,
-      memberName: "Ada Lovelace",
       expiresAt: new Date(1_700_000_360_000).toISOString(),
     });
     expect(JSON.stringify(body)).not.toContain("secret-access-token");

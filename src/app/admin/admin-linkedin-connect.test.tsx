@@ -34,7 +34,6 @@ describe("AdminLinkedInConnect", () => {
           ok: true,
           json: async () => ({
             connected: true,
-            memberName: "Ada Lovelace",
           }),
         };
       }
@@ -54,7 +53,7 @@ describe("AdminLinkedInConnect", () => {
         headers: { Authorization: "Bearer privy-admin-token" },
       });
     });
-    expect(screen.getByText(/connected as ada lovelace/i)).toBeInTheDocument();
+    expect(screen.getByText(/connected as linkedin member/i)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /reconnect/i }),
     ).toBeInTheDocument();
@@ -64,7 +63,7 @@ describe("AdminLinkedInConnect", () => {
     searchParams.set("linkedin", "connected");
     const fetchMock = vi.fn(async (_input: RequestInfo) => ({
       ok: true,
-      json: async () => ({ connected: true, memberName: "Ada Lovelace" }),
+      json: async () => ({ connected: true }),
     }));
     vi.stubGlobal("fetch", fetchMock);
 
