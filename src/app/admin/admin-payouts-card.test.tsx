@@ -61,12 +61,15 @@ describe("AdminPayoutsCard", () => {
     const payoutsCall = fetchMock.mock.calls.find(
       (call) => String(call[0]) === "/api/admin/payouts",
     );
-    expect(payoutsCall?.[1]?.headers).toEqual({
+    const requestHeaders = payoutsCall?.[1]?.headers as
+      | { Authorization?: string }
+      | undefined;
+    expect(requestHeaders).toEqual({
       Authorization: "Bearer admin-token",
     });
-    expect(
-      String(payoutsCall?.[1]?.headers?.Authorization),
-    ).not.toContain("studio-fallback-token");
+    expect(String(requestHeaders?.Authorization)).not.toContain(
+      "studio-fallback-token",
+    );
   });
 
   it("renders checksummed addresses with BaseScan links", async () => {
