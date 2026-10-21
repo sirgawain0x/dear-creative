@@ -196,11 +196,20 @@ export function AdminEarnPanel({
   ]);
 
   useEffect(() => {
-    if (!earnEnabled || previewData) {
+    if (!ready || !earnEnabled || previewData) {
       return;
     }
-    void fetchEarnData();
-  }, [earnEnabled, previewData, fetchEarnData]);
+    let cancelled = false;
+    void (async () => {
+      await fetchEarnData();
+      if (cancelled) {
+        return;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [earnEnabled, fetchEarnData, previewData, ready]);
 
   if (!earnEnabled) {
     return (
