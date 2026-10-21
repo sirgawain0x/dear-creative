@@ -9,5 +9,5 @@ export function isXLiveEnabled(): boolean {
   if (xLiveOverride !== undefined) {
     return xLiveOverride;
   }
-  return process.env.X_LIVE?.trim().toLowerCase() === "true";
+  return process.env.X_LIVE === "true";
 }
