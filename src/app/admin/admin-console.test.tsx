@@ -10,6 +10,10 @@ vi.mock("./admin-payouts-card", () => ({
   AdminPayoutsCard: () => <div data-testid="admin-payouts-card">Payouts</div>,
 }));
 
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 const mockUseAuthSession = vi.fn();
 
 vi.mock("@/components/providers/app-providers", async (importOriginal) => {
@@ -58,6 +62,11 @@ describe("AdminConsole owner tools", () => {
             }),
             { status: 200 },
           );
+        }
+        if (url.endsWith("/api/admin/linkedin/status")) {
+          return new Response(JSON.stringify({ connected: false }), {
+            status: 200,
+          });
         }
         return new Response("{}", { status: 404 });
       }),

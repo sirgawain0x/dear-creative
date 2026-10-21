@@ -1,6 +1,7 @@
 import {
   exchangeLinkedInAuthorizationCode,
   fetchLinkedInUserInfo,
+  linkedInUserInfoDisplayName,
 } from "./oauth";
 import {
   parseLinkedInOAuthState,
@@ -68,6 +69,7 @@ export async function completeLinkedInOAuth(
     const userinfo = await fetchLinkedInUserInfo(token.access_token);
     await saveLinkedInPersonalCredentials({
       memberSub: userinfo.sub,
+      memberDisplayName: linkedInUserInfoDisplayName(userinfo),
       accessToken: token.access_token,
       refreshToken: token.refresh_token ?? null,
       expiresInSeconds: token.expires_in,

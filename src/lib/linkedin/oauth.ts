@@ -25,6 +25,20 @@ export type LinkedInUserInfo = {
   family_name?: string;
 };
 
+export function linkedInUserInfoDisplayName(
+  info: LinkedInUserInfo,
+): string | undefined {
+  const fullName = info.name?.trim();
+  if (fullName) {
+    return fullName;
+  }
+  const composed = [info.given_name, info.family_name]
+    .map((part) => part?.trim())
+    .filter(Boolean)
+    .join(" ");
+  return composed || undefined;
+}
+
 export function buildLinkedInAuthorizationUrl(state: string): URL {
   const clientId = getLinkedInClientId();
   const redirectUri = getLinkedInRedirectUri();

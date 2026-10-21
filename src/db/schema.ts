@@ -675,6 +675,7 @@ export type PostRepurposeOutputRecord = typeof postRepurposeOutputs.$inferSelect
 export const linkedinMemberCredentials = sqliteTable("linkedin_member_credentials", {
   id: text("id").primaryKey(),
   memberSub: text("member_sub").notNull(),
+  memberDisplayName: text("member_display_name"),
   authorUrn: text("author_urn").notNull(),
   accessTokenEnc: text("access_token_enc").notNull(),
   refreshTokenEnc: text("refresh_token_enc"),

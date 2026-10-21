@@ -85,7 +85,10 @@ describe("completeLinkedInOAuth", () => {
         );
       }
       if (url.includes("userinfo")) {
-        return new Response(JSON.stringify({ sub: "abc123" }), { status: 200 });
+        return new Response(
+          JSON.stringify({ sub: "abc123", name: "Ada Lovelace" }),
+          { status: 200 },
+        );
       }
       return new Response("unexpected", { status: 500 });
     });
@@ -100,6 +103,7 @@ describe("completeLinkedInOAuth", () => {
     expect(result).toEqual({ ok: true, reason: "connected" });
     const creds = await loadLinkedInPersonalCredentials();
     expect(creds?.memberSub).toBe("abc123");
+    expect(creds?.memberDisplayName).toBe("Ada Lovelace");
   });
 
   it("returns token_exchange_failed on exchange errors", async () => {

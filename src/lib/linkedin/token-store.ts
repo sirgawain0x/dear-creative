@@ -10,6 +10,7 @@ import { memberSubToPersonUrn } from "./member-urn";
 export type StoredLinkedInCredentials = {
   id: string;
   memberSub: string;
+  memberDisplayName: string | null;
   authorUrn: string;
   accessToken: string;
   refreshToken: string | null;
@@ -18,6 +19,7 @@ export type StoredLinkedInCredentials = {
 
 export type SaveLinkedInTokenInput = {
   memberSub: string;
+  memberDisplayName?: string | null;
   accessToken: string;
   refreshToken?: string | null;
   expiresInSeconds?: number;
@@ -44,11 +46,13 @@ export async function saveLinkedInPersonalCredentials(
       ? nowMs + input.expiresInSeconds * 1000
       : null;
   const authorUrn = memberSubToPersonUrn(input.memberSub);
+  const memberDisplayName = input.memberDisplayName?.trim() || null;
   await db
     .insert(linkedinMemberCredentials)
     .values({
       id: LINKEDIN_PERSONAL_CREDENTIAL_ID,
       memberSub: input.memberSub,
+      memberDisplayName,
       authorUrn,
       accessTokenEnc: encryptSecret(input.accessToken),
       refreshTokenEnc: input.refreshToken
@@ -61,6 +65,7 @@ export async function saveLinkedInPersonalCredentials(
       target: linkedinMemberCredentials.id,
       set: {
         memberSub: input.memberSub,
+        memberDisplayName,
         authorUrn,
         accessTokenEnc: encryptSecret(input.accessToken),
         refreshTokenEnc: input.refreshToken
@@ -83,6 +88,7 @@ export async function loadLinkedInPersonalCredentials(): Promise<StoredLinkedInC
   return {
     id: row.id,
     memberSub: row.memberSub,
+    memberDisplayName: row.memberDisplayName ?? null,
     authorUrn: row.authorUrn,
     accessToken: decryptSecret(row.accessTokenEnc),
     refreshToken: row.refreshTokenEnc

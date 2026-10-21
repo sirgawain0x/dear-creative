@@ -5,6 +5,7 @@ import {
   buildLinkedInAuthorizationUrl,
   exchangeLinkedInAuthorizationCode,
   fetchLinkedInUserInfo,
+  linkedInUserInfoDisplayName,
 } from "./oauth";
 import { stubLinkedInOAuthEnv } from "./test-helpers";
 
@@ -65,5 +66,18 @@ describe("LinkedIn OAuth", () => {
     });
     const profile = await fetchLinkedInUserInfo("access-token");
     expect(profile.sub).toBe("782bbtaQ");
+  });
+
+  it("prefers full name from userinfo for admin status display", () => {
+    expect(
+      linkedInUserInfoDisplayName({
+        sub: "782bbtaQ",
+        given_name: "Ada",
+        family_name: "Lovelace",
+      }),
+    ).toBe("Ada Lovelace");
+    expect(
+      linkedInUserInfoDisplayName({ sub: "782bbtaQ", name: " Ada Lovelace " }),
+    ).toBe("Ada Lovelace");
   });
 });
