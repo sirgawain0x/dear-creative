@@ -1,7 +1,13 @@
 "use client";
 
+import { useWallets } from "@privy-io/react-auth";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuthSession } from "@/components/providers/app-providers";
+import { resolveAdminEarnActionWallet } from "@/lib/wallet/admin-earn-embedded-wallet";
+import {
+  EarnActionsFlow,
+  type EarnActionsPreviewState,
+} from "@/components/earn/earn-actions-flow";
 import { adminPrivyAuthorizationHeaders } from "@/lib/admin/admin-api-auth";
 import {
   computeEarnedYieldRaw,
@@ -40,10 +46,28 @@ export type AdminEarnPreviewData = {
 
 type AdminEarnPanelProps = {
   earnEnabled: boolean;
+  earnActionsEnabled?: boolean;
+  earnActionsPreview?: EarnActionsPreviewState;
+  /** Fixture/screenshot only — production uses Privy embedded wallet from the session. */
+  earnActionsWalletPreview?: {
+    walletId: string;
+    walletAddress: string;
+  };
   previewData?: AdminEarnPreviewData;
 };
 
 const DEFAULT_VAULT_ORDER = [EARN_VAULT_AAVE_ID, EARN_VAULT_MORPHO_ID];
+
+function parseEarnApiErrorBody(text: string): { error?: string } | null {
+  if (!text.trim()) {
+    return null;
+  }
+  try {
+    return JSON.parse(text) as { error?: string };
+  } catch {
+    return null;
+  }
+}
 
 function providerLabel(provider: PrivyEarnVaultDetails["provider"]): string {
   switch (provider) {
@@ -62,6 +86,9 @@ function providerLabel(provider: PrivyEarnVaultDetails["provider"]): string {
 
 export function AdminEarnPanel({
   earnEnabled,
+  earnActionsEnabled = false,
+  earnActionsPreview,
+  earnActionsWalletPreview,
   previewData,
 }: AdminEarnPanelProps) {
   const {
@@ -70,7 +97,9 @@ export function AdminEarnPanel({
     authenticated,
     getAccessToken,
     privyConfigured,
+    user,
   } = useAuthSession();
+  const { wallets } = useWallets();
   const [loading, setLoading] = useState(
     () => earnEnabled && !previewData,
   );
@@ -93,6 +122,20 @@ export function AdminEarnPanel({
   const selectedPosition = selectedVault
     ? positions[selectedVault.id]
     : undefined;
+
+  const actionWallet = useMemo(() => {
+    if (earnActionsWalletPreview) {
+      return earnActionsWalletPreview;
+    }
+    const resolved = resolveAdminEarnActionWallet({ user, wallets });
+    if (!resolved) {
+      return { walletId: "", walletAddress: "" };
+    }
+    return {
+      walletId: resolved.walletId,
+      walletAddress: resolved.walletAddress,
+    };
+  }, [earnActionsWalletPreview, user, wallets]);
 
   const positionDisplay = useMemo(() => {
     if (!selectedPosition || !selectedPosition.configured) {
@@ -136,6 +179,9 @@ export function AdminEarnPanel({
       }
 
       const vaultsRes = await fetch("/api/admin/earn/vaults", { headers });
+      const vaultsBodyText = await vaultsRes.text();
+      const vaultsErrorBody = parseEarnApiErrorBody(vaultsBodyText);
+
       if (vaultsRes.status === 401) {
         setError("Sign in with Privy");
         return;
@@ -144,15 +190,19 @@ export function AdminEarnPanel({
         setError("Admin access required.");
         return;
       }
-      if (vaultsRes.status === 404) {
+      if (vaultsRes.status === 404 && !vaultsErrorBody) {
         setError("Earn feature is disabled.");
         return;
       }
       if (!vaultsRes.ok) {
-        setError("Could not load vault details.");
+        const code =
+          typeof vaultsErrorBody?.error === "string"
+            ? vaultsErrorBody.error
+            : null;
+        setError(code ?? "Could not load vault details.");
         return;
       }
-      const vaultsJson = (await vaultsRes.json()) as {
+      const vaultsJson = JSON.parse(vaultsBodyText) as {
         vaults: PrivyEarnVaultDetails[];
       };
       setVaults(vaultsJson.vaults);
@@ -345,6 +395,34 @@ export function AdminEarnPanel({
                 label="Yield earned"
                 value={`${positionDisplay.yieldEarned} ${positionDisplay.symbol}`}
               />
+            </div>
+          ) : null}
+
+          {earnActionsEnabled ? (
+            <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Deposit / withdraw
+              </p>
+              <p className="mt-1 text-[11px] text-zinc-500">
+                Signed in your browser via Privy — no server signer.
+              </p>
+              <div className="mt-3">
+                <EarnActionsFlow
+                  enabled={earnActionsEnabled}
+                  walletId={actionWallet.walletId}
+                  walletAddress={actionWallet.walletAddress}
+                  vaults={vaults.map((entry) => ({
+                    id: entry.id,
+                    name: entry.name,
+                    provider: entry.provider,
+                  }))}
+                  selectedVaultId={selectedVault?.id ?? ""}
+                  getAccessToken={getAccessToken}
+                  privyConfigured={privyConfigured}
+                  authenticated={authenticated}
+                  previewState={earnActionsPreview}
+                />
+              </div>
             </div>
           ) : null}
         </div>

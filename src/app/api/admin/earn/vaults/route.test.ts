@@ -14,17 +14,19 @@ vi.mock("@/lib/privy/require-auth", () => ({
   requirePrivyAuth: vi.fn(),
 }));
 
-vi.mock("@/lib/earn/privy-earn", () => ({
-  fetchPrivyEarnVaultDetailsBatch: vi.fn(),
-  PrivyEarnConfigError: class PrivyEarnConfigError extends Error {},
-  PrivyEarnRequestError: class PrivyEarnRequestError extends Error {
-    code = "privy_earn_upstream_error";
-    status = 502;
-  },
-}));
+vi.mock("@/lib/earn/privy-earn", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/earn/privy-earn")>();
+  return {
+    ...actual,
+    fetchPrivyEarnVaultDetailsBatch: vi.fn(),
+  };
+});
 
 import { requirePrivyAuth } from "@/lib/privy/require-auth";
-import { fetchPrivyEarnVaultDetailsBatch } from "@/lib/earn/privy-earn";
+import {
+  fetchPrivyEarnVaultDetailsBatch,
+  PrivyEarnRequestError,
+} from "@/lib/earn/privy-earn";
 import { setEarnEnabledForTests } from "@/lib/earn/feature-flag";
 
 describe("GET /api/admin/earn/vaults", () => {
@@ -96,6 +98,24 @@ describe("GET /api/admin/earn/vaults", () => {
       }),
     );
     expect(res.status).toBe(403);
+  });
+
+  it("returns earn_vault_not_found when Privy upstream returns 404 for a vault", async () => {
+    vi.mocked(fetchPrivyEarnVaultDetailsBatch).mockRejectedValue(
+      new PrivyEarnRequestError(
+        "earn_vault_not_found",
+        502,
+        "Privy Earn vault not found",
+      ),
+    );
+    const res = await GET(
+      new Request("http://localhost/api/admin/earn/vaults", {
+        headers: { Authorization: "Bearer token" },
+      }),
+    );
+    expect(res.status).toBe(502);
+    const json = await res.json();
+    expect(json.error).toBe("earn_vault_not_found");
   });
 
   it("returns vaults with private no-store cache", async () => {

@@ -34,6 +34,14 @@ export async function requireAdminEarnApi(
 
   const auth = await requirePrivyAuth(request, { requireAdmin: true });
   if (!auth.ok) {
+    const status = auth.response.status;
+    const reason =
+      status === 401
+        ? "unauthorized"
+        : status === 403
+          ? "forbidden"
+          : `http_${status}`;
+    console.error("[admin-earn] auth_failed", { reason, status });
     return { ok: false, response: auth.response };
   }
 

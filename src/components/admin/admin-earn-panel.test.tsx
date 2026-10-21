@@ -11,6 +11,13 @@ import {
   EARN_VAULT_MORPHO_ID,
 } from "@/lib/earn/vaults";
 
+vi.mock("@privy-io/react-auth", () => ({
+  useWallets: () => ({ wallets: [] }),
+  useAuthorizationSignature: () => ({
+    generateAuthorizationSignature: vi.fn(),
+  }),
+}));
+
 const previewData = {
   vaults: [
     {
@@ -124,9 +131,9 @@ describe("AdminEarnPanel fetch errors", () => {
     });
   });
 
-  it("shows disabled message when vaults API returns 404", async () => {
+  it("shows disabled message when vaults API returns 404 with an empty body", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ error: "Not found" }), { status: 404 }),
+      new Response("", { status: 404 }),
     );
 
     await act(async () => {
@@ -135,6 +142,22 @@ describe("AdminEarnPanel fetch errors", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Earn feature is disabled.")).toBeInTheDocument();
+    });
+  });
+
+  it("shows API error code when vaults API returns a non-empty error body", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: "earn_vault_not_found" }), {
+        status: 502,
+      }),
+    );
+
+    await act(async () => {
+      renderEarnPanel(<AdminEarnPanel earnEnabled />);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("earn_vault_not_found")).toBeInTheDocument();
     });
   });
 });
@@ -158,5 +181,23 @@ describe("AdminEarnPanel", () => {
   it("shows disabled message when earn flag is off", () => {
     renderEarnPanel(<AdminEarnPanel earnEnabled={false} />);
     expect(screen.getByText(/EARN_ENABLED=true/i)).toBeInTheDocument();
+  });
+
+  it("uses fixture preview wallet for earn actions (not vault admin_wallet_*)", () => {
+    renderEarnPanel(
+      <AdminEarnPanel
+        earnEnabled
+        earnActionsEnabled
+        earnActionsWalletPreview={{
+          walletId: "fixture-user-wallet",
+          walletAddress: "0xAE48B6dB64772b9CC24e33A79c809896776a20f6",
+        }}
+        previewData={previewData}
+      />,
+    );
+    expect(screen.getByText(/Deposit \/ withdraw/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Signed in your browser via Privy/i),
+    ).toBeInTheDocument();
   });
 });

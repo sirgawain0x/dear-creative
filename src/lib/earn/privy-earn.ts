@@ -1,6 +1,5 @@
 import { getPrivyAppId, getPrivyAppSecret } from "@/lib/privy/config";
-
-const PRIVY_API_BASE = "https://api.privy.io/api/v1";
+import { PRIVY_WALLET_API_BASE } from "./privy-earn-urls";
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 export type PrivyEarnVaultAsset = {
@@ -81,13 +80,25 @@ function safeLogContext(details: Record<string, unknown>): Record<string, unknow
   return out;
 }
 
+function vaultIdFromPrivyEarnPath(path: string): string | undefined {
+  const vaultDetailsMatch = path.match(/^\/earn\/ethereum\/vaults\/([^/?]+)/);
+  if (vaultDetailsMatch?.[1]) {
+    return decodeURIComponent(vaultDetailsMatch[1]);
+  }
+  const queryIndex = path.indexOf("?");
+  if (queryIndex === -1) {
+    return undefined;
+  }
+  return new URLSearchParams(path.slice(queryIndex + 1)).get("vault_id") ?? undefined;
+}
+
 async function privyEarnFetch<T>(
   path: string,
   init?: { timeoutMs?: number },
 ): Promise<T> {
   const { appId, authorization } = buildPrivyBasicAuthHeader();
   const timeoutMs = init?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const url = `${PRIVY_API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
+  const url = `${PRIVY_WALLET_API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
 
   let response: Response;
   try {
@@ -113,6 +124,23 @@ async function privyEarnFetch<T>(
       "privy_earn_network_error",
       502,
       "Privy Earn request failed",
+    );
+  }
+
+  if (response.status === 404) {
+    const vaultId = vaultIdFromPrivyEarnPath(path);
+    console.error(
+      "[privy-earn] vault_not_found",
+      safeLogContext({
+        path,
+        vaultId,
+        code: "earn_vault_not_found",
+      }),
+    );
+    throw new PrivyEarnRequestError(
+      "earn_vault_not_found",
+      502,
+      "Privy Earn vault not found",
     );
   }
 
