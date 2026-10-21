@@ -20,7 +20,7 @@ const shouldRun = process.env.PAGE_HTTP_404_TEST === "1";
 const describeHttp = shouldRun ? describe : describe.skip;
 
 describeHttp("page routes return HTTP 404 before streaming (production server)", () => {
-  const port = 31_404;
+  const port = 31_400 + Math.floor(Math.random() * 500);
   const baseUrl = `http://127.0.0.1:${port}`;
   let server: ChildProcess | null = null;
 

@@ -6,8 +6,7 @@ import { optimizedImageRemotePatterns } from "./src/lib/images/optimized-remote-
 const nextConfig: NextConfig = {
   pageExtensions: ["js", "jsx", "md", "mdx", "ts", "tsx"],
   cacheComponents: true,
-  // Required so post/author notFound() sets HTTP 404 before PPR streams a 200 shell.
-  partialPrefetching: false,
+  partialPrefetching: true,
   images: {
     remotePatterns: optimizedImageRemotePatterns,
   },
