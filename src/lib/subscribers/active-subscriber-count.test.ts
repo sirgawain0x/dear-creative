@@ -10,6 +10,7 @@ import type { DearCreativeDb } from "@/db/client";
 import * as schema from "@/db/schema";
 import { subscribers, subscriptions, writers } from "@/db/schema";
 import {
+  ACTIVE_SUBSCRIBER_IDENTITY_LINK,
   formatActiveSubscriberCount,
   queryActiveSubscriberCount,
 } from "./active-subscriber-count";
@@ -23,8 +24,11 @@ async function createTestDb(): Promise<DearCreativeDb> {
   return db as DearCreativeDb;
 }
 
+const SHARED_WALLET =
+  "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as const;
+
 describe("queryActiveSubscriberCount", () => {
-  it("counts confirmed free subscribers and active paid subscriptions", async () => {
+  it("counts distinct people across free and paid with expired paid excluded", async () => {
     const db = await createTestDb();
     const asOf = new Date("2026-10-20T12:00:00.000Z");
 
@@ -57,7 +61,7 @@ describe("queryActiveSubscriberCount", () => {
       {
         id: randomUUID(),
         privyUserId: "did:privy:paid-active",
-        wallet: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        wallet: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         writerId,
         plan: "monthly",
         periodStart: new Date("2026-10-01T00:00:00.000Z"),
@@ -67,7 +71,7 @@ describe("queryActiveSubscriberCount", () => {
       {
         id: randomUUID(),
         privyUserId: "did:privy:paid-expired",
-        wallet: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        wallet: "0xcccccccccccccccccccccccccccccccccccccccc",
         writerId,
         plan: "monthly",
         periodStart: new Date("2026-08-01T00:00:00.000Z"),
@@ -78,6 +82,69 @@ describe("queryActiveSubscriberCount", () => {
 
     const total = await queryActiveSubscriberCount(db, asOf);
     expect(total).toBe(2);
+    expect(ACTIVE_SUBSCRIBER_IDENTITY_LINK).toContain("subscribers.email");
+  });
+
+  it("dedupes free list + active paid to one when email matches subscription wallet", async () => {
+    const db = await createTestDb();
+    const asOf = new Date("2026-10-20T12:00:00.000Z");
+    const writerId = randomUUID();
+    await db.insert(writers).values({ id: writerId });
+
+    await db.insert(subscribers).values({
+      id: randomUUID(),
+      email: SHARED_WALLET,
+      status: "subscribed",
+      source: "signup",
+      subscribedAt: asOf,
+    });
+
+    await db.insert(subscriptions).values({
+      id: randomUUID(),
+      privyUserId: "did:privy:same-person",
+      wallet: SHARED_WALLET,
+      writerId,
+      plan: "monthly",
+      periodStart: new Date("2026-10-01T00:00:00.000Z"),
+      periodEnd: new Date("2026-11-01T00:00:00.000Z"),
+      status: "active",
+    });
+
+    expect(await queryActiveSubscriberCount(db, asOf)).toBe(1);
+  });
+
+  it("dedupes multiple active paid rows for the same privy user", async () => {
+    const db = await createTestDb();
+    const asOf = new Date("2026-10-20T12:00:00.000Z");
+    const writerA = randomUUID();
+    const writerB = randomUUID();
+    await db.insert(writers).values([{ id: writerA }, { id: writerB }]);
+
+    const privyUserId = "did:privy:multi-writer";
+    await db.insert(subscriptions).values([
+      {
+        id: randomUUID(),
+        privyUserId,
+        wallet: "0xdddddddddddddddddddddddddddddddddddddddd",
+        writerId: writerA,
+        plan: "monthly",
+        periodStart: new Date("2026-10-01T00:00:00.000Z"),
+        periodEnd: new Date("2026-11-01T00:00:00.000Z"),
+        status: "active",
+      },
+      {
+        id: randomUUID(),
+        privyUserId,
+        wallet: "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        writerId: writerB,
+        plan: "yearly",
+        periodStart: new Date("2026-10-01T00:00:00.000Z"),
+        periodEnd: new Date("2027-10-01T00:00:00.000Z"),
+        status: "active",
+      },
+    ]);
+
+    expect(await queryActiveSubscriberCount(db, asOf)).toBe(1);
   });
 
   it("returns zero when no active subscribers exist", async () => {
