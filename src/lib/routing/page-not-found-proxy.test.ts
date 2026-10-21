@@ -9,12 +9,7 @@ vi.mock("@/db/client", () => ({
   getDb: vi.fn(),
 }));
 
-vi.mock("@/lib/posts/published-posts-cache", () => ({
-  getCachedPublishedPostExists: vi.fn(),
-}));
-
 import { getDb } from "@/db/client";
-import { getCachedPublishedPostExists } from "@/lib/posts/published-posts-cache";
 import * as publishedPosts from "@/lib/posts/published-posts";
 import {
   NOT_FOUND_DOCUMENT_PATH,
@@ -44,9 +39,6 @@ describe("resolvePageNotFoundProxy", () => {
     const client = createClient({ url: ":memory:" });
     const db = drizzle(client, { schema });
     vi.mocked(getDb).mockReturnValue(db);
-    vi.mocked(getCachedPublishedPostExists).mockImplementation(async (slug) =>
-      publishedPosts.existsPublishedPostBySlug(db, slug),
-    );
     await client.execute(`
       CREATE TABLE authors (
         id text PRIMARY KEY NOT NULL,
@@ -113,14 +105,10 @@ describe("resolvePageNotFoundProxy", () => {
 
   afterEach(() => {
     setAuthorProfilesEnabledForTests(undefined);
-    vi.mocked(getCachedPublishedPostExists).mockReset();
     vi.unstubAllEnvs();
   });
 
   it("returns next when the published-post lookup throws (fail open)", async () => {
-    vi.mocked(getCachedPublishedPostExists).mockRejectedValueOnce(
-      new Error("cache unavailable"),
-    );
     vi.spyOn(publishedPosts, "existsPublishedPostBySlug").mockRejectedValueOnce(
       new Error("db unavailable"),
     );
@@ -151,8 +139,16 @@ describe("resolvePageNotFoundProxy", () => {
     expect(result).toEqual({ action: "next" });
   });
 
-  it("returns next for a newly published slug when cache was stale false", async () => {
-    vi.mocked(getCachedPublishedPostExists).mockResolvedValueOnce(true);
+  it("returns next for a newly published slug after insert", async () => {
+    const db = vi.mocked(getDb)();
+    await db.insert(schema.posts).values({
+      id: "p-new",
+      slug: "just-published",
+      title: "New",
+      status: "published",
+      publishedAt: new Date(),
+      isGated: false,
+    });
     const result = await resolvePageNotFoundProxy("/posts/just-published");
     expect(result).toEqual({ action: "next" });
   });
@@ -162,10 +158,12 @@ describe("resolvePageNotFoundProxy", () => {
     expect(result).toEqual({ action: "not_found" });
   });
 
-  it("returns not_found for malformed post slugs without hitting the cache", async () => {
+  it("returns not_found for malformed post slugs without hitting the database", async () => {
+    const existsSpy = vi.spyOn(publishedPosts, "existsPublishedPostBySlug");
     const result = await resolvePageNotFoundProxy("/posts/NOT-VALID");
     expect(result).toEqual({ action: "not_found" });
-    expect(getCachedPublishedPostExists).not.toHaveBeenCalled();
+    expect(existsSpy).not.toHaveBeenCalled();
+    existsSpy.mockRestore();
   });
 
   it("returns not_found for author profiles when the flag is off", async () => {
