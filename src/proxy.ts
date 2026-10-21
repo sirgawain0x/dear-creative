@@ -13,7 +13,7 @@ export async function proxy(request: NextRequest) {
   }
 
   const decision = await resolvePageNotFoundProxy(request.nextUrl.pathname);
-  const blocked = await pageNotFoundProxyResponse(decision, request);
+  const blocked = pageNotFoundProxyResponse(decision, request);
   if (blocked) {
     return blocked;
   }

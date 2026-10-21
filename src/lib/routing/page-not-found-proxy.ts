@@ -6,6 +6,7 @@ import { isAuthorProfilesEnabled } from "@/lib/authors/feature-flag";
 import { existsPublishedPostBySlug } from "@/lib/posts/published-posts";
 import { getCachedPublishedPostExists } from "@/lib/posts/published-posts-cache";
 import { isWellFormedPostSlug } from "@/lib/posts/post-slug-format";
+import { getRequiredPublicSiteUrl } from "@/lib/site/public-origin";
 
 export type PageNotFoundProxyResult =
   | { action: "next" }
@@ -17,6 +18,8 @@ export const NOT_FOUND_DOCUMENT_PATH = "/_not-found";
 /** Author profile URL segment guard (id in path). */
 export const AUTHOR_PROFILE_ID_MAX_LENGTH = 128;
 const AUTHOR_PROFILE_ID_PATTERN = /^[\w-]+$/;
+
+const DEFAULT_INTERNAL_ORIGIN = "http://127.0.0.1:3000";
 
 function decodePathSegment(segment: string): string {
   try {
@@ -31,6 +34,12 @@ export function isWellFormedAuthorProfileId(authorId: string): boolean {
     return false;
   }
   return AUTHOR_PROFILE_ID_PATTERN.test(authorId);
+}
+
+/** Rewrite target origin from env only (never request Host / x-forwarded-*). */
+export function resolveNotFoundRewriteUrl(): URL {
+  const origin = getRequiredPublicSiteUrl() ?? DEFAULT_INTERNAL_ORIGIN;
+  return new URL(NOT_FOUND_DOCUMENT_PATH, `${origin}/`);
 }
 
 /** Pure routing decision for proxy (testable without NextRequest). */
@@ -79,37 +88,13 @@ async function lookupPublishedPostExists(slug: string): Promise<boolean> {
   }
 }
 
-export function notFoundDocumentUrl(requestUrl: URL): URL {
-  return new URL(NOT_FOUND_DOCUMENT_PATH, requestUrl);
-}
-
-/** Serves App Router not-found HTML with a real 404 status (rewrite alone keeps 200). */
-export async function pageNotFoundProxyResponse(
+export function pageNotFoundProxyResponse(
   result: PageNotFoundProxyResult,
-  request: NextRequest,
-): Promise<NextResponse | null> {
+  _request: NextRequest,
+): NextResponse | null {
   if (result.action !== "not_found") {
     return null;
   }
 
-  const documentUrl = notFoundDocumentUrl(request.nextUrl);
-  const method = request.method.toUpperCase();
-
-  if (method === "HEAD") {
-    return new NextResponse(null, { status: 404 });
-  }
-
-  const rendered = await fetch(documentUrl, {
-    headers: {
-      cookie: request.headers.get("cookie") ?? "",
-      accept: request.headers.get("accept") ?? "text/html",
-    },
-  });
-  const html = await rendered.text();
-  return new NextResponse(html, {
-    status: 404,
-    headers: {
-      "Content-Type": rendered.headers.get("Content-Type") ?? "text/html; charset=utf-8",
-    },
-  });
+  return NextResponse.rewrite(resolveNotFoundRewriteUrl(), { status: 404 });
 }

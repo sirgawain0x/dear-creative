@@ -1,6 +1,7 @@
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { NextRequest } from "next/server";
 import * as schema from "@/db/schema";
 import { setAuthorProfilesEnabledForTests } from "@/lib/authors/feature-flag";
 
@@ -17,9 +18,25 @@ import { getCachedPublishedPostExists } from "@/lib/posts/published-posts-cache"
 import * as publishedPosts from "@/lib/posts/published-posts";
 import {
   NOT_FOUND_DOCUMENT_PATH,
-  notFoundDocumentUrl,
+  pageNotFoundProxyResponse,
+  resolveNotFoundRewriteUrl,
   resolvePageNotFoundProxy,
 } from "./page-not-found-proxy";
+
+function fakeRequest(
+  url: string,
+  init?: { method?: string; host?: string },
+): NextRequest {
+  const headers = new Headers();
+  if (init?.host) {
+    headers.set("host", init.host);
+  }
+  return {
+    method: init?.method ?? "GET",
+    headers,
+    nextUrl: new URL(url),
+  } as NextRequest;
+}
 
 describe("resolvePageNotFoundProxy", () => {
   beforeEach(async () => {
@@ -96,6 +113,7 @@ describe("resolvePageNotFoundProxy", () => {
   afterEach(() => {
     setAuthorProfilesEnabledForTests(undefined);
     vi.mocked(getCachedPublishedPostExists).mockReset();
+    vi.unstubAllEnvs();
   });
 
   it("returns next when the published-post lookup throws (fail open)", async () => {
@@ -132,12 +150,15 @@ describe("resolvePageNotFoundProxy", () => {
     expect(result).toEqual({ action: "next" });
   });
 
+  it("returns next for a newly published slug when cache was stale false", async () => {
+    vi.mocked(getCachedPublishedPostExists).mockResolvedValueOnce(true);
+    const result = await resolvePageNotFoundProxy("/posts/just-published");
+    expect(result).toEqual({ action: "next" });
+  });
+
   it("returns not_found for a missing post slug", async () => {
     const result = await resolvePageNotFoundProxy("/posts/missing-slug");
     expect(result).toEqual({ action: "not_found" });
-    expect(notFoundDocumentUrl(new URL("http://localhost/posts/missing-slug")).pathname).toBe(
-      NOT_FOUND_DOCUMENT_PATH,
-    );
   });
 
   it("returns not_found for malformed post slugs without hitting the cache", async () => {
@@ -161,5 +182,39 @@ describe("resolvePageNotFoundProxy", () => {
   it("allows an existing published post slug", async () => {
     const result = await resolvePageNotFoundProxy("/posts/live-post");
     expect(result).toEqual({ action: "next" });
+  });
+});
+
+describe("pageNotFoundProxyResponse", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("rewrites to configured origin with 404 (ignores spoofed Host)", () => {
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://dear.example.test");
+    const request = fakeRequest("https://evil.example/posts/missing", {
+      host: "evil.example",
+    });
+    const response = pageNotFoundProxyResponse(
+      { action: "not_found" },
+      request,
+    );
+    expect(response?.status).toBe(404);
+    expect(response?.headers.get("x-middleware-rewrite")).toBe(
+      `https://dear.example.test${NOT_FOUND_DOCUMENT_PATH}`,
+    );
+    expect(resolveNotFoundRewriteUrl().hostname).toBe("dear.example.test");
+  });
+
+  it("does not forward cookies (rewrite only, no fetch)", () => {
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://dear.example.test");
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const request = fakeRequest("https://dear.example.test/posts/missing", {
+      host: "dear.example.test",
+    });
+    request.headers.set("cookie", "session=secret");
+    pageNotFoundProxyResponse({ action: "not_found" }, request);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
   });
 });
