@@ -19,7 +19,6 @@ import * as publishedPosts from "@/lib/posts/published-posts";
 import {
   NOT_FOUND_DOCUMENT_PATH,
   pageNotFoundProxyResponse,
-  resolveNotFoundRewriteUrl,
   resolvePageNotFoundProxy,
 } from "./page-not-found-proxy";
 
@@ -31,10 +30,12 @@ function fakeRequest(
   if (init?.host) {
     headers.set("host", init.host);
   }
+  const nextUrl = new URL(url);
   return {
     method: init?.method ?? "GET",
     headers,
-    nextUrl: new URL(url),
+    nextUrl,
+    url: nextUrl.toString(),
   } as NextRequest;
 }
 
@@ -190,10 +191,23 @@ describe("pageNotFoundProxyResponse", () => {
     vi.unstubAllEnvs();
   });
 
-  it("rewrites to configured origin with 404 (ignores spoofed Host)", () => {
-    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://dear.example.test");
-    const request = fakeRequest("https://evil.example/posts/missing", {
-      host: "evil.example",
+  it("rewrites to the request origin when NEXT_PUBLIC_SITE_URL is unset", () => {
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "");
+    const request = fakeRequest("https://preview-branch.vercel.app/posts/missing");
+    const response = pageNotFoundProxyResponse(
+      { action: "not_found" },
+      request,
+    );
+    expect(response?.status).toBe(404);
+    expect(response?.headers.get("x-middleware-rewrite")).toBe(
+      `https://preview-branch.vercel.app${NOT_FOUND_DOCUMENT_PATH}`,
+    );
+  });
+
+  it("rewrites to the request origin even when NEXT_PUBLIC_SITE_URL points elsewhere", () => {
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://production.example.com");
+    const request = fakeRequest("https://preview-branch.vercel.app/posts/missing", {
+      host: "preview-branch.vercel.app",
     });
     const response = pageNotFoundProxyResponse(
       { action: "not_found" },
@@ -201,13 +215,11 @@ describe("pageNotFoundProxyResponse", () => {
     );
     expect(response?.status).toBe(404);
     expect(response?.headers.get("x-middleware-rewrite")).toBe(
-      `https://dear.example.test${NOT_FOUND_DOCUMENT_PATH}`,
+      `https://preview-branch.vercel.app${NOT_FOUND_DOCUMENT_PATH}`,
     );
-    expect(resolveNotFoundRewriteUrl().hostname).toBe("dear.example.test");
   });
 
   it("does not forward cookies (rewrite only, no fetch)", () => {
-    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://dear.example.test");
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const request = fakeRequest("https://dear.example.test/posts/missing", {
       host: "dear.example.test",

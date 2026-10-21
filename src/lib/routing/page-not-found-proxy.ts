@@ -6,7 +6,6 @@ import { isAuthorProfilesEnabled } from "@/lib/authors/feature-flag";
 import { existsPublishedPostBySlug } from "@/lib/posts/published-posts";
 import { getCachedPublishedPostExists } from "@/lib/posts/published-posts-cache";
 import { isWellFormedPostSlug } from "@/lib/posts/post-slug-format";
-import { getRequiredPublicSiteUrl } from "@/lib/site/public-origin";
 
 export type PageNotFoundProxyResult =
   | { action: "next" }
@@ -18,8 +17,6 @@ export const NOT_FOUND_DOCUMENT_PATH = "/_not-found";
 /** Author profile URL segment guard (id in path). */
 export const AUTHOR_PROFILE_ID_MAX_LENGTH = 128;
 const AUTHOR_PROFILE_ID_PATTERN = /^[\w-]+$/;
-
-const DEFAULT_INTERNAL_ORIGIN = "http://127.0.0.1:3000";
 
 function decodePathSegment(segment: string): string {
   try {
@@ -34,12 +31,6 @@ export function isWellFormedAuthorProfileId(authorId: string): boolean {
     return false;
   }
   return AUTHOR_PROFILE_ID_PATTERN.test(authorId);
-}
-
-/** Rewrite target origin from env only (never request Host / x-forwarded-*). */
-export function resolveNotFoundRewriteUrl(): URL {
-  const origin = getRequiredPublicSiteUrl() ?? DEFAULT_INTERNAL_ORIGIN;
-  return new URL(NOT_FOUND_DOCUMENT_PATH, `${origin}/`);
 }
 
 /** Pure routing decision for proxy (testable without NextRequest). */
@@ -90,11 +81,13 @@ async function lookupPublishedPostExists(slug: string): Promise<boolean> {
 
 export function pageNotFoundProxyResponse(
   result: PageNotFoundProxyResult,
-  _request: NextRequest,
+  request: NextRequest,
 ): NextResponse | null {
   if (result.action !== "not_found") {
     return null;
   }
 
-  return NextResponse.rewrite(resolveNotFoundRewriteUrl(), { status: 404 });
+  return NextResponse.rewrite(new URL(NOT_FOUND_DOCUMENT_PATH, request.url), {
+    status: 404,
+  });
 }
