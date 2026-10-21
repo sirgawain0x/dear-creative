@@ -23,6 +23,12 @@ import {
   wrapFetchForRepurposePipeline,
 } from "../pipeline-deadline";
 import type { RepurposePostSource } from "../post-source";
+import {
+  generateMockSilentNarrationMp3,
+  getMockVideoOverviewSlideDeck,
+  isRepurposeMockEnabled,
+  logRepurposeMockModeOnce,
+} from "../mock-mode";
 import { validateRepurposeModelOutput } from "../validate-output";
 import { generateTextRepurposeOutput } from "./text";
 import { synthesizeSlideNarrationMp3 } from "./audio-overview";
@@ -115,16 +121,23 @@ export async function generateVideoOverview(input: {
   assertRepurposePipelineBudget(deadlineAtMs, nowFn());
 
   const pipelineStartedAt = nowFn();
+  const mockMode = isRepurposeMockEnabled();
+  if (mockMode) {
+    logRepurposeMockModeOnce();
+  }
 
-  const deckResult = await generateTextRepurposeOutput({
-    outputType: "slide_deck",
-    source: input.source,
-    fetchFn: deckFetch,
-  });
-  const slideDeck = validateRepurposeModelOutput(
-    "slide_deck",
-    deckResult.payload,
-  ) as SlideDeck;
+  const slideDeck = mockMode
+    ? (getMockVideoOverviewSlideDeck(input.source) as SlideDeck)
+    : (validateRepurposeModelOutput(
+        "slide_deck",
+        (
+          await generateTextRepurposeOutput({
+            outputType: "slide_deck",
+            source: input.source,
+            fetchFn: deckFetch,
+          })
+        ).payload,
+      ) as SlideDeck);
 
   const slides = slideDeck.slides ?? [];
   if (slides.length === 0) {
@@ -163,11 +176,13 @@ export async function generateVideoOverview(input: {
       const slide = slides[i]!;
       const title = slide.title?.trim() || `Slide ${i + 1}`;
       const narration = narrationTextForSlide(slide);
-      const mp3 = await synthesizeSlideNarrationMp3({
-        text: narration,
-        fetchFn: ttsFetch,
-        synthesizeFn: input.synthesizeFn,
-      });
+      const mp3 = mockMode
+        ? await generateMockSilentNarrationMp3()
+        : await synthesizeSlideNarrationMp3({
+            text: narration,
+            fetchFn: ttsFetch,
+            synthesizeFn: input.synthesizeFn,
+          });
       const audioPath = join(workDir, `narration-${i}.mp3`);
       await writeFile(audioPath, mp3);
       const durationSeconds = await probeAudioDurationSeconds({
