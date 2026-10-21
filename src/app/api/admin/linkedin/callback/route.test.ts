@@ -13,10 +13,8 @@ vi.mock("next/headers", () => ({
   cookies: vi.fn(async () => mockCookieStore),
 }));
 
-vi.mock("@/lib/privy/session-from-cookies", () => ({
-  createCookieReaderFromHeader: vi.fn(() => () => undefined),
-  getPrivyUserIdFromCookies: vi.fn(),
-  isPrivyAdminUserId: vi.fn(),
+vi.mock("@/lib/privy/require-privy-admin-session", () => ({
+  resolvePrivyAdminUserForLinkedIn: vi.fn(),
 }));
 
 vi.mock("@/lib/linkedin/complete-oauth", () => ({
@@ -28,18 +26,17 @@ vi.mock("@/lib/linkedin/config", () => ({
 }));
 
 import { completeLinkedInOAuth } from "@/lib/linkedin/complete-oauth";
-import {
-  getPrivyUserIdFromCookies,
-  isPrivyAdminUserId,
-} from "@/lib/privy/session-from-cookies";
+import { resolvePrivyAdminUserForLinkedIn } from "@/lib/privy/require-privy-admin-session";
 
 describe("GET /api/admin/linkedin/callback", () => {
   beforeEach(() => {
     mockCookieStore.get.mockImplementation((name: string) =>
       name === "linkedin_oauth_state" ? { value: STATE } : undefined,
     );
-    vi.mocked(getPrivyUserIdFromCookies).mockResolvedValue(ADMIN_DID);
-    vi.mocked(isPrivyAdminUserId).mockReturnValue(true);
+    vi.mocked(resolvePrivyAdminUserForLinkedIn).mockResolvedValue({
+      userId: ADMIN_DID,
+      isAdmin: true,
+    });
   });
 
   afterEach(() => {
@@ -70,7 +67,7 @@ describe("GET /api/admin/linkedin/callback", () => {
     );
   });
 
-  it("redirects with invalid_state reason", async () => {
+  it("rejects OAuth state mismatch via completeLinkedInOAuth", async () => {
     vi.mocked(completeLinkedInOAuth).mockResolvedValue({
       ok: false,
       reason: "invalid_state",
@@ -82,6 +79,12 @@ describe("GET /api/admin/linkedin/callback", () => {
     );
     const location = res.headers.get("location") ?? "";
     expect(location).toContain("reason=invalid_state");
+    expect(completeLinkedInOAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: "bad",
+        cookieState: STATE,
+      }),
+    );
   });
 
   it("redirects with did_mismatch reason", async () => {

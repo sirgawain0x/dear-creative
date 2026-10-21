@@ -3,11 +3,8 @@ import { NextResponse } from "next/server";
 import { completeLinkedInOAuth } from "@/lib/linkedin/complete-oauth";
 import { isLinkedInOAuthConfigured } from "@/lib/linkedin/config";
 import { LINKEDIN_OAUTH_STATE_COOKIE } from "@/lib/linkedin/auth-response";
-import {
-  createCookieReaderFromHeader,
-  getPrivyUserIdFromCookies,
-  isPrivyAdminUserId,
-} from "@/lib/privy/session-from-cookies";
+import { resolvePrivyAdminUserForLinkedIn } from "@/lib/privy/require-privy-admin-session";
+import { createCookieReaderFromHeader } from "@/lib/privy/session-from-cookies";
 
 function redirectWithReason(
   request: Request,
@@ -40,8 +37,8 @@ export async function GET(request: Request) {
   const readCookie = (name: string) =>
     cookieStore.get(name)?.value ?? headerReader(name);
 
-  const privyUserId = await getPrivyUserIdFromCookies(readCookie);
-  const isPrivyAdmin = privyUserId ? isPrivyAdminUserId(privyUserId) : false;
+  const { userId: privyUserId, isAdmin: isPrivyAdmin } =
+    await resolvePrivyAdminUserForLinkedIn(request, readCookie);
 
   const url = new URL(request.url);
   const cookieState = readCookie(LINKEDIN_OAUTH_STATE_COOKIE);
@@ -60,5 +57,8 @@ export async function GET(request: Request) {
   if (result.ok) {
     return redirectWithReason(request, result.reason, true);
   }
+  console.error("[admin-linkedin] oauth_callback_failed", {
+    reason: result.reason,
+  });
   return redirectWithReason(request, result.reason);
 }
