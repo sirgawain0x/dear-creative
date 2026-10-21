@@ -37,7 +37,9 @@ import {
   resolvePostCoverImage,
 } from "@/lib/posts/post-cover-image";
 import { resolveGroveOrIpfsUrl } from "@/lib/storage/lens-grove";
+import { useStopAudioOnLeave } from "@/hooks/use-stop-audio-on-leave";
 import { NARRATION_VOICES, voiceLabel } from "@/lib/audio/narration-voices";
+import { stopDispatchAudioResources } from "@/lib/audio/stop-active-audio";
 import { RepurposePanel } from "@/app/adam/repurpose-panel";
 
 export type StudioTab = "chat" | "ideas" | "posts" | "approvals" | "schedule";
@@ -376,6 +378,8 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
   const browserRecognitionRef =
     useRef<BrowserSpeechRecognitionInstance | null>(null);
   const activeAudioRef = useRef<HTMLAudioElement | null>(null);
+  const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const ttsAbortRef = useRef<AbortController | null>(null);
 
   // Ideas & Rough Drafts state
   const [ideas, setIdeas] = useState<AdamIdeaRecord[]>([]);
@@ -766,38 +770,21 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
     }
   }, [authenticated, logout]);
 
-  // Stop any playing speech on unmount
-  useEffect(() => {
-    return () => {
-      if (activeAudioRef.current) {
-        activeAudioRef.current.onended = null;
-        activeAudioRef.current.onerror = null;
-        activeAudioRef.current.pause();
-        activeAudioRef.current.removeAttribute?.("src");
-        activeAudioRef.current.load?.();
-        activeAudioRef.current = null;
-      }
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-      }
-    };
-  }, []);
-
   // --- TTS (Text-to-Speech) ---
   const stopSpeaking = useCallback(() => {
-    if (activeAudioRef.current) {
-      activeAudioRef.current.onended = null;
-      activeAudioRef.current.onerror = null;
-      activeAudioRef.current.pause();
-      activeAudioRef.current.removeAttribute?.("src");
-      activeAudioRef.current.load?.();
-      activeAudioRef.current = null;
-    }
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
+    const abort = ttsAbortRef.current;
+    ttsAbortRef.current = null;
+    stopDispatchAudioResources({
+      audio: activeAudioRef.current,
+      utterance: activeUtteranceRef.current,
+      abortController: abort,
+    });
+    activeAudioRef.current = null;
+    activeUtteranceRef.current = null;
     setSpeakingMessageIdx(null);
   }, []);
+
+  useStopAudioOnLeave(stopSpeaking);
 
   const speakWithBrowserFallback = useCallback(
     (text: string, messageIndex: number) => {
@@ -813,6 +800,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.onend = () => setSpeakingMessageIdx(null);
       utterance.onerror = () => setSpeakingMessageIdx(null);
+      activeUtteranceRef.current = utterance;
       setSpeakingMessageIdx(messageIndex);
       window.speechSynthesis.speak(utterance);
     },
@@ -833,6 +821,9 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
         return;
       }
 
+      const ttsAbort = new AbortController();
+      ttsAbortRef.current = ttsAbort;
+
       try {
         const res = await authFetch("/api/adam/voice/tts", {
           method: "POST",
@@ -841,7 +832,12 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
             text,
             voiceName: googleVoiceName,
           }),
+          signal: ttsAbort.signal,
         });
+
+        if (ttsAbort.signal.aborted) {
+          return;
+        }
 
         if (!res.ok) {
           speakWithBrowserFallback(text, messageIndex);
@@ -852,6 +848,9 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
           audioBase64?: string;
           mimeType?: string;
         };
+        if (ttsAbort.signal.aborted) {
+          return;
+        }
         if (!data.audioBase64) {
           speakWithBrowserFallback(text, messageIndex);
           return;
@@ -861,6 +860,9 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
           `data:${data.mimeType || "audio/wav"};base64,${data.audioBase64}`,
         );
         activeAudioRef.current = audio;
+        if (ttsAbortRef.current === ttsAbort) {
+          ttsAbortRef.current = null;
+        }
         audio.onended = () => {
           setSpeakingMessageIdx(null);
           activeAudioRef.current = null;
@@ -871,7 +873,14 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
         };
         await audio.play();
       } catch {
+        if (ttsAbort.signal.aborted) {
+          return;
+        }
         speakWithBrowserFallback(text, messageIndex);
+      } finally {
+        if (ttsAbortRef.current === ttsAbort) {
+          ttsAbortRef.current = null;
+        }
       }
     },
     [

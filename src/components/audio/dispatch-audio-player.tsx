@@ -1,79 +1,18 @@
 "use client";
 
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useStopAudioOnLeave } from "@/hooks/use-stop-audio-on-leave";
+import { stopDispatchAudioResources } from "@/lib/audio/stop-active-audio";
 import { stripHtmlTags } from "@/lib/posts/reading-time";
 
 export type GoogleVoice = "Puck" | "Aoede";
 
 const BROWSER_SPEECH_VOICE: GoogleVoice = "Puck";
 
-export type DispatchAudioResources = {
-  audio: Pick<
-    HTMLAudioElement,
-    | "pause"
-    | "onloadedmetadata"
-    | "ontimeupdate"
-    | "onended"
-    | "onerror"
-  > & {
-    removeAttribute?: (qualifiedName: string) => void;
-    load?: () => void;
-  } | null;
-  utterance: Pick<SpeechSynthesisUtterance, "onend" | "onerror"> | null;
-  abortController: Pick<AbortController, "abort"> | null;
-  speechSynthesis?: Pick<SpeechSynthesis, "cancel"> | null;
-};
-
-/**
- * Safely tears down active HTMLAudioElement and Web Speech synthesis without
- * triggering spurious `audio.onerror` fallbacks.
- */
-export function stopDispatchAudioResources(
-  resources: DispatchAudioResources,
-): void {
-  if (resources.abortController) {
-    try {
-      resources.abortController.abort();
-    } catch {
-      // Ignore abort errors
-    }
-  }
-
-  if (resources.audio) {
-    const audio = resources.audio;
-    audio.onloadedmetadata = null;
-    audio.ontimeupdate = null;
-    audio.onended = null;
-    audio.onerror = null;
-    try {
-      audio.pause();
-      audio.removeAttribute?.("src");
-      audio.load?.();
-    } catch {
-      // Ignore errors during media teardown
-    }
-  }
-
-  if (resources.utterance) {
-    resources.utterance.onend = null;
-    resources.utterance.onerror = null;
-  }
-
-  const synth =
-    resources.speechSynthesis !== undefined
-      ? resources.speechSynthesis
-      : typeof window !== "undefined" && "speechSynthesis" in window
-        ? window.speechSynthesis
-        : null;
-
-  if (synth) {
-    try {
-      synth.cancel();
-    } catch {
-      // Ignore errors if speechSynthesis is unavailable
-    }
-  }
-}
+export {
+  stopDispatchAudioResources,
+  type DispatchAudioResources,
+} from "@/lib/audio/stop-active-audio";
 
 type DispatchAudioPlayerProps = {
   slug: string;
@@ -126,13 +65,10 @@ export function DispatchAudioPlayer({
     setCurrentTime(0);
   }, []);
 
+  useStopAudioOnLeave(stopAllPlayback);
+
   useLayoutEffect(() => {
     isActiveRef.current = true;
-
-    const handlePageLeave = () => {
-      isActiveRef.current = false;
-      stopAllPlayback();
-    };
 
     const handleDocumentClick = (event: MouseEvent) => {
       if (
@@ -165,18 +101,11 @@ export function DispatchAudioPlayer({
       }
     };
 
-    window.addEventListener("pagehide", handlePageLeave);
-    window.addEventListener("beforeunload", handlePageLeave);
-    window.addEventListener("popstate", handlePageLeave);
     document.addEventListener("click", handleDocumentClick, true);
 
     return () => {
       isActiveRef.current = false;
-      window.removeEventListener("pagehide", handlePageLeave);
-      window.removeEventListener("beforeunload", handlePageLeave);
-      window.removeEventListener("popstate", handlePageLeave);
       document.removeEventListener("click", handleDocumentClick, true);
-      stopAllPlayback();
     };
   }, [slug, stopAllPlayback]);
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { stopDispatchAudioResources } from "./dispatch-audio-player";
+import { stopDispatchAudioResources } from "@/lib/audio/stop-active-audio";
 
 describe("stopDispatchAudioResources", () => {
   it("detaches audio event handlers before pausing and clearing src so onerror fallback cannot fire on navigation", () => {
