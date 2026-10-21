@@ -16,7 +16,7 @@ function parseNonNegativeAmountBaseUnits(
   value: bigint | string | number,
 ): bigint {
   if (typeof value === "bigint") {
-    if (value < 0n) {
+    if (value < BigInt(0)) {
       throw new Error("amountBaseUnits must be a non-negative integer");
     }
     return value;

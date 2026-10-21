@@ -32,7 +32,9 @@ describe("buildEip681BaseUsdcReceiveUri", () => {
 
   it("appends uint256 when amount base units are provided", () => {
     expect(
-      buildEip681BaseUsdcReceiveUri(FIXTURE_RAW, { amountBaseUnits: 1_000_000n }),
+      buildEip681BaseUsdcReceiveUri(FIXTURE_RAW, {
+        amountBaseUnits: BigInt(1_000_000),
+      }),
     ).toBe(
       `ethereum:${getAddress(BASE_USDC_ADDRESS)}@${BASE_RECEIVE_CHAIN_ID}/transfer?address=${getAddress(FIXTURE_RAW)}&uint256=1000000`,
     );
@@ -40,7 +42,7 @@ describe("buildEip681BaseUsdcReceiveUri", () => {
 
   it("rejects negative amount base units", () => {
     expect(() =>
-      buildEip681BaseUsdcReceiveUri(FIXTURE_RAW, { amountBaseUnits: -1n }),
+      buildEip681BaseUsdcReceiveUri(FIXTURE_RAW, { amountBaseUnits: BigInt(-1) }),
     ).toThrow(/non-negative integer/i);
   });
 
