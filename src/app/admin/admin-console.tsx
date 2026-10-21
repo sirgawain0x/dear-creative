@@ -210,7 +210,10 @@ export function AdminConsole() {
       </div>
 
       {isSignedIn ? (
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div
+          className="flex w-full flex-col gap-6"
+          data-testid="admin-console-panels-stack"
+        >
           <AdminWalletPanel
             walletEnabled={walletEnabled}
             walletSendEnabled={walletSendEnabled}
