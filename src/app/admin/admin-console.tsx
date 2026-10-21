@@ -42,11 +42,8 @@ export function AdminConsole() {
     ready,
     isSignedIn,
     user,
-    login,
-    signOut,
     getAccessToken,
     privyConfigured,
-    privyTimedOut,
     authenticated,
   } = useAuthSession();
 
@@ -178,19 +175,10 @@ export function AdminConsole() {
               </p>
             </div>
           ) : !isSignedIn ? (
-            <div className="space-y-3">
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                Click below to sign in with Privy (email, wallet, or social).
-              </p>
-              <button
-                type="button"
-                onClick={login}
-                disabled={privyTimedOut}
-                className="rounded-full bg-zinc-900 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-              >
-                Sign In
-              </button>
-            </div>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              Use <span className="font-semibold text-zinc-900 dark:text-zinc-100">Sign In</span> in
+              the site header to authenticate with Privy (email, wallet, or social).
+            </p>
           ) : (
             <div className="space-y-4">
               {user ? (
@@ -205,13 +193,6 @@ export function AdminConsole() {
               ) : null}
 
               <div className="flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => void signOut()}
-                  className="rounded-full bg-red-600 px-5 py-2 text-xs font-semibold text-white shadow-2xs hover:bg-red-700"
-                >
-                  Sign Out
-                </button>
                 <button
                   type="button"
                   onClick={() => {
