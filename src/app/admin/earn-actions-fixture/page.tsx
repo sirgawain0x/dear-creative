@@ -51,8 +51,6 @@ const previewData: AdminEarnPreviewData = {
     [EARN_VAULT_AAVE_ID]: {
       configured: true,
       vaultId: EARN_VAULT_AAVE_ID,
-      walletId: "fixture-admin-wallet",
-      walletAddress: "0xAE48B6dB64772b9CC24e33A79c809896776a20f6",
       position: {
         asset: { symbol: "usdc", decimals: 6 },
         total_deposited: "1000000000",
