@@ -1,0 +1,17 @@
+{
+  "360": {
+    "scrollWidth": 360,
+    "innerWidth": 360,
+    "noHorizontalOverflow": true
+  },
+  "390": {
+    "scrollWidth": 390,
+    "innerWidth": 390,
+    "noHorizontalOverflow": true
+  },
+  "1440": {
+    "scrollWidth": 1440,
+    "innerWidth": 1440,
+    "noHorizontalOverflow": true
+  }
+}
