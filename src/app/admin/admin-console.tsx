@@ -2,11 +2,17 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { AdminEarnPanel } from "@/components/admin/admin-earn-panel";
 import { AdminWalletPanel } from "@/components/admin/admin-wallet-panel";
 import { OracleIngestForm } from "@/components/admin/oracle-ingest-form";
 import { useAuthSession } from "@/components/providers/app-providers";
-import { AdminPayoutsCard } from "./admin-payouts-card";
 import { AdminLinkedInConnect } from "./admin-linkedin-connect";
+
+import type { AdminMeSession } from "./admin-session";
+import { AdminPayoutsSection } from "./admin-payouts-section";
+import { resolveStudioBearerToken } from "@/lib/admin/studio-bearer-token";
+
+export { ADMIN_PAYOUTS_PRIVY_SIGN_IN_NOTE } from "./admin-payouts-section";
 
 export const ADMIN_OWNER_TOOL_LINKS = [
   {
@@ -36,21 +42,17 @@ export function AdminConsole() {
     ready,
     isSignedIn,
     user,
-    login,
-    signOut,
     getAccessToken,
     privyConfigured,
-    privyTimedOut,
+    authenticated,
   } = useAuthSession();
 
-  const [session, setSession] = useState<{
-    userId: string;
-    isAdmin: boolean;
-  } | null>(null);
+  const [session, setSession] = useState<AdminMeSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [walletEnabled, setWalletEnabled] = useState(false);
   const [walletSendEnabled, setWalletSendEnabled] = useState(false);
+  const [earnEnabled, setEarnEnabled] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,6 +66,9 @@ export function AdminConsole() {
           if (typeof json.walletSendEnabled === "boolean") {
             setWalletSendEnabled(json.walletSendEnabled);
           }
+          if (typeof json.earnEnabled === "boolean") {
+            setEarnEnabled(json.earnEnabled);
+          }
         }
       })
       .catch(() => {});
@@ -72,11 +77,17 @@ export function AdminConsole() {
     };
   }, []);
 
-  const refreshSession = useCallback(async () => {
+  const refreshSession = useCallback(async (options?: { silent?: boolean }) => {
     setError(null);
-    setIsVerifying(true);
+    if (!options?.silent) {
+      setIsVerifying(true);
+    }
     try {
-      const token = await getAccessToken();
+      const token = await resolveStudioBearerToken({
+        privyConfigured,
+        authenticated,
+        getAccessToken,
+      });
       if (!token) {
         setSession(null);
         setError("No access token available. Please sign in first.");
@@ -90,13 +101,27 @@ export function AdminConsole() {
         setError("Could not verify admin session. Ensure your Privy DID is in PRIVY_ADMIN_USER_IDS.");
         return;
       }
-      setSession(await response.json());
+      setSession((await response.json()) as AdminMeSession);
     } catch {
       setError("Failed to verify session with server.");
     } finally {
-      setIsVerifying(false);
+      if (!options?.silent) {
+        setIsVerifying(false);
+      }
     }
-  }, [getAccessToken]);
+  }, [authenticated, getAccessToken, privyConfigured]);
+
+  useEffect(() => {
+    if (!ready || !authenticated) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      void refreshSession({ silent: true });
+    }, 0);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [ready, authenticated, refreshSession]);
 
   if (!ready) {
     return <p className="text-zinc-500">Loading authentication status…</p>;
@@ -146,19 +171,10 @@ export function AdminConsole() {
               </p>
             </div>
           ) : !isSignedIn ? (
-            <div className="space-y-3">
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                Click below to sign in with Privy (email, wallet, or social).
-              </p>
-              <button
-                type="button"
-                onClick={login}
-                disabled={privyTimedOut}
-                className="rounded-full bg-zinc-900 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-              >
-                Sign In
-              </button>
-            </div>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              Use <span className="font-semibold text-zinc-900 dark:text-zinc-100">Sign In</span> in
+              the site header to authenticate with Privy (email, wallet, or social).
+            </p>
           ) : (
             <div className="space-y-4">
               {user ? (
@@ -173,13 +189,6 @@ export function AdminConsole() {
               ) : null}
 
               <div className="flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => void signOut()}
-                  className="rounded-full bg-red-600 px-5 py-2 text-xs font-semibold text-white shadow-2xs hover:bg-red-700"
-                >
-                  Sign Out
-                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -197,11 +206,14 @@ export function AdminConsole() {
       </div>
 
       {isSignedIn ? (
-        <AdminWalletPanel
-          walletEnabled={walletEnabled}
-          walletSendEnabled={walletSendEnabled}
-          isAdmin={Boolean(session?.isAdmin)}
-        />
+        <div className="grid gap-6 lg:grid-cols-2">
+          <AdminWalletPanel
+            walletEnabled={walletEnabled}
+            walletSendEnabled={walletSendEnabled}
+            isAdmin={Boolean(session?.isAdmin)}
+          />
+          <AdminEarnPanel earnEnabled={earnEnabled} />
+        </div>
       ) : null}
 
       {/* Owner Navigation Links (Gated) */}
@@ -227,7 +239,11 @@ export function AdminConsole() {
           </div>
         </div>
       ) : null}
-      {isSignedIn ? <AdminPayoutsCard /> : null}
+      <AdminPayoutsSection
+        session={session}
+        isSignedIn={isSignedIn}
+        authenticated={authenticated}
+      />
       {session?.isAdmin ? (
         <AdminLinkedInConnect
           isAdmin={session.isAdmin}

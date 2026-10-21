@@ -108,10 +108,8 @@ describe("AdminMetricsClient", () => {
     render(<AdminMetricsClient />);
 
     await waitFor(() => {
-      expect(screen.getByRole("link", { name: /admin page/i })).toHaveAttribute(
-        "href",
-        "/admin",
-      );
+      expect(screen.getByText(/Sign In/i)).toBeInTheDocument();
+      expect(screen.getByText(/site header/i)).toBeInTheDocument();
     });
 
     expect(fetchMock).not.toHaveBeenCalled();
