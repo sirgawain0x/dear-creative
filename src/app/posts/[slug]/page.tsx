@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Script from "next/script";
-import { Suspense } from "react";
+import { Suspense, type ComponentProps } from "react";
 import type { Address } from "viem";
 import { DispatchAudioPlayer } from "@/components/audio/dispatch-audio-player";
 import { OwnerEditPostButton } from "@/components/auth/owner-edit-controls";
@@ -9,7 +9,7 @@ import { PredictionCard } from "@/components/predictions/prediction-card";
 import { PostFeedbackWidget } from "@/components/posts/post-feedback-widget";
 import { PostKeyTakeaways } from "@/components/posts/post-key-takeaways";
 import { AuthorByline } from "@/components/posts/author-byline";
-import { PostPaywallCard } from "@/components/posts/post-paywall-card";
+import { PostPaywallCheckout } from "@/components/posts/post-paywall-checkout";
 import { PostShareButton } from "@/components/posts/post-share-button";
 import { splitArticleAtParagraph } from "@/lib/posts/post-takeaway-inline";
 import { publishedPostBodyForDisplay } from "@/lib/posts/published-post-render";
@@ -42,10 +42,15 @@ function PostArticle({
   post,
   payToAddress,
   showPaywall,
+  paywallCheckout,
 }: {
   post: PublishedPostDetail;
   payToAddress: Address | null;
   showPaywall: boolean;
+  paywallCheckout: Omit<
+    ComponentProps<typeof PostPaywallCheckout>,
+    "title"
+  > | null;
 }) {
   const bodyHtml = publishedPostBodyForDisplay(post.bodyHtml);
   const metrics = calculateReadingTime(post.bodyHtml ?? post.excerpt);
@@ -169,7 +174,9 @@ function PostArticle({
         )
       ) : null}
 
-      {showPaywall ? <PostPaywallCard title={post.title} /> : null}
+      {showPaywall && paywallCheckout ? (
+        <PostPaywallCheckout title={post.title} {...paywallCheckout} />
+      ) : null}
 
       {shouldRenderPostTipCard(payToAddress) ? (
         <MicroTippingWidget
@@ -206,6 +213,7 @@ async function PostPageBody({ slug }: { slug: string }) {
       post={view.post}
       payToAddress={payToAddress}
       showPaywall={view.showPaywall}
+      paywallCheckout={view.paywallCheckout}
     />
   );
 }

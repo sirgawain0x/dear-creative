@@ -1,14 +1,5 @@
 import { cache } from "react";
 import { notFound } from "next/navigation";
-
-/** Ensures PPR shell is a 404 template at build; no effect on live requests. */
-export function abortPostReaderMetadataAtBuild(): void {
-  const phase = process.env.NEXT_PHASE;
-  if (phase === "phase-production-build" || phase === "phase-export") {
-    notFound();
-  }
-}
-import { connection } from "next/server";
 import { getDb } from "@/db/client";
 import { getPublishedPostBySlug } from "@/lib/posts/published-posts";
 import type { PublishedPostDetail } from "@/lib/posts/published-posts";
@@ -17,6 +8,14 @@ import { resolveReaderPostView } from "@/lib/paywall/reader-post";
 export type GatedReaderPostView = NonNullable<
   Awaited<ReturnType<typeof resolveReaderPostView>>
 >;
+
+/** Ensures PPR shell is a 404 template at build; no effect on live requests. */
+export function abortPostReaderMetadataAtBuild(): void {
+  const phase = process.env.NEXT_PHASE;
+  if (phase === "phase-production-build" || phase === "phase-export") {
+    notFound();
+  }
+}
 
 /** One published-post fetch per request (metadata, page shell, and body). */
 export const requirePublishedPostBySlug = cache(
