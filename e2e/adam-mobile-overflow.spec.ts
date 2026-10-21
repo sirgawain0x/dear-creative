@@ -3,6 +3,7 @@ import {
   buildAdamPostsFixture,
   STUDIO_TOKEN_FIXTURE,
 } from "./fixtures/adam-posts-fixture";
+import { READER_WALLET_E2E_STORAGE_KEY } from "../src/lib/wallet/reader-wallet-e2e-auth";
 
 async function mockAdamStudioApis(page: Page) {
   const posts = buildAdamPostsFixture(40);
