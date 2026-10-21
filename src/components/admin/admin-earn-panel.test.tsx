@@ -2,6 +2,14 @@
  * @vitest-environment jsdom
  */
 import { render, screen } from "@testing-library/react";
+import { vi } from "vitest";
+
+vi.mock("@privy-io/react-auth", () => ({
+  useWallets: () => ({ wallets: [] }),
+  useAuthorizationSignature: () => ({
+    generateAuthorizationSignature: vi.fn(),
+  }),
+}));
 import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
 import { StudioTokenProvider } from "@/components/providers/app-providers";
@@ -79,5 +87,23 @@ describe("AdminEarnPanel", () => {
   it("shows disabled message when earn flag is off", () => {
     renderEarnPanel(<AdminEarnPanel earnEnabled={false} />);
     expect(screen.getByText(/EARN_ENABLED=true/i)).toBeInTheDocument();
+  });
+
+  it("uses fixture preview wallet for earn actions (not vault admin_wallet_*)", () => {
+    renderEarnPanel(
+      <AdminEarnPanel
+        earnEnabled
+        earnActionsEnabled
+        earnActionsWalletPreview={{
+          walletId: "fixture-user-wallet",
+          walletAddress: "0xAE48B6dB64772b9CC24e33A79c809896776a20f6",
+        }}
+        previewData={previewData}
+      />,
+    );
+    expect(screen.getByText(/Deposit \/ withdraw/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Signed in your browser via Privy/i),
+    ).toBeInTheDocument();
   });
 });
