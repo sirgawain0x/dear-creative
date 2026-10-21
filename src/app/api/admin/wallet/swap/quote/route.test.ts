@@ -38,6 +38,9 @@ import { POST } from "./route";
 
 const ADMIN = getAddress("0xAE48B6dB64772b9CC24e33A79c809896776a20f6");
 
+/** Test-only; never commit or configure in deployment env. */
+const VALID_TEST_SEAL_SECRET = `vitest-only-${"x".repeat(32)}`;
+
 function authQuote(body: Record<string, unknown>) {
   return new Request("http://localhost/api/admin/wallet/swap/quote", {
     method: "POST",
@@ -59,7 +62,7 @@ describe("POST /api/admin/wallet/swap/quote", () => {
     setSwapEthUsdPriceForTests(async () => 3000);
     setSwapDelegationCheckForTests(async () => false);
     vi.stubEnv("ADMIN_WALLET_ADDRESS", ADMIN);
-    vi.stubEnv("ALCHEMY_API_KEY", "test-hmac-key");
+    vi.stubEnv("WALLET_SWAP_QUOTE_SEAL_SECRET", VALID_TEST_SEAL_SECRET);
     vi.mocked(requirePrivyAuth).mockResolvedValue({
       ok: true,
       user: { userId: "did:privy:admin" },
@@ -93,6 +96,24 @@ describe("POST /api/admin/wallet/swap/quote", () => {
     setWalletSwapEnabledForTests(false);
     const res = await POST(authQuote({ direction: "USDC_TO_ETH", amount: "5" }));
     expect(res.status).toBe(404);
+  });
+
+  it("returns fixed 502 when WALLET_SWAP_QUOTE_SEAL_SECRET is unset", async () => {
+    vi.unstubAllEnvs();
+    vi.stubEnv("ADMIN_WALLET_ADDRESS", ADMIN);
+    const res = await POST(authQuote({ direction: "USDC_TO_ETH", amount: "5" }));
+    expect(res.status).toBe(502);
+    const json = await res.json();
+    expect(json.error).toBe(WALLET_SWAP_FIXED_ERROR);
+    expect(json.quoteSeal).toBeUndefined();
+  });
+
+  it("returns fixed 502 when WALLET_SWAP_QUOTE_SEAL_SECRET is too short", async () => {
+    vi.stubEnv("WALLET_SWAP_QUOTE_SEAL_SECRET", "a".repeat(31));
+    const res = await POST(authQuote({ direction: "USDC_TO_ETH", amount: "5" }));
+    expect(res.status).toBe(502);
+    const json = await res.json();
+    expect(json.error).toBe(WALLET_SWAP_FIXED_ERROR);
   });
 
   it("returns quote with first-swap upgrade flag and quote seal", async () => {

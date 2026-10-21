@@ -10,6 +10,8 @@ import {
 
 const ADMIN = getAddress("0xAE48B6dB64772b9CC24e33A79c809896776a20f6");
 
+const VALID_TEST_SEAL_SECRET = `vitest-only-${"x".repeat(32)}`;
+
 describe("assertPreparedFromAdmin", () => {
   it("fails closed when from is missing", () => {
     expect(
@@ -33,7 +35,7 @@ describe("submitAdminSwapPreparedCall", () => {
 
   it("rejects tampered quote binding", async () => {
     vi.stubEnv("ADMIN_WALLET_ADDRESS", ADMIN);
-    vi.stubEnv("ALCHEMY_API_KEY", "test-hmac-key");
+    vi.stubEnv("WALLET_SWAP_QUOTE_SEAL_SECRET", VALID_TEST_SEAL_SECRET);
     const quote = {
       expiry: new Date(Date.now() + 60_000).toISOString(),
       minimumToAmount: "0x5f5e100",
@@ -66,7 +68,7 @@ describe("submitAdminSwapPreparedCall", () => {
 
   it("forwards signed authorizations to wallet_sendPreparedCalls", async () => {
     vi.stubEnv("ADMIN_WALLET_ADDRESS", ADMIN);
-    vi.stubEnv("ALCHEMY_API_KEY", "test-hmac-key");
+    vi.stubEnv("WALLET_SWAP_QUOTE_SEAL_SECRET", VALID_TEST_SEAL_SECRET);
     const quote = {
       expiry: new Date(Date.now() + 60_000).toISOString(),
       minimumToAmount: "0x5f5e100",

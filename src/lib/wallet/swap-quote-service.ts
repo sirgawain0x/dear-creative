@@ -8,9 +8,9 @@ import {
   type SwapDirection,
 } from "./swap-constants";
 import { isAdminWalletDelegatedToMav2 } from "./swap-delegation";
-import { WALLET_SWAP_ALLOWLIST_ERROR } from "./swap-errors";
+import { WALLET_SWAP_ALLOWLIST_ERROR, WALLET_SWAP_FIXED_ERROR } from "./swap-errors";
+import { isSwapQuoteSealConfigured, sealSwapQuote } from "./swap-quote-seal";
 import { attachFromToPrepared } from "./swap-prepared-from";
-import { sealSwapQuote } from "./swap-quote-seal";
 import {
   toHexQuantity,
   validateSwapRequestInput,
@@ -67,6 +67,10 @@ export async function requestAdminSwapQuote(input: {
       error: validated.error,
       field: validated.field,
     };
+  }
+
+  if (!isSwapQuoteSealConfigured()) {
+    return { ok: false, status: 502, error: WALLET_SWAP_FIXED_ERROR };
   }
 
   const v = validated as SwapValidationSuccess;
@@ -131,6 +135,9 @@ export async function requestAdminSwapQuote(input: {
     fromAmount: quoteObj.fromAmount,
     minimumToAmount: quoteObj.minimumToAmount,
   });
+  if (!quoteSeal) {
+    return { ok: false, status: 502, error: WALLET_SWAP_FIXED_ERROR };
+  }
 
   const preparedForClient = Array.isArray(preparedWithFrom)
     ? preparedWithFrom.map((item) =>

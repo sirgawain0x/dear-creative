@@ -2,6 +2,11 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Address } from "viem";
 import type { SwapDirection } from "./swap-constants";
 
+/** Dedicated env var for swap quote HMAC seals (never reuse other secrets). */
+export const WALLET_SWAP_QUOTE_SEAL_SECRET_ENV = "WALLET_SWAP_QUOTE_SEAL_SECRET";
+
+const MIN_SEAL_SECRET_BYTES = 32;
+
 export type SwapQuoteSealPayload = {
   from: Address;
   direction: SwapDirection;
@@ -12,11 +17,23 @@ export type SwapQuoteSealPayload = {
   minimumToAmount: string;
 };
 
-function quoteSealSecret(): string | null {
-  const secret =
-    process.env.WALLET_SWAP_QUOTE_HMAC_SECRET?.trim() ||
-    process.env.ALCHEMY_API_KEY?.trim();
-  return secret || null;
+export type SwapQuoteSealSecretStatus =
+  | { ok: true; secret: string }
+  | { ok: false; reason: "unset" | "too_short" };
+
+export function resolveSwapQuoteSealSecret(): SwapQuoteSealSecretStatus {
+  const raw = process.env[WALLET_SWAP_QUOTE_SEAL_SECRET_ENV]?.trim();
+  if (!raw) {
+    return { ok: false, reason: "unset" };
+  }
+  if (Buffer.byteLength(raw, "utf8") < MIN_SEAL_SECRET_BYTES) {
+    return { ok: false, reason: "too_short" };
+  }
+  return { ok: true, secret: raw };
+}
+
+export function isSwapQuoteSealConfigured(): boolean {
+  return resolveSwapQuoteSealSecret().ok;
 }
 
 function canonicalSealBody(payload: SwapQuoteSealPayload): string {
@@ -32,11 +49,11 @@ function canonicalSealBody(payload: SwapQuoteSealPayload): string {
 }
 
 export function sealSwapQuote(payload: SwapQuoteSealPayload): string | null {
-  const secret = quoteSealSecret();
-  if (!secret) {
+  const resolved = resolveSwapQuoteSealSecret();
+  if (!resolved.ok) {
     return null;
   }
-  return createHmac("sha256", secret)
+  return createHmac("sha256", resolved.secret)
     .update(canonicalSealBody(payload))
     .digest("base64url");
 }
@@ -45,6 +62,9 @@ export function verifySwapQuoteSeal(
   seal: unknown,
   payload: SwapQuoteSealPayload,
 ): boolean {
+  if (!isSwapQuoteSealConfigured()) {
+    return false;
+  }
   if (typeof seal !== "string" || !seal) {
     return false;
   }

@@ -16,6 +16,7 @@ import {
   setAlchemyWalletRpcForTests,
 } from "@/lib/wallet/alchemy-wallet-jsonrpc";
 import {
+  WALLET_SWAP_FIXED_ERROR,
   WALLET_SWAP_QUOTE_BINDING_ERROR,
   WALLET_SWAP_QUOTE_EXPIRED_ERROR,
 } from "@/lib/wallet/swap-errors";
@@ -30,6 +31,9 @@ import { requirePrivyAuth } from "@/lib/privy/require-auth";
 import { POST } from "./route";
 
 const ADMIN = getAddress("0xAE48B6dB64772b9CC24e33A79c809896776a20f6");
+
+/** Test-only; never commit or configure in deployment env. */
+const VALID_TEST_SEAL_SECRET = `vitest-only-${"x".repeat(32)}`;
 
 function submitBody(overrides: Record<string, unknown>) {
   return new Request("http://localhost/api/admin/wallet/swap/submit", {
@@ -66,7 +70,7 @@ describe("POST /api/admin/wallet/swap/submit", () => {
     setWalletSwapEnabledForTests(true);
     resetAlchemyWalletRpcForTests();
     vi.stubEnv("ADMIN_WALLET_ADDRESS", ADMIN);
-    vi.stubEnv("ALCHEMY_API_KEY", "test-hmac-key");
+    vi.stubEnv("WALLET_SWAP_QUOTE_SEAL_SECRET", VALID_TEST_SEAL_SECRET);
     vi.mocked(requirePrivyAuth).mockResolvedValue({
       ok: true,
       user: { userId: "did:privy:admin" },
@@ -78,6 +82,41 @@ describe("POST /api/admin/wallet/swap/submit", () => {
     setWalletSwapEnabledForTests(undefined);
     resetAlchemyWalletRpcForTests();
     vi.unstubAllEnvs();
+  });
+
+  it("returns fixed 502 when WALLET_SWAP_QUOTE_SEAL_SECRET is unset", async () => {
+    vi.unstubAllEnvs();
+    vi.stubEnv("ADMIN_WALLET_ADDRESS", ADMIN);
+    const { prepared } = buildSealedPrepared("5");
+    const res = await POST(
+      submitBody({
+        signature: "0x11",
+        prepared,
+        direction: "USDC_TO_ETH",
+        amount: "5",
+        slippageBps: 50,
+      }),
+    );
+    expect(res.status).toBe(502);
+    const json = await res.json();
+    expect(json.error).toBe(WALLET_SWAP_FIXED_ERROR);
+  });
+
+  it("returns fixed 502 when WALLET_SWAP_QUOTE_SEAL_SECRET is too short", async () => {
+    vi.stubEnv("WALLET_SWAP_QUOTE_SEAL_SECRET", "b".repeat(31));
+    const { prepared } = buildSealedPrepared("5");
+    const res = await POST(
+      submitBody({
+        signature: "0x11",
+        prepared,
+        direction: "USDC_TO_ETH",
+        amount: "5",
+        slippageBps: 50,
+      }),
+    );
+    expect(res.status).toBe(502);
+    const json = await res.json();
+    expect(json.error).toBe(WALLET_SWAP_FIXED_ERROR);
   });
 
   it("rejects expired quotes", async () => {

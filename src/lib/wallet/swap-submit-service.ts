@@ -4,12 +4,14 @@ import { alchemyWalletJsonRpc } from "./alchemy-wallet-jsonrpc";
 import { assertPreparedSwapAllowlisted } from "./swap-allowlist";
 import {
   WALLET_SWAP_ALLOWLIST_ERROR,
+  WALLET_SWAP_FIXED_ERROR,
   WALLET_SWAP_QUOTE_BINDING_ERROR,
   WALLET_SWAP_QUOTE_EXPIRED_ERROR,
 } from "./swap-errors";
+import { isSwapQuoteSealConfigured, verifySwapQuoteSeal } from "./swap-quote-seal";
 import { isQuoteNearOrPastExpiry } from "./swap-expiry";
 import { stripInternalPreparedFields } from "./swap-prepared-from";
-import { verifySwapQuoteSeal, type SwapQuoteSealPayload } from "./swap-quote-seal";
+import type { SwapQuoteSealPayload } from "./swap-quote-seal";
 
 export type SwapSubmitInput = {
   prepared: Record<string, unknown> | unknown[];
@@ -34,6 +36,10 @@ export async function submitAdminSwapPreparedCall(
   const config = resolveAdminWalletConfig();
   if (!config.configured) {
     return { ok: false, status: 400, error: "Admin wallet is not configured." };
+  }
+
+  if (!isSwapQuoteSealConfigured()) {
+    return { ok: false, status: 502, error: WALLET_SWAP_FIXED_ERROR };
   }
 
   const allow = assertPreparedSwapAllowlisted(input.prepared, config.address);
