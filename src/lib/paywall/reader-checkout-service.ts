@@ -29,8 +29,8 @@ export type ReaderCheckoutContext = {
   postId: string;
   writerId: string | null;
   payToSplitAddress: string | null;
-  unlockPriceUsdc: number | null;
-  unlockAmountRaw: string | null;
+  unlockPriceUsdc: number;
+  unlockAmountRaw: string;
   showSubscribe: boolean;
   subscriptionPlans: Array<{
     plan: SubscriptionPlan;
@@ -82,9 +82,7 @@ export async function loadReaderCheckoutContext(
     }
   }
 
-  const unlockUnits = unlockRaw
-    ? Number(unlockRaw) / 1_000_000
-    : null;
+  const unlockUnits = Number(unlockRaw) / 1_000_000;
 
   return {
     postSlug: slug,
@@ -92,7 +90,7 @@ export async function loadReaderCheckoutContext(
     writerId,
     payToSplitAddress: payTo,
     unlockPriceUsdc: unlockUnits,
-    unlockAmountRaw: unlockRaw?.toString() ?? null,
+    unlockAmountRaw: unlockRaw.toString(),
     showSubscribe,
     subscriptionPlans,
     chainId: BASE_CHAIN_ID,
@@ -123,13 +121,6 @@ export async function verifyAndRecordPostUnlock(
   },
 ): Promise<{ recordId: string; idempotent: boolean }> {
   const amountRaw = postUnlockAmountRaw();
-  if (amountRaw === null) {
-    throw new ReaderCheckoutError(
-      "unlock_unavailable",
-      "Post unlock is not available.",
-      503,
-    );
-  }
 
   const context = await loadReaderCheckoutContext(db, input.slug);
   if (!context) {

@@ -11,8 +11,8 @@ export type PostPaywallCheckoutProps = {
   postSlug: string;
   writerId: string | null;
   payToSplitAddress: string | null;
-  unlockPriceUsdc: number | null;
-  unlockAmountRaw: string | null;
+  unlockPriceUsdc: number;
+  unlockAmountRaw: string;
   showSubscribe: boolean;
   subscriptionPlans: Array<{
     plan: SubscriptionPlan;
@@ -58,8 +58,7 @@ export function PostPaywallCheckout({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const unlockEnabled =
-    Boolean(unlockAmountRaw && unlockPriceUsdc && payToSplitAddress);
+  const unlockEnabled = Boolean(unlockAmountRaw && payToSplitAddress);
 
   const selectedPlanQuote = useMemo(
     () => subscriptionPlans.find((p) => p.plan === selectedPlan) ?? null,
@@ -239,7 +238,7 @@ export function PostPaywallCheckout({
           </button>
         ) : (
           <p className="text-center text-xs text-zinc-500">
-            Per-post unlock is not configured.
+            Unlock requires a configured writer split payout address.
           </p>
         )}
 
