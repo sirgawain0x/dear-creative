@@ -12,6 +12,7 @@ import {
   probeAudioDurationSeconds,
   type FfmpegRunner,
 } from "../ffmpeg";
+import { runRepurposeVideoRenderPreflight } from "../ffmpeg-preflight";
 import {
   assertRepurposePipelineBudget,
   createRepurposeVideoPipelineDeadline,
@@ -22,6 +23,12 @@ import {
   wrapFetchForRepurposePipeline,
 } from "../pipeline-deadline";
 import type { RepurposePostSource } from "../post-source";
+import {
+  generateMockSilentNarrationMp3,
+  getMockVideoOverviewSlideDeck,
+  isRepurposeMockEnabled,
+  logRepurposeMockModeOnce,
+} from "../mock-mode";
 import { validateRepurposeModelOutput } from "../validate-output";
 import { generateTextRepurposeOutput } from "./text";
 import { synthesizeSlideNarrationMp3 } from "./audio-overview";
@@ -41,7 +48,21 @@ export type RepurposeVideoPipelineOptions = {
   deckPerFetchCapMs?: number;
   ttsPerFetchCapMs?: number;
   uploadPerCallCapMs?: number;
+  skipRenderPreflight?: boolean;
 };
+
+function logVideoOverviewStep(
+  step: string,
+  startedAtMs: number,
+  nowFn: () => number,
+  extra?: Record<string, unknown>,
+): void {
+  console.info("[repurpose][video_overview]", {
+    step,
+    ms: nowFn() - startedAtMs,
+    ...extra,
+  });
+}
 
 function narrationTextForSlide(slide: NonNullable<SlideDeck["slides"]>[number]): string {
   const notes = slide.speakerNotes?.trim();
@@ -99,19 +120,43 @@ export async function generateVideoOverview(input: {
 
   assertRepurposePipelineBudget(deadlineAtMs, nowFn());
 
-  const deckResult = await generateTextRepurposeOutput({
-    outputType: "slide_deck",
-    source: input.source,
-    fetchFn: deckFetch,
-  });
-  const slideDeck = validateRepurposeModelOutput(
-    "slide_deck",
-    deckResult.payload,
-  ) as SlideDeck;
+  const pipelineStartedAt = nowFn();
+  const mockMode = isRepurposeMockEnabled();
+  if (mockMode) {
+    logRepurposeMockModeOnce();
+  }
+
+  const slideDeck = mockMode
+    ? (getMockVideoOverviewSlideDeck(input.source) as SlideDeck)
+    : (validateRepurposeModelOutput(
+        "slide_deck",
+        (
+          await generateTextRepurposeOutput({
+            outputType: "slide_deck",
+            source: input.source,
+            fetchFn: deckFetch,
+          })
+        ).payload,
+      ) as SlideDeck);
 
   const slides = slideDeck.slides ?? [];
   if (slides.length === 0) {
     throw new Error("Slide deck has no slides for video overview.");
+  }
+
+  logVideoOverviewStep("slide_deck", pipelineStartedAt, nowFn, {
+    slideCount: slides.length,
+  });
+
+  if (!input.pipeline?.skipRenderPreflight) {
+    const preflightStartedAt = nowFn();
+    const preflight = await runRepurposeVideoRenderPreflight();
+    logVideoOverviewStep("render_preflight", preflightStartedAt, nowFn, {
+      ffmpeg: preflight.ffmpegVersionLine,
+      encoders: preflight.encodersChecked,
+      filters: preflight.filtersChecked,
+      slideRenderMs: preflight.slideRenderMs,
+    });
   }
 
   const workDir = await mkdtemp(join(tmpdir(), "dear-repurpose-video-"));
@@ -124,16 +169,20 @@ export async function generateVideoOverview(input: {
       durationSeconds: number;
     }> = [];
 
+    const ttsStartedAt = nowFn();
     for (let i = 0; i < slides.length; i++) {
       assertRepurposePipelineBudget(deadlineAtMs, nowFn());
+      const slideStartedAt = nowFn();
       const slide = slides[i]!;
       const title = slide.title?.trim() || `Slide ${i + 1}`;
       const narration = narrationTextForSlide(slide);
-      const mp3 = await synthesizeSlideNarrationMp3({
-        text: narration,
-        fetchFn: ttsFetch,
-        synthesizeFn: input.synthesizeFn,
-      });
+      const mp3 = mockMode
+        ? await generateMockSilentNarrationMp3()
+        : await synthesizeSlideNarrationMp3({
+            text: narration,
+            fetchFn: ttsFetch,
+            synthesizeFn: input.synthesizeFn,
+          });
       const audioPath = join(workDir, `narration-${i}.mp3`);
       await writeFile(audioPath, mp3);
       const durationSeconds = await probeAudioDurationSeconds({
@@ -141,19 +190,26 @@ export async function generateVideoOverview(input: {
         ffmpeg,
       });
       slideSpecs.push({ title, audioPath, durationSeconds });
+      logVideoOverviewStep("slide_tts", slideStartedAt, nowFn, { index: i });
     }
+    logVideoOverviewStep("tts_total", ttsStartedAt, nowFn, {
+      slides: slideSpecs.length,
+    });
 
     assertRepurposePipelineBudget(deadlineAtMs, nowFn());
 
+    const encodeStartedAt = nowFn();
     await buildNarratedSlidesMp4({
       workDir,
       slides: slideSpecs,
       outputPath,
       ffmpeg,
     });
+    logVideoOverviewStep("ffmpeg_encode", encodeStartedAt, nowFn);
 
     assertRepurposePipelineBudget(deadlineAtMs, nowFn());
 
+    const uploadStartedAt = nowFn();
     const mp4 = await readFile(outputPath);
     const upload = input.uploadFn ?? uploadToLensGrove;
     const fileName = `${input.source.slug}-video-overview.mp4`;
@@ -166,6 +222,9 @@ export async function generateVideoOverview(input: {
       nowFn(),
       nowFn,
     );
+    logVideoOverviewStep("upload", uploadStartedAt, nowFn);
+
+    logVideoOverviewStep("pipeline_total", pipelineStartedAt, nowFn);
 
     const payload = validateRepurposeModelOutput("video_overview", {
       slideDeck,
