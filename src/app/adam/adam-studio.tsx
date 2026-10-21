@@ -11,7 +11,10 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react";
-import { useSafePrivy } from "@/components/providers/app-providers";
+import {
+  useAuthSession,
+  useSafePrivy,
+} from "@/components/providers/app-providers";
 import { useToast } from "@/components/ui/toast";
 import type {
   StudioAttachmentInput,
@@ -147,8 +150,6 @@ async function readFileAsAttachment(file: File): Promise<ClientAttachment> {
     previewUrl,
   };
 }
-
-const STUDIO_TOKEN_STORAGE_KEY = "dear_creative_studio_token";
 
 const SCHEDULE_PRESETS = [
   { label: "Every Monday at 9:00 AM", cron: "0 9 * * 1" },
@@ -295,10 +296,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
     getAccessToken,
     privyConfigured,
   } = useSafePrivy();
-  const [studioToken, setStudioToken] = useState<string>(() => {
-    if (typeof window === "undefined") return "";
-    return window.localStorage.getItem(STUDIO_TOKEN_STORAGE_KEY)?.trim() ?? "";
-  });
+  const { studioToken, setStudioToken } = useAuthSession();
   const [studioTokenInput, setStudioTokenInput] = useState("");
   const [showTokenPrompt, setShowTokenPrompt] = useState(false);
   const [activeTab, setActiveTab] = useState<StudioTab>(() => {
@@ -762,9 +760,6 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
       e.preventDefault();
       const trimmed = studioTokenInput.trim();
       if (!trimmed) return;
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(STUDIO_TOKEN_STORAGE_KEY, trimmed);
-      }
       setStudioToken(trimmed);
       setStudioTokenInput("");
       setShowTokenPrompt(false);
