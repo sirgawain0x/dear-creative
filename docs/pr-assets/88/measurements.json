@@ -1,0 +1,12 @@
+{
+  "earn390": {
+    "scrollWidth": 390,
+    "innerWidth": 390,
+    "noHorizontalOverflow": true
+  },
+  "earn1440": {
+    "scrollWidth": 1440,
+    "innerWidth": 1440,
+    "noHorizontalOverflow": true
+  }
+}
