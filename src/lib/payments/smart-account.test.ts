@@ -8,11 +8,11 @@ const CTO_OWNER = "0x0000000000000000000000000000000000000001" as const;
 
 const CTO_VECTORS = [
   {
-    salt: 0n,
+    salt: BigInt(0),
     expected: "0x352B2DbC6681e75D985764679c7105dF73dFcD23",
   },
   {
-    salt: 1n,
+    salt: BigInt(1),
     expected: "0xEb9e4abCbA15A17a9e6E736cc30b99f4dd21E94e",
   },
 ] as const;
