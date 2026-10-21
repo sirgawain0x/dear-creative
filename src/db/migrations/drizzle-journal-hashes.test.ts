@@ -62,8 +62,14 @@ const RECONCILE_0018 = {
 } as const;
 
 const RECONCILE_0019 = {
-  tag: "0019_reader_post_unlock_purchases",
-  when: 1792524000000,
+  tag: "0019_earn_audit_log",
+  when: 1792524500000,
+  hash: "41ea9b3e0cf2e58708029b86ea94db760825339fab931ec89d06c756e4186c74",
+} as const;
+
+const RECONCILE_0020 = {
+  tag: "0020_reader_post_unlock_purchases",
+  when: 1792525000000,
   hash: "23b478d97996876599ad685b9d55d04267d30fe3da4c26646772b70388b50ad4",
 } as const;
 
@@ -125,7 +131,7 @@ describe("drizzle journal reconciliation hashes (0017 null author backfill)", ()
   });
 });
 
-describe("drizzle journal reconciliation hashes (0019 reader checkout)", () => {
+describe("drizzle journal reconciliation hashes (0019 earn audit log)", () => {
   it("matches drizzle-orm readMigrationFiles hash algorithm", () => {
     const migrations = readMigrationFiles({ migrationsFolder: "./drizzle" });
     const fromLib = migrations.find((m) => m.folderMillis === RECONCILE_0019.when);
@@ -142,6 +148,26 @@ describe("drizzle journal reconciliation hashes (0019 reader checkout)", () => {
     );
     expect(entry?.idx).toBe(18);
     expect(entry?.when).toBeGreaterThan(RECONCILE_0018.when);
+  });
+});
+
+describe("drizzle journal reconciliation hashes (0020 reader post unlock)", () => {
+  it("matches drizzle-orm readMigrationFiles hash algorithm", () => {
+    const migrations = readMigrationFiles({ migrationsFolder: "./drizzle" });
+    const fromLib = migrations.find((m) => m.folderMillis === RECONCILE_0020.when);
+    expect(fromLib?.hash).toBe(RECONCILE_0020.hash);
+    expect(hashMigrationSqlFile(RECONCILE_0020.tag)).toBe(RECONCILE_0020.hash);
+  });
+
+  it("registers 0020 at journal idx 19 after 0019", () => {
+    const journal = JSON.parse(
+      readFileSync(join(process.cwd(), "drizzle/meta/_journal.json"), "utf8"),
+    ) as { entries: Array<{ idx: number; tag: string; when: number }> };
+    const entry = journal.entries.find(
+      (row) => row.tag === RECONCILE_0020.tag,
+    );
+    expect(entry?.idx).toBe(19);
+    expect(entry?.when).toBeGreaterThan(RECONCILE_0019.when);
   });
 });
 

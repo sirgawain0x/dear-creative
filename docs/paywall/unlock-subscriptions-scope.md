@@ -123,7 +123,7 @@ Use Unlock on **Base Sepolia** factory `0x259813B665C8f6074391028ef782e27B65840d
 
 | Migration | Purpose | Status |
 |-----------|---------|--------|
-| `0019_reader_post_unlock_purchases.sql` | Per-post unlock receipts | **Written, not applied** |
+| `0020_reader_post_unlock_purchases.sql` | Per-post unlock receipts | **Written, not applied** (after #88 `0019_earn_audit_log`) |
 | Future `0020_unlock_subscription_cache.sql` (optional) | TTL cache of `getHasValidKey` | Not written |
 
 No migration for Unlock keys (entitlement is on-chain).

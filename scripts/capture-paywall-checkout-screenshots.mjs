@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "@playwright/test";
 
-const outDir = join(process.cwd(), "docs/pr-assets/reader-checkout-pr-c");
+const outDir = join(process.cwd(), "docs/pr-assets/94");
 mkdirSync(outDir, { recursive: true });
 
 const html = `<!DOCTYPE html>
@@ -15,19 +15,10 @@ const html = `<!DOCTYPE html>
   <section class="mx-auto my-10 max-w-3xl rounded-2xl border border-amber-200/80 bg-amber-50/80 p-8">
     <p class="text-xs font-semibold uppercase tracking-wider text-amber-800">Subscriber content</p>
     <h2 class="mt-2 text-center text-2xl font-semibold">Continue reading &ldquo;Dispatch #42&rdquo;</h2>
-    <p class="mx-auto mt-3 max-w-md text-center text-sm text-zinc-600">Pay USDC on Base directly to the writer's split. Sign with your Privy wallet.</p>
-    <p class="mx-auto mt-4 max-w-md rounded-lg border border-amber-300/60 bg-white/70 px-4 py-3 text-center text-sm">Your subscription ends Jan 2, 2027. Renew below to keep full access.</p>
-    <div class="mt-8 flex flex-col items-stretch gap-4 sm:flex-row sm:justify-center">
-      <button class="rounded-full bg-zinc-900 px-6 py-2.5 text-sm font-medium text-white">Unlock this post · 2 USDC</button>
-      <div class="flex flex-col items-center gap-2">
-        <label class="text-xs font-medium text-zinc-600">Subscribe to this writer
-          <select class="mt-1 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm">
-            <option>$8 / 30 days</option>
-            <option>$80 / 365 days</option>
-          </select>
-        </label>
-        <button class="rounded-full border border-zinc-900 px-6 py-2.5 text-sm font-medium">Subscribe with USDC</button>
-      </div>
+    <p class="mx-auto mt-3 max-w-md text-center text-sm text-zinc-600">Unlock this post with a one-time USDC payment on Base. Pay directly to the writer's split with your Privy wallet.</p>
+    <div class="mt-8 flex flex-col items-center gap-4">
+      <button type="button" class="rounded-full bg-zinc-900 px-6 py-2.5 text-sm font-medium text-white">Unlock this post · 1 USDC</button>
+      <p class="max-w-md text-center text-xs text-zinc-600">Writer subscriptions ($8 / 30 days or $80 / 365 days) will use <strong>Unlock Protocol</strong> with auto-renewal — scope only; see <code class="text-[11px]">docs/paywall/unlock-subscriptions-scope.md</code>.</p>
     </div>
   </section>
 </body>
