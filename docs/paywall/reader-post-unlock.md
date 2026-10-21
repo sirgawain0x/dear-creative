@@ -17,4 +17,6 @@ If either is unset or any other value, paywall reader routes return **404** (sam
 
 ## Gated audio
 
-When paywall is on, reader-facing `audioUrl` for gated posts is always `/api/posts/{slug}/audio`, never a raw Grove/CDN URL. The route enforces entitlement before returning stored narration metadata.
+When paywall is on, reader-facing `audioUrl` for gated posts is always `/api/posts/{slug}/audio`, never a raw Grove/CDN URL. The route enforces entitlement, then responds with **HTTP 302** to the stored MP3 (so `DispatchAudioPlayer` can use the API path as `Audio.src`).
+
+Once a reader is entitled, the redirect reveals the underlying storage URL in the `Location` header. That URL can be shared and replayed outside the app; treat stored narration as convenience, not a strong confidentiality boundary.

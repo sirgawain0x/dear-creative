@@ -43,13 +43,7 @@ export async function GET(
   const audioUrl = row.audioUrl?.trim();
 
   if (audioUrl) {
-    return NextResponse.json({
-      ok: true,
-      audioUrl,
-      voice: row.audioVoice?.trim() || "Puck",
-      preGenerated: true,
-      mimeType: "audio/mpeg",
-    });
+    return NextResponse.redirect(audioUrl, 302);
   }
 
   return NextResponse.json(

@@ -86,22 +86,13 @@ describe("parseUsdcTransferFromReceipt", () => {
         PAYER,
         3,
       ),
-    ).toThrowError(ReaderCheckoutError);
-    try {
-      parseUsdcTransferFromReceipt(
-        receipt({ logs: [transferLog({ token: OTHER_TOKEN })] }),
-        PAYEE,
-        BigInt(8_000000),
-        PAYER,
-        3,
-      );
-    } catch (error) {
-      expect(error).toMatchObject({ code: "wrong_token" });
-    }
+    ).toThrow(
+      expect.objectContaining({ code: "wrong_token" }),
+    );
   });
 
   it("rejects wrong recipient", () => {
-    try {
+    expect(() =>
       parseUsdcTransferFromReceipt(
         receipt({
           logs: [
@@ -114,24 +105,24 @@ describe("parseUsdcTransferFromReceipt", () => {
         BigInt(8_000000),
         PAYER,
         3,
-      );
-    } catch (error) {
-      expect(error).toMatchObject({ code: "wrong_recipient" });
-    }
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: "wrong_recipient" }),
+    );
   });
 
   it("rejects short amount", () => {
-    try {
+    expect(() =>
       parseUsdcTransferFromReceipt(
         receipt({ logs: [transferLog({ value: BigInt(1_000000) })] }),
         PAYEE,
         BigInt(8_000000),
         PAYER,
         3,
-      );
-    } catch (error) {
-      expect(error).toMatchObject({ code: "wrong_amount" });
-    }
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: "wrong_amount" }),
+    );
   });
 
   it("accepts USDC sent from the signer smart account", () => {
@@ -147,17 +138,17 @@ describe("parseUsdcTransferFromReceipt", () => {
   });
 
   it("rejects unsuccessful transactions", () => {
-    try {
+    expect(() =>
       parseUsdcTransferFromReceipt(
         receipt({ status: "reverted" }),
         PAYEE,
         BigInt(8_000000),
         PAYER,
         3,
-      );
-    } catch (error) {
-      expect(error).toMatchObject({ code: "tx_not_successful" });
-    }
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: "tx_not_successful" }),
+    );
   });
 });
 
