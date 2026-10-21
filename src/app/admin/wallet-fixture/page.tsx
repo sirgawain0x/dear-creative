@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import type { AdminWalletPreviewData } from "@/components/admin/admin-wallet-panel";
 import { WalletFixtureClient } from "./wallet-fixture-client";
 import { getAddress } from "viem";
-import { isWalletReadFixtureEnabled } from "@/lib/wallet/asset-transfers";
+import { isAdminWalletFixturePageEnabled } from "@/lib/wallet/admin-wallet-fixture-page";
 
 const previewData: AdminWalletPreviewData = {
   summary: {
@@ -40,7 +40,7 @@ const previewData: AdminWalletPreviewData = {
 };
 
 export default function AdminWalletFixturePage() {
-  if (!isWalletReadFixtureEnabled()) {
+  if (!isAdminWalletFixturePageEnabled()) {
     notFound();
   }
 

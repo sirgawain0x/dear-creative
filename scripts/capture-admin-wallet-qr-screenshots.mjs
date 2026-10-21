@@ -1,7 +1,7 @@
 /**
  * Capture /admin/wallet-fixture receive QR screenshots (mocked address, no secrets).
- * Usage: WALLET_READ_FIXTURE=true PR_ASSET_DIR=docs/pr-assets/NN node scripts/capture-admin-wallet-qr-screenshots.mjs
- * Requires dev server with WALLET_READ_FIXTURE=true at http://127.0.0.1:3000
+ * Usage: PR_ASSET_DIR=docs/pr-assets/NN node scripts/capture-admin-wallet-qr-screenshots.mjs
+ * Requires `npm run dev` at http://127.0.0.1:3000 (/admin/wallet-fixture is dev-only)
  */
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
