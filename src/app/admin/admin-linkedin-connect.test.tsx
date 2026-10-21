@@ -13,7 +13,10 @@ describe("AdminLinkedInConnect", () => {
 
   it("starts OAuth by fetching /api/admin/linkedin/auth with Bearer token", async () => {
     const assign = vi.fn();
-    vi.stubGlobal("location", { assign } as Location);
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...window.location, assign },
+    });
 
     const fetchMock = vi.fn(async () => ({
       ok: true,
