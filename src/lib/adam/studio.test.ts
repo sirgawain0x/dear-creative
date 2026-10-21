@@ -255,31 +255,45 @@ describe("Adam Studio ideas, schedule, multimodal chat, and voice", () => {
     expect(interactionsResult.provider).toBe("gemini-tts");
   });
 
-  it("generates banners with Gemini/Imagen and uploads to Lens Grove (with deterministic fallback)", async () => {
+  it("generates banners with Nano Banana and uploads to Lens Grove (with deterministic fallback)", async () => {
     vi.stubEnv("GEMINI_API_KEY", "test-gemini-key");
 
-    const fakePngBase64 = Buffer.from("fake-png-bytes").toString("base64");
-    const mockImageFetch = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          candidates: [
-            {
-              content: {
-                parts: [
-                  {
-                    inlineData: {
-                      mimeType: "image/png",
-                      data: fakePngBase64,
+    const fakeJpegBase64 = Buffer.from("fake-jpeg-bytes").toString("base64");
+    const mockImageFetch = vi.fn(async (url: string) => {
+      if (String(url).includes("/interactions")) {
+        return new Response(
+          JSON.stringify({
+            status: "completed",
+            output_image: { data: fakeJpegBase64, mime_type: "image/jpeg" },
+          }),
+          { status: 200 },
+        );
+      }
+      if (String(url).includes("generateContent")) {
+        return new Response(
+          JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  parts: [
+                    {
+                      text: JSON.stringify({
+                        reply:
+                          "Banner ready at https://api.grove.storage/banner123",
+                        shouldCreateDraft: false,
+                        draft: null,
+                      }),
                     },
-                  },
-                ],
+                  ],
+                },
               },
-            },
-          ],
-        }),
-        { status: 200 },
-      ),
-    );
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
 
     const mockUpload = vi.fn(async () => ({
       uri: "lens://banner123",
@@ -295,7 +309,7 @@ describe("Adam Studio ideas, schedule, multimodal chat, and voice", () => {
       uploadFn: mockUpload,
     });
 
-    expect(bannerResult.provider).toBe("gemini-image");
+    expect(bannerResult.provider).toBe("nano-banana");
     expect(bannerResult.url).toBe("https://api.grove.storage/banner123");
     expect(bannerResult.uri).toBe("lens://banner123");
     expect(mockUpload).toHaveBeenCalledTimes(1);
