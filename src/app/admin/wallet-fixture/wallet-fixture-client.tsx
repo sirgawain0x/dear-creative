@@ -9,6 +9,10 @@ export function WalletFixtureClient({
   previewData: AdminWalletPreviewData;
 }) {
   return (
-    <AdminWalletPanel walletEnabled previewData={previewData} />
+    <AdminWalletPanel
+      walletEnabled
+      previewData={previewData}
+      previewSendEnabled
+    />
   );
 }

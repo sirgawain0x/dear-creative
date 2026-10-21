@@ -1,6 +1,7 @@
 "use client";
 
 import { PrivyProvider, usePrivy } from "@privy-io/react-auth";
+import { SmartWalletsProvider } from "@privy-io/react-auth/smart-wallets";
 import { createContext } from "react";
 
 export type PrivyContextValue = ReturnType<typeof usePrivy>;
@@ -33,7 +34,9 @@ export function PrivyRootProvider({ appId, children }: PrivyRootProviderProps) {
         },
       }}
     >
-      <PrivyBridge>{children}</PrivyBridge>
+      <SmartWalletsProvider>
+        <PrivyBridge>{children}</PrivyBridge>
+      </SmartWalletsProvider>
     </PrivyProvider>
   );
 }

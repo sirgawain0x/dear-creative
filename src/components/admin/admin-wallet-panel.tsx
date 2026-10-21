@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { useAuthSession } from "@/components/providers/app-providers";
 import { adminPrivyAuthorizationHeaders } from "@/lib/admin/admin-api-auth";
+import { AdminWalletSendForm } from "./admin-wallet-send-form";
+import { AdminWalletSendSmartWalletBridge } from "./admin-wallet-send-smart-wallet-bridge";
 import {
   resolveWalletPanelLoadErrors,
   WALLET_HISTORY_ERROR_MESSAGE,
@@ -51,11 +53,17 @@ export type AdminWalletPreviewData = {
 
 type AdminWalletPanelProps = {
   walletEnabled: boolean;
+  walletSendEnabled?: boolean;
+  isAdmin?: boolean;
+  previewSendEnabled?: boolean;
   previewData?: AdminWalletPreviewData;
 };
 
 export function AdminWalletPanel({
   walletEnabled,
+  walletSendEnabled = false,
+  isAdmin = false,
+  previewSendEnabled = false,
   previewData,
 }: AdminWalletPanelProps) {
   const {
@@ -297,21 +305,50 @@ export function AdminWalletPanel({
             </div>
           </div>
 
-          <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-              Receive on Base
-            </p>
-            <code className="mt-2 block break-all text-xs font-mono text-emerald-700 dark:text-emerald-400">
-              {summary.address}
-            </code>
-            {qrDataUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element -- data URL QR from qrcode lib
-              <img
-                src={qrDataUrl}
-                alt="QR code for wallet receive address"
-                className="mt-3 h-[200px] w-[200px] rounded-lg border border-zinc-200 dark:border-zinc-700"
-              />
-            ) : null}
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div className="min-w-0 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Receive on Base
+              </p>
+              <code className="mt-2 block break-all text-xs font-mono text-emerald-700 dark:text-emerald-400">
+                {summary.address}
+              </code>
+              {qrDataUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element -- data URL QR from qrcode lib
+                <img
+                  src={qrDataUrl}
+                  alt="QR code for wallet receive address"
+                  className="mt-3 h-[200px] w-[200px] max-w-full rounded-lg border border-zinc-200 dark:border-zinc-700"
+                />
+              ) : null}
+            </div>
+            <div className="min-w-0">
+              {previewSendEnabled ? (
+                <AdminWalletSendForm
+                  walletAddress={summary.address}
+                  isAdmin={true}
+                  walletSendEnabled={true}
+                  getAccessToken={getAccessToken}
+                  privyConfigured={privyConfigured}
+                  authenticated={authenticated}
+                  previewMode
+                />
+              ) : (
+                <AdminWalletSendSmartWalletBridge>
+                  {(smartWalletClient) => (
+                    <AdminWalletSendForm
+                      walletAddress={summary.address}
+                      isAdmin={isAdmin}
+                      walletSendEnabled={walletSendEnabled}
+                      getAccessToken={getAccessToken}
+                      privyConfigured={privyConfigured}
+                      authenticated={authenticated}
+                      smartWalletClient={smartWalletClient}
+                    />
+                  )}
+                </AdminWalletSendSmartWalletBridge>
+              )}
+            </div>
           </div>
 
           <div>
