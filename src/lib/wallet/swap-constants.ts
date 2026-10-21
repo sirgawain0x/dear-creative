@@ -49,17 +49,27 @@ export function swapTokenAddress(asset: "USDC" | "ETH"): Address {
   return asset === "USDC" ? SWAP_USDC : ALCHEMY_NATIVE_ETH_TOKEN;
 }
 
-/** Documented Alchemy smart-account + swap infrastructure targets on Base. */
-/** Lowercase hex allowlist entries (Alchemy MAv2 deployments + swap tokens). */
-export const SWAP_CALL_TARGET_ALLOWLIST: ReadonlySet<string> = new Set([
+/**
+ * Allowed `execute` / `executeBatch` targets for admin swaps (tokens + settlement routers on Base).
+ * Sources: Base USDC/WETH, Alchemy Wallet swap settlement (same-chain swaps alpha).
+ */
+export const ALCHEMY_BASE_SWAP_SETTLEMENT = getAddress(
+  "0x0000000000008e6a39e03c7156e46b238c9e2036",
+);
+
+export const SWAP_ALLOWED_EXECUTE_TARGETS: ReadonlySet<string> = new Set([
   SWAP_USDC.toLowerCase(),
-  ALCHEMY_NATIVE_ETH_TOKEN.toLowerCase(),
   BASE_WETH_ADDRESS.toLowerCase(),
-  ALCHEMY_MAV2_V110.toLowerCase(),
-  ALCHEMY_MAV2_V100.toLowerCase(),
+  ALCHEMY_BASE_SWAP_SETTLEMENT.toLowerCase(),
   ENTRY_POINT_V07.toLowerCase(),
-  "0x0000000000008e6a39e03c7156e46b238c9e2036", // ExecutionInstallDelegate (MAv2)
-  "0x00000000000002377b26b1eda7b0bc371c60dd4f", // ModularAccount impl
-  "0x00000000000099de0bf6fa90deb851e2a2df7d83", // SingleSignerValidationModule
-  "0x00000000000017c61b5bee81050ec8efc9c6fecd", // AccountFactory
+]);
+
+/** Inner calldata selectors permitted on allowlisted targets (ERC-20 + common swap entrypoints). */
+export const SWAP_ALLOWED_INNER_SELECTORS: ReadonlySet<string> = new Set([
+  "0x095ea7b3", // approve(address,uint256)
+  "0xa9059cbb", // transfer(address,uint256)
+  "0x23b872dd", // transferFrom(address,address,uint256)
+  "0x3593564c", // execute(bytes,bytes[],uint256) — Universal Router style
+  "0x414bf389", // exactInputSingle(...)
+  "0x24856bc3", // execute(bytes32,bytes) — Alchemy settlement surface
 ]);

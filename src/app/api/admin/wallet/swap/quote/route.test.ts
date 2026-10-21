@@ -9,8 +9,7 @@ vi.mock("next/server", async (importOriginal) => {
 });
 
 import { NextResponse } from "next/server";
-import { getAddress } from "viem";
-import { BASE_USDC_ADDRESS } from "@/lib/payments/subscription-config";
+import { encodeFunctionData, getAddress } from "viem";
 import { setWalletEnabledForTests } from "@/lib/wallet/feature-flag";
 import { setWalletSwapEnabledForTests } from "@/lib/wallet/swap-feature-flag";
 import {
@@ -26,7 +25,9 @@ import {
   setSwapEthUsdPriceForTests,
 } from "@/lib/wallet/swap-eth-usd-price";
 import { WALLET_SWAP_FIXED_ERROR } from "@/lib/wallet/swap-errors";
-import { ALCHEMY_MAV2_V110 } from "@/lib/wallet/swap-constants";
+import { MAV2_EXECUTE_ABI } from "@/lib/wallet/swap-mav2-abi";
+import { buildMockSwapPreparedUserOp } from "@/lib/wallet/swap-test-prepared";
+import { BASE_USDC_ADDRESS } from "@/lib/payments/subscription-config";
 
 vi.mock("@/lib/privy/require-auth", () => ({
   requirePrivyAuth: vi.fn(),
@@ -58,25 +59,21 @@ describe("POST /api/admin/wallet/swap/quote", () => {
     setSwapEthUsdPriceForTests(async () => 3000);
     setSwapDelegationCheckForTests(async () => false);
     vi.stubEnv("ADMIN_WALLET_ADDRESS", ADMIN);
+    vi.stubEnv("ALCHEMY_API_KEY", "test-hmac-key");
     vi.mocked(requirePrivyAuth).mockResolvedValue({
       ok: true,
       user: { userId: "did:privy:admin" },
     });
     setAlchemyWalletRpcForTests(async (method) => {
       if (method === "wallet_requestQuote_v0") {
-        return {
-          type: "user-operation-v070",
+        return buildMockSwapPreparedUserOp({
+          from: ADMIN,
           quote: {
             expiry: new Date(Date.now() + 60_000).toISOString(),
             minimumToAmount: "0x5f5e100",
             fromAmount: "0x5f5e100",
           },
-          calls: [{ to: BASE_USDC_ADDRESS }, { to: ALCHEMY_MAV2_V110 }],
-          signatureRequest: {
-            type: "personal_sign",
-            data: { raw: "0x1234" },
-          },
-        };
+        });
       }
       throw new Error("unexpected");
     });
@@ -98,22 +95,30 @@ describe("POST /api/admin/wallet/swap/quote", () => {
     expect(res.status).toBe(404);
   });
 
-  it("returns quote with first-swap upgrade flag", async () => {
+  it("returns quote with first-swap upgrade flag and quote seal", async () => {
     const res = await POST(authQuote({ direction: "USDC_TO_ETH", amount: "5" }));
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.needsWalletUpgrade).toBe(true);
     expect(json.from).toBe(ADMIN);
+    expect(json.quoteSeal).toBeTruthy();
   });
 
   it("rejects disallowed call targets from Alchemy", async () => {
+    const evil = getAddress("0x1234567890123456789012345678901234567890");
+    const callData = encodeFunctionData({
+      abi: MAV2_EXECUTE_ABI,
+      functionName: "execute",
+      args: [evil, 0n, "0x095ea7b3"],
+    });
     setAlchemyWalletRpcForTests(async () => ({
+      type: "user-operation-v070",
+      data: callData,
       quote: {
         expiry: new Date(Date.now() + 60_000).toISOString(),
         minimumToAmount: "0x1",
         fromAmount: "0x1",
       },
-      calls: [{ to: "0x1234567890123456789012345678901234567890" }],
     }));
     const res = await POST(authQuote({ direction: "USDC_TO_ETH", amount: "5" }));
     expect(res.status).toBe(502);

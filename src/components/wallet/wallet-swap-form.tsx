@@ -3,13 +3,19 @@
 import { useCallback, useId, useMemo, useRef, useState } from "react";
 import { SWAP_QUOTE_EXPIRY_BUFFER_SEC, type SwapDirection } from "@/lib/wallet/swap-constants";
 import { isQuoteNearOrPastExpiry } from "@/lib/wallet/swap-expiry";
-import type { WalletSwapPort, WalletSwapQuoteSummary } from "./wallet-swap-types";
+import type {
+  SignPreparedSwapResult,
+  WalletSwapPort,
+  WalletSwapQuoteSummary,
+} from "./wallet-swap-types";
 
 export type WalletSwapFormProps = {
   enabled: boolean;
   adminAddress: string;
   swapPort: WalletSwapPort;
-  signPreparedSwap?: (prepared: Record<string, unknown>) => Promise<`0x${string}`>;
+  signPreparedSwap?: (
+    prepared: Record<string, unknown> | unknown[],
+  ) => Promise<SignPreparedSwapResult>;
   fixtureInitialStep?: "form" | "confirm" | "pending" | "success";
   fixtureQuote?: WalletSwapQuoteSummary;
 };
@@ -99,8 +105,11 @@ export function WalletSwapForm({
       }
 
       let signature: `0x${string}`;
+      let authorizations: unknown[] = [];
       if (signPreparedSwap) {
-        signature = await signPreparedSwap(activeQuote.prepared);
+        const signed = await signPreparedSwap(activeQuote.prepared);
+        signature = signed.signature;
+        authorizations = signed.authorizations;
       } else {
         signature = "0x11" as `0x${string}`;
       }
@@ -108,6 +117,10 @@ export function WalletSwapForm({
       const submitted = await swapPort.submitSwap({
         prepared: activeQuote.prepared,
         signature,
+        authorizations,
+        direction: activeQuote.direction,
+        amount: activeQuote.amount,
+        slippageBps: activeQuote.slippageBps,
       });
       if ("error" in submitted) {
         setLocalError(submitted.error);

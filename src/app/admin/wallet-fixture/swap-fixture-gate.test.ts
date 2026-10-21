@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const notFoundMock = vi.hoisted(() => vi.fn(() => undefined));
-const isAdminWalletFixturePageEnabledMock = vi.hoisted(() => vi.fn());
+const isWalletReadFixtureEnabledMock = vi.hoisted(() => vi.fn());
 
 vi.mock("next/navigation", () => ({
   notFound: notFoundMock,
 }));
 
-vi.mock("@/lib/wallet/admin-wallet-fixture-page", () => ({
-  isAdminWalletFixturePageEnabled: isAdminWalletFixturePageEnabledMock,
+vi.mock("@/lib/wallet/asset-transfers", () => ({
+  isWalletReadFixtureEnabled: isWalletReadFixtureEnabledMock,
 }));
 
 vi.mock("./swap-confirm/swap-confirm-fixture-client", () => ({
@@ -26,11 +26,11 @@ vi.mock("./swap-success/swap-success-fixture-client", () => ({
 describe("admin wallet swap fixture pages", () => {
   afterEach(() => {
     notFoundMock.mockClear();
-    isAdminWalletFixturePageEnabledMock.mockReset();
+    isWalletReadFixtureEnabledMock.mockReset();
   });
 
-  it("calls notFound when the fixture gate is off (production)", async () => {
-    isAdminWalletFixturePageEnabledMock.mockReturnValue(false);
+  it("calls notFound when the wallet read fixture gate is off (production)", async () => {
+    isWalletReadFixtureEnabledMock.mockReturnValue(false);
     const { default: ConfirmPage } = await import("./swap-confirm/page");
     const { default: PendingPage } = await import("./swap-pending/page");
     const { default: SuccessPage } = await import("./swap-success/page");
@@ -40,8 +40,8 @@ describe("admin wallet swap fixture pages", () => {
     expect(notFoundMock).toHaveBeenCalledTimes(3);
   });
 
-  it("does not call notFound when the fixture gate is on", async () => {
-    isAdminWalletFixturePageEnabledMock.mockReturnValue(true);
+  it("does not call notFound when the wallet read fixture gate is on", async () => {
+    isWalletReadFixtureEnabledMock.mockReturnValue(true);
     const { default: ConfirmPage } = await import("./swap-confirm/page");
     ConfirmPage();
     expect(notFoundMock).not.toHaveBeenCalled();

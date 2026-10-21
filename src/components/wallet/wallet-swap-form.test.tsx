@@ -17,6 +17,7 @@ function mockPort(overrides?: Partial<WalletSwapPort>): WalletSwapPort {
       slippageBps: 50,
       chainId: 8453,
       needsWalletUpgrade: true,
+      quoteSeal: "preview-seal",
       quote: {
         expiry: new Date(Date.now() + 120_000).toISOString(),
         minimumToAmount: "0x5f5e100",
@@ -38,7 +39,10 @@ describe("WalletSwapForm", () => {
         enabled
         adminAddress={ADMIN}
         swapPort={port}
-        signPreparedSwap={async () => "0x11"}
+        signPreparedSwap={async () => ({
+          signature: "0x11",
+          authorizations: [],
+        })}
       />,
     );
     fireEvent.click(screen.getByTestId("wallet-swap-open"));

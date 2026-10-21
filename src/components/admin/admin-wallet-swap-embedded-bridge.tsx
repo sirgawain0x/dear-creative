@@ -9,9 +9,12 @@ import { getAddress, type Address, type Hex } from "viem";
 import type { ReactNode } from "react";
 import { useCallback, useMemo } from "react";
 import { signSwapPreparedCall } from "@/lib/wallet/wallet-swap-sign";
+import type { SignPreparedSwapResult } from "@/components/wallet/wallet-swap-types";
 
 export function useAdminSwapSigner(adminWalletAddress: string): {
-  signPreparedSwap: (prepared: Record<string, unknown>) => Promise<Hex>;
+  signPreparedSwap: (
+    prepared: Record<string, unknown> | unknown[],
+  ) => Promise<SignPreparedSwapResult>;
 } | null {
   const { wallets } = useWallets();
   const { signAuthorization } = useSign7702Authorization();
@@ -31,7 +34,7 @@ export function useAdminSwapSigner(adminWalletAddress: string): {
   }, [admin, wallets]);
 
   const signPreparedSwap = useCallback(
-    async (prepared: Record<string, unknown>) => {
+    async (prepared: Record<string, unknown> | unknown[]) => {
       if (!admin || !embedded) {
         throw new Error("Embedded admin wallet is not ready.");
       }
@@ -39,7 +42,7 @@ export function useAdminSwapSigner(adminWalletAddress: string): {
         throw new Error("Connected wallet does not match admin wallet.");
       }
       const provider = await embedded.getEthereumProvider();
-      const { signature } = await signSwapPreparedCall({
+      const { signature, authorizations } = await signSwapPreparedCall({
         provider,
         adminAddress: admin,
         prepared,
@@ -51,7 +54,7 @@ export function useAdminSwapSigner(adminWalletAddress: string): {
           return auth as unknown as Hex;
         },
       });
-      return signature;
+      return { signature, authorizations };
     },
     [admin, embedded, signAuthorization],
   );
@@ -68,7 +71,13 @@ export function AdminWalletSwapEmbeddedBridge({
   children,
 }: {
   adminWalletAddress: string;
-  children: (signer: { signPreparedSwap: (prepared: Record<string, unknown>) => Promise<Hex> } | null) => ReactNode;
+  children: (
+    signer: {
+      signPreparedSwap: (
+        prepared: Record<string, unknown> | unknown[],
+      ) => Promise<SignPreparedSwapResult>;
+    } | null,
+  ) => ReactNode;
 }) {
   const signer = useAdminSwapSigner(adminWalletAddress);
   return children(signer);

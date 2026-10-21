@@ -19,6 +19,7 @@ export function createAdminWalletSwapPort(
           slippageBps: input.slippageBps ?? 50,
           chainId: 8453,
           needsWalletUpgrade: true,
+          quoteSeal: "preview-seal",
           quote: {
             expiry: new Date(Date.now() + 120_000).toISOString(),
             minimumToAmount: "0x1",
@@ -73,7 +74,15 @@ export function createAdminWalletSwapPort(
       const res = await fetch("/api/admin/wallet/swap/submit", {
         method: "POST",
         headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ ...input, chainId: 8453 }),
+        body: JSON.stringify({
+          prepared: input.prepared,
+          signature: input.signature,
+          authorizations: input.authorizations,
+          chainId: 8453,
+          direction: input.direction,
+          amount: input.amount,
+          slippageBps: input.slippageBps,
+        }),
       });
       const json = (await res.json().catch(() => null)) as
         | { callId?: string; error?: string }

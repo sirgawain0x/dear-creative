@@ -33,10 +33,19 @@ export type SwapValidationFailure = {
 
 export type SwapValidationResult = SwapValidationSuccess | SwapValidationFailure;
 
-function usdcMicroFromEthAmount(amountEth: bigint, ethUsd: number): bigint {
-  const ethFloat = Number(amountEth) / 1e18;
-  const usdc = ethFloat * ethUsd;
-  return BigInt(Math.floor(usdc * 1_000_000));
+const BPS_DENOMINATOR = 10_000n;
+
+function applySlippageMinimum(outputRaw: bigint, slippageBps: number): bigint {
+  const bps = BigInt(slippageBps);
+  return (outputRaw * (BPS_DENOMINATOR - bps)) / BPS_DENOMINATOR;
+}
+
+function usdcMicroFromEthRaw(ethRaw: bigint, ethUsdMicro: bigint): bigint {
+  return (ethRaw * ethUsdMicro) / 10n ** 18n;
+}
+
+function ethWeiFromUsdcRaw(usdcRaw: bigint, ethUsdMicro: bigint): bigint {
+  return (usdcRaw * 10n ** 18n) / ethUsdMicro;
 }
 
 export async function validateSwapRequestInput(
@@ -75,9 +84,9 @@ export async function validateSwapRequestInput(
     }
     notionalUsdcMicro = amountRaw;
     const ethUsd = await fetchEthUsdPrice();
-    const ethOut = Number(amountRaw) / 1e6 / ethUsd;
-    const minEth = ethOut * (1 - slippageBps / 10_000);
-    minimumToAmountRaw = parseUnits(minEth.toFixed(18), 18);
+    const ethUsdMicro = BigInt(Math.round(ethUsd * 1_000_000));
+    const ethOutWei = ethWeiFromUsdcRaw(amountRaw, ethUsdMicro);
+    minimumToAmountRaw = applySlippageMinimum(ethOutWei, slippageBps);
   } else {
     if (!ETH_AMOUNT_REGEX.test(amountTrimmed) || /^0+(\.0+)?$/.test(amountTrimmed)) {
       return {
@@ -92,10 +101,9 @@ export async function validateSwapRequestInput(
       return { ok: false, error: "Invalid ETH amount.", field: "amount" };
     }
     const ethUsd = await fetchEthUsdPrice();
-    notionalUsdcMicro = usdcMicroFromEthAmount(amountRaw, ethUsd);
-    const usdcOut = Number(notionalUsdcMicro) / 1e6;
-    const minUsdc = usdcOut * (1 - slippageBps / 10_000);
-    minimumToAmountRaw = parseUnits(minUsdc.toFixed(6), 6);
+    const ethUsdMicro = BigInt(Math.round(ethUsd * 1_000_000));
+    notionalUsdcMicro = usdcMicroFromEthRaw(amountRaw, ethUsdMicro);
+    minimumToAmountRaw = applySlippageMinimum(notionalUsdcMicro, slippageBps);
   }
 
   const maxUsdc = getWalletSwapMaxUsdc();

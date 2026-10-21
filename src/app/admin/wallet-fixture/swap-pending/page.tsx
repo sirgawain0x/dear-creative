@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
-import { isAdminWalletFixturePageEnabled } from "@/lib/wallet/admin-wallet-fixture-page";
+import { isWalletReadFixtureEnabled } from "@/lib/wallet/asset-transfers";
 import { AdminWalletSwapPendingFixtureClient } from "./swap-pending-fixture-client";
 
 export default function AdminWalletSwapPendingFixturePage() {
-  if (!isAdminWalletFixturePageEnabled()) {
+  if (!isWalletReadFixtureEnabled()) {
     notFound();
   }
 

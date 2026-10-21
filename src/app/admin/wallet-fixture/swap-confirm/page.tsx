@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
-import { isAdminWalletFixturePageEnabled } from "@/lib/wallet/admin-wallet-fixture-page";
+import { isWalletReadFixtureEnabled } from "@/lib/wallet/asset-transfers";
 import { AdminWalletSwapConfirmFixtureClient } from "./swap-confirm-fixture-client";
 
 export default function AdminWalletSwapConfirmFixturePage() {
-  if (!isAdminWalletFixturePageEnabled()) {
+  if (!isWalletReadFixtureEnabled()) {
     notFound();
   }
 
