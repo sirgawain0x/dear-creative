@@ -1,4 +1,6 @@
 import { TwitterApi } from "twitter-api-v2";
+import { readXOAuth1UserCredentials } from "@/lib/x/credentials";
+import { isXLiveEnabled } from "@/lib/x/feature-flag";
 
 export interface TwitterClientLike {
   v2: {
@@ -20,27 +22,44 @@ export function getTwitterClient(): TwitterClientLike | null {
   if (twitterClientOverride !== undefined) {
     return twitterClientOverride;
   }
-  const appKey = process.env.X_API_KEY;
-  const appSecret = process.env.X_API_SECRET;
-  const accessToken = process.env.X_ACCESS_TOKEN;
-  const accessSecret = process.env.X_ACCESS_SECRET;
+  if (!isXLiveEnabled()) {
+    return null;
+  }
 
-  if (!appKey || !appSecret || !accessToken || !accessSecret) {
+  const creds = readXOAuth1UserCredentials();
+  if (!creds) {
     return null;
   }
 
   return new TwitterApi({
-    appKey,
-    appSecret,
-    accessToken,
-    accessSecret,
+    appKey: creds.apiKey,
+    appSecret: creds.apiSecret,
+    accessToken: creds.accessToken,
+    accessSecret: creds.accessTokenSecret,
   });
 }
 
+export type OracleBroadcastXSkipReason = "unconfigured" | "x_live_off";
+
+export type OracleBroadcastMastodonSkipReason = "unconfigured";
+
 export interface BroadcastOracleResolutionResult {
   x: "posted" | "failed" | "skipped";
+  xSkipReason?: OracleBroadcastXSkipReason;
   mastodon: "posted" | "failed" | "skipped";
+  mastodonSkipReason?: OracleBroadcastMastodonSkipReason;
 }
+
+export function oracleSocialChannelsPublished(
+  result: BroadcastOracleResolutionResult,
+): boolean {
+  return result.x === "posted" || result.mastodon === "posted";
+}
+
+type XChannelOutcome =
+  | { status: "posted" }
+  | { status: "skipped"; skipReason: OracleBroadcastXSkipReason }
+  | { status: "failed" };
 
 /**
  * Syndicates reality.eth oracle resolutions to X (Twitter) and Mastodon.
@@ -58,12 +77,36 @@ export async function broadcastOracleResolution(
   const xText =
     postText.length > 275 ? `${postText.slice(0, 272)}...` : postText;
 
+  const xConfigured = readXOAuth1UserCredentials() !== null;
   const twitterClient = getTwitterClient();
 
+  const xPostPromise = (async (): Promise<XChannelOutcome> => {
+    if (twitterClientOverride !== undefined) {
+      if (!twitterClient) {
+        return { status: "skipped", skipReason: "unconfigured" };
+      }
+      await twitterClient.v2.tweet({ text: xText });
+      return { status: "posted" };
+    }
+    if (!xConfigured) {
+      return { status: "skipped", skipReason: "unconfigured" };
+    }
+    if (!isXLiveEnabled()) {
+      console.info(
+        "[x-mock] oracle resolution tweet skipped (X_LIVE is not true)",
+        { textLength: xText.length, reason: "x_live_off" },
+      );
+      return { status: "skipped", skipReason: "x_live_off" };
+    }
+    if (!twitterClient) {
+      return { status: "skipped", skipReason: "unconfigured" };
+    }
+    await twitterClient.v2.tweet({ text: xText });
+    return { status: "posted" };
+  })();
+
   const [xResult, mastodonResult] = await Promise.allSettled([
-    twitterClient
-      ? twitterClient.v2.tweet({ text: xText }).then(() => "posted" as const)
-      : Promise.resolve("skipped" as const),
+    xPostPromise,
     mastodonToken
       ? fetch(`${mastodonInstance}/api/v1/statuses`, {
           method: "POST",
@@ -86,9 +129,32 @@ export async function broadcastOracleResolution(
       : Promise.resolve("skipped" as const),
   ]);
 
+  let x: BroadcastOracleResolutionResult["x"] = "failed";
+  let xSkipReason: OracleBroadcastXSkipReason | undefined;
+
+  if (xResult.status === "fulfilled") {
+    if (xResult.value.status === "posted") {
+      x = "posted";
+    } else if (xResult.value.status === "skipped") {
+      x = "skipped";
+      xSkipReason = xResult.value.skipReason;
+    }
+  }
+
+  let mastodon: BroadcastOracleResolutionResult["mastodon"] = "failed";
+  let mastodonSkipReason: OracleBroadcastMastodonSkipReason | undefined;
+
+  if (mastodonResult.status === "fulfilled") {
+    mastodon = mastodonResult.value;
+    if (mastodon === "skipped" && !mastodonToken) {
+      mastodonSkipReason = "unconfigured";
+    }
+  }
+
   return {
-    x: xResult.status === "fulfilled" ? xResult.value : "failed",
-    mastodon:
-      mastodonResult.status === "fulfilled" ? mastodonResult.value : "failed",
+    x,
+    ...(xSkipReason ? { xSkipReason } : {}),
+    mastodon,
+    ...(mastodonSkipReason ? { mastodonSkipReason } : {}),
   };
 }
