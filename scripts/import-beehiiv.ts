@@ -58,7 +58,7 @@ function parseArgs(argv: string[]): {
 }
 
 const groveUploadFn: UploadImageFn = async (bytes, fileName, contentType) => {
-  const blob = new Blob([bytes], { type: contentType });
+  const blob = new Blob([new Uint8Array(bytes)], { type: contentType });
   return uploadToLensGrove(blob, fileName);
 };
 
