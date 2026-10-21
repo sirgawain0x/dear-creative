@@ -60,5 +60,8 @@ export async function GET(request: Request) {
   if (result.ok) {
     return redirectWithReason(request, result.reason, true);
   }
+  console.error("[admin-linkedin] oauth_callback_failed", {
+    reason: result.reason,
+  });
   return redirectWithReason(request, result.reason);
 }

@@ -71,6 +71,7 @@ describe("GET /api/admin/linkedin/callback", () => {
   });
 
   it("redirects with invalid_state reason", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.mocked(completeLinkedInOAuth).mockResolvedValue({
       ok: false,
       reason: "invalid_state",
@@ -82,6 +83,11 @@ describe("GET /api/admin/linkedin/callback", () => {
     );
     const location = res.headers.get("location") ?? "";
     expect(location).toContain("reason=invalid_state");
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[admin-linkedin] oauth_callback_failed",
+      { reason: "invalid_state" },
+    );
+    errorSpy.mockRestore();
   });
 
   it("redirects with did_mismatch reason", async () => {
