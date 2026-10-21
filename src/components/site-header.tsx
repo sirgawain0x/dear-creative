@@ -56,7 +56,19 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
     privyConfigured,
     privyTimedOut,
   } = useAuthSession();
-  const showReaderWallet = readerWalletEnabled && authenticated;
+  const showReaderWalletButton = readerWalletEnabled;
+
+  const handleReaderWalletClick = () => {
+    if (authenticated) {
+      setWalletSheetOpen(true);
+      return;
+    }
+    if (privyConfigured && !privyTimedOut) {
+      login();
+      return;
+    }
+    setWalletSheetOpen(true);
+  };
 
   const visibleLinks = getVisibleNavLinks(isSignedIn);
 
@@ -132,11 +144,11 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
               </Link>
             );
           })}
-          {showReaderWallet ? (
+          {showReaderWalletButton ? (
             <button
               type="button"
               data-testid="reader-wallet-header-button"
-              onClick={() => setWalletSheetOpen(true)}
+              onClick={handleReaderWalletClick}
               className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-800 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
             >
               Wallet
@@ -232,14 +244,14 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
                 </li>
               );
             })}
-            {showReaderWallet ? (
+            {showReaderWalletButton ? (
               <li>
                 <button
                   type="button"
                   data-testid="reader-wallet-header-button-mobile"
                   onClick={() => {
                     setMobileMenuOpen(false);
-                    setWalletSheetOpen(true);
+                    handleReaderWalletClick();
                   }}
                   className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900"
                 >

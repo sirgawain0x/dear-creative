@@ -217,7 +217,7 @@ export function AdminConsole() {
       ) : null}
 
       {/* Owner Navigation Links (Gated) */}
-      {isSignedIn ? (
+      {session?.isAdmin ? (
         <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs dark:border-zinc-800 dark:bg-zinc-900/60">
           <h3 className="text-sm font-semibold">Owner Studio &amp; Tools</h3>
           <p className="mt-1 text-xs text-zinc-500">
