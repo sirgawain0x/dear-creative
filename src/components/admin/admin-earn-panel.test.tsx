@@ -2,7 +2,9 @@
  * @vitest-environment jsdom
  */
 import { render, screen } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
+import { StudioTokenProvider } from "@/components/providers/app-providers";
 import { AdminEarnPanel } from "./admin-earn-panel";
 import {
   EARN_VAULT_AAVE_ID,
@@ -54,9 +56,13 @@ const previewData = {
   },
 };
 
+function renderEarnPanel(ui: ReactElement) {
+  return render(<StudioTokenProvider>{ui}</StudioTokenProvider>);
+}
+
 describe("AdminEarnPanel", () => {
   it("renders vault metrics and yield from preview data", () => {
-    render(<AdminEarnPanel earnEnabled previewData={previewData} />);
+    renderEarnPanel(<AdminEarnPanel earnEnabled previewData={previewData} />);
     expect(screen.getByText("4.2%")).toBeInTheDocument();
     expect(screen.getByText("850 USDC")).toBeInTheDocument();
     expect(screen.getByText("50 USDC")).toBeInTheDocument();
@@ -71,7 +77,7 @@ describe("AdminEarnPanel", () => {
   });
 
   it("shows disabled message when earn flag is off", () => {
-    render(<AdminEarnPanel earnEnabled={false} />);
+    renderEarnPanel(<AdminEarnPanel earnEnabled={false} />);
     expect(screen.getByText(/EARN_ENABLED=true/i)).toBeInTheDocument();
   });
 });

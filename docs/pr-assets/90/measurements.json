@@ -1,0 +1,42 @@
+{
+  "headerLoggedOut390": {
+    "scrollWidth": 390,
+    "innerWidth": 390,
+    "noHorizontalOverflow": true
+  },
+  "headerLoggedOut1440": {
+    "scrollWidth": 1440,
+    "innerWidth": 1440,
+    "noHorizontalOverflow": true
+  },
+  "headerLoggedIn390": {
+    "scrollWidth": 390,
+    "innerWidth": 390,
+    "noHorizontalOverflow": true
+  },
+  "headerLoggedIn1440": {
+    "scrollWidth": 1440,
+    "innerWidth": 1440,
+    "noHorizontalOverflow": true
+  },
+  "adamLoggedOut390": {
+    "scrollWidth": 390,
+    "innerWidth": 390,
+    "noHorizontalOverflow": true
+  },
+  "adamLoggedOut1440": {
+    "scrollWidth": 1440,
+    "innerWidth": 1440,
+    "noHorizontalOverflow": true
+  },
+  "adamLoggedIn390": {
+    "scrollWidth": 390,
+    "innerWidth": 390,
+    "noHorizontalOverflow": true
+  },
+  "adamLoggedIn1440": {
+    "scrollWidth": 1440,
+    "innerWidth": 1440,
+    "noHorizontalOverflow": true
+  }
+}
