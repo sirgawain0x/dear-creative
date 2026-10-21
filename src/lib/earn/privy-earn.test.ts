@@ -52,12 +52,7 @@ describe("privy-earn client", () => {
     );
   });
 
-  it("uses Privy docs earn base path (/api/v1, not /v1)", () => {
-    expect(PRIVY_WALLET_API_BASE).toBe("https://api.privy.io/api/v1");
-    expect(PRIVY_WALLET_API_BASE).not.toBe("https://api.privy.io/v1");
-  });
-
-  it("maps upstream vault 404 to earn_vault_not_found (502) and logs vault id", async () => {
+  it("maps upstream vault-details 404 to earn_vault_not_found (502) and logs host and path", async () => {
     const logSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.stubGlobal(
       "fetch",
@@ -74,11 +69,27 @@ describe("privy-earn client", () => {
     expect(logSpy).toHaveBeenCalledWith(
       "[privy-earn] vault_not_found",
       expect.objectContaining({
+        host: "api.privy.io",
+        path: `/v1/earn/ethereum/vaults/${EARN_VAULT_AAVE_ID}`,
         vaultId: EARN_VAULT_AAVE_ID,
         code: "earn_vault_not_found",
       }),
     );
     logSpy.mockRestore();
+  });
+
+  it("keeps generic upstream handling for wallet position 404", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("not found", { status: 404 })),
+    );
+
+    await expect(
+      fetchPrivyEarnVaultPosition("wallet-1", "vault-1"),
+    ).rejects.toMatchObject({
+      code: "privy_earn_upstream_error",
+      status: 404,
+    } satisfies Partial<PrivyEarnRequestError>);
   });
 
   it("never logs the app secret or Authorization header", async () => {

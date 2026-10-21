@@ -80,16 +80,16 @@ function safeLogContext(details: Record<string, unknown>): Record<string, unknow
   return out;
 }
 
-function vaultIdFromPrivyEarnPath(path: string): string | undefined {
+function isPrivyEarnVaultDetailsPath(path: string): boolean {
+  return /^\/earn\/ethereum\/vaults\/[^/?]+$/.test(path);
+}
+
+function vaultIdFromPrivyEarnVaultDetailsPath(path: string): string | undefined {
   const vaultDetailsMatch = path.match(/^\/earn\/ethereum\/vaults\/([^/?]+)/);
-  if (vaultDetailsMatch?.[1]) {
-    return decodeURIComponent(vaultDetailsMatch[1]);
-  }
-  const queryIndex = path.indexOf("?");
-  if (queryIndex === -1) {
+  if (!vaultDetailsMatch?.[1]) {
     return undefined;
   }
-  return new URLSearchParams(path.slice(queryIndex + 1)).get("vault_id") ?? undefined;
+  return decodeURIComponent(vaultDetailsMatch[1]);
 }
 
 async function privyEarnFetch<T>(
@@ -127,12 +127,14 @@ async function privyEarnFetch<T>(
     );
   }
 
-  if (response.status === 404) {
-    const vaultId = vaultIdFromPrivyEarnPath(path);
+  if (response.status === 404 && isPrivyEarnVaultDetailsPath(path)) {
+    const parsedUrl = new URL(url);
+    const vaultId = vaultIdFromPrivyEarnVaultDetailsPath(path);
     console.error(
       "[privy-earn] vault_not_found",
       safeLogContext({
-        path,
+        host: parsedUrl.host,
+        path: parsedUrl.pathname,
         vaultId,
         code: "earn_vault_not_found",
       }),
