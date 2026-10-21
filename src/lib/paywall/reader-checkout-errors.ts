@@ -22,7 +22,6 @@ export const READER_CHECKOUT_ERROR_MESSAGES: Record<string, string> = {
   post_not_found: "Post not found.",
   writer_not_configured: "Writer payout is not configured.",
   unlock_unavailable: "Post unlock is not available.",
-  subscription_unavailable: "Subscription is not available for this writer.",
   invalid_tx_hash: "Transaction hash is invalid.",
   tx_not_confirmed: "Transaction is not confirmed yet.",
   tx_not_successful: "Transaction did not succeed.",

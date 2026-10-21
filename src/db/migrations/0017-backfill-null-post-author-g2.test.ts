@@ -19,7 +19,7 @@ function createMigrationsFolderThrough0016(): string {
   cpSync(join(process.cwd(), "drizzle"), dir, { recursive: true });
   rmSync(join(dir, "0017_backfill_null_post_author_g2.sql"));
   rmSync(join(dir, "0018_linkedin_member_credentials.sql"));
-  rmSync(join(dir, "0019_reader_checkout_records.sql"));
+  rmSync(join(dir, "0019_reader_post_unlock_purchases.sql"));
   rmSync(join(dir, "meta/0017_snapshot.json"));
   const journalPath = join(dir, "meta/_journal.json");
   const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {

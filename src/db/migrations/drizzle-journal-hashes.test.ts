@@ -62,9 +62,9 @@ const RECONCILE_0018 = {
 } as const;
 
 const RECONCILE_0019 = {
-  tag: "0019_reader_checkout_records",
+  tag: "0019_reader_post_unlock_purchases",
   when: 1792524000000,
-  hash: "02b2f443ccb6998d262dfdf03631ebe76ac0fb0684fe2e82fe994c6f3c457bb2",
+  hash: "23b478d97996876599ad685b9d55d04267d30fe3da4c26646772b70388b50ad4",
 } as const;
 
 describe("drizzle journal reconciliation hashes (0009–0014)", () => {

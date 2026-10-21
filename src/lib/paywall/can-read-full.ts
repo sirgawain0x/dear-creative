@@ -3,9 +3,8 @@ import type { DearCreativeDb } from "@/db/client";
 import { subscriptions } from "@/db/schema";
 import {
   hasLegacyUnlock,
-  hasReaderCheckoutUnlock,
-  resolveReaderCheckoutSubscription,
-} from "./reader-checkout-access";
+  hasReaderPostUnlockPurchase,
+} from "./reader-post-unlock-access";
 import type { PostViewer } from "./viewer-types";
 
 export type PaywallPostAccessInput = {
@@ -39,16 +38,7 @@ export async function resolveSubscriptionAccess(
       ),
     )
     .limit(1);
-  if (adminRow) {
-    return true;
-  }
-
-  const readerSub = await resolveReaderCheckoutSubscription(db, {
-    privyUserId: input.privyUserId,
-    writerId,
-    asOf,
-  });
-  return Boolean(readerSub);
+  return Boolean(adminRow);
 }
 
 export async function resolveUnlockAccess(
@@ -57,7 +47,7 @@ export async function resolveUnlockAccess(
 ): Promise<boolean> {
   const [legacy, reader] = await Promise.all([
     hasLegacyUnlock(db, input),
-    hasReaderCheckoutUnlock(db, input),
+    hasReaderPostUnlockPurchase(db, input),
   ]);
   return legacy || reader;
 }

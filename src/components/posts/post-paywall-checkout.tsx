@@ -1,32 +1,19 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import { encodeFunctionData, erc20Abi, type Address } from "viem";
 import { useSendTransaction } from "@privy-io/react-auth";
 import { useAuthSession } from "@/components/providers/app-providers";
-import type { SubscriptionPlan } from "@/db/schema";
 
 export type PostPaywallCheckoutProps = {
   title: string;
   postSlug: string;
-  writerId: string | null;
   payToSplitAddress: string | null;
   unlockPriceUsdc: number;
   unlockAmountRaw: string;
-  showSubscribe: boolean;
-  subscriptionPlans: Array<{
-    plan: SubscriptionPlan;
-    priceUsdc: number;
-    amountRaw: string;
-    periodDays: number;
-  }>;
+  showUnlockProtocolSubscribeOffer: boolean;
   chainId: number;
   tokenAddress: string;
-  subscriptionSummary: {
-    periodEnd: string;
-    showRenewPrompt: boolean;
-    expired: boolean;
-  } | null;
 };
 
 const CHECKOUT_ERRORS = {
@@ -40,30 +27,21 @@ const CHECKOUT_ERRORS = {
 export function PostPaywallCheckout({
   title,
   postSlug,
-  writerId,
   payToSplitAddress,
   unlockPriceUsdc,
   unlockAmountRaw,
-  showSubscribe,
-  subscriptionPlans,
+  showUnlockProtocolSubscribeOffer,
   chainId,
   tokenAddress,
-  subscriptionSummary,
 }: PostPaywallCheckoutProps) {
   const { authenticated, login, getAccessToken, privyConfigured } =
     useAuthSession();
   const { sendTransaction } = useSendTransaction();
-  const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan>("monthly");
-  const [busy, setBusy] = useState<"unlock" | "subscribe" | null>(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   const unlockEnabled = Boolean(unlockAmountRaw && payToSplitAddress);
-
-  const selectedPlanQuote = useMemo(
-    () => subscriptionPlans.find((p) => p.plan === selectedPlan) ?? null,
-    [subscriptionPlans, selectedPlan],
-  );
 
   const sendUsdc = useCallback(
     async (amountRaw: string, to: Address) => {
@@ -104,35 +82,6 @@ export function PostPaywallCheckout({
     [getAccessToken, postSlug],
   );
 
-  const verifySubscribe = useCallback(
-    async (txHash: string) => {
-      if (!writerId) {
-        throw new Error(CHECKOUT_ERRORS.payout_missing);
-      }
-      const token = await getAccessToken();
-      if (!token) {
-        throw new Error(CHECKOUT_ERRORS.sign_in);
-      }
-      const res = await fetch("/api/paywall/reader/subscribe", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          writerId,
-          plan: selectedPlan,
-          txHash,
-        }),
-      });
-      const json = (await res.json()) as { error?: string; ok?: boolean };
-      if (!res.ok) {
-        throw new Error(json.error ?? CHECKOUT_ERRORS.verify_failed);
-      }
-    },
-    [getAccessToken, selectedPlan, writerId],
-  );
-
   const handleUnlock = async () => {
     setError(null);
     setSuccess(null);
@@ -147,7 +96,7 @@ export function PostPaywallCheckout({
     if (!unlockEnabled || !payToSplitAddress || !unlockAmountRaw) {
       return;
     }
-    setBusy("unlock");
+    setBusy(true);
     try {
       const hash = await sendUsdc(
         unlockAmountRaw,
@@ -159,37 +108,7 @@ export function PostPaywallCheckout({
     } catch {
       setError(CHECKOUT_ERRORS.transfer_failed);
     } finally {
-      setBusy(null);
-    }
-  };
-
-  const handleSubscribe = async () => {
-    setError(null);
-    setSuccess(null);
-    if (!privyConfigured) {
-      setError(CHECKOUT_ERRORS.wallet_missing);
-      return;
-    }
-    if (!authenticated) {
-      login();
-      return;
-    }
-    if (!showSubscribe || !selectedPlanQuote || !payToSplitAddress) {
-      return;
-    }
-    setBusy("subscribe");
-    try {
-      const hash = await sendUsdc(
-        selectedPlanQuote.amountRaw,
-        payToSplitAddress as Address,
-      );
-      await verifySubscribe(hash);
-      setSuccess("Subscription active — reload to read subscriber posts.");
-      window.location.reload();
-    } catch {
-      setError(CHECKOUT_ERRORS.transfer_failed);
-    } finally {
-      setBusy(null);
+      setBusy(false);
     }
   };
 
@@ -208,31 +127,19 @@ export function PostPaywallCheckout({
         Continue reading &ldquo;{title}&rdquo;
       </h2>
       <p className="mx-auto mt-3 max-w-md text-center text-sm text-zinc-600 dark:text-zinc-400">
-        Pay USDC on Base directly to the writer&apos;s split — no card, no
-        auto-renew pull. Sign with your Privy wallet.
+        Unlock this post with a one-time USDC payment on Base. Pay directly to
+        the writer&apos;s split with your Privy wallet.
       </p>
 
-      {subscriptionSummary?.showRenewPrompt ? (
-        <p
-          className="mx-auto mt-4 max-w-md rounded-lg border border-amber-300/60 bg-white/70 px-4 py-3 text-center text-sm text-amber-950 dark:border-amber-800 dark:bg-zinc-950/40 dark:text-amber-100"
-          role="status"
-        >
-          {subscriptionSummary.expired
-            ? "Your subscription has expired."
-            : `Your subscription ends ${new Date(subscriptionSummary.periodEnd).toLocaleDateString("en-US", { dateStyle: "medium" })}.`}{" "}
-          Renew below to keep full access.
-        </p>
-      ) : null}
-
-      <div className="mt-8 flex flex-col items-stretch gap-4 sm:flex-row sm:justify-center">
+      <div className="mt-8 flex flex-col items-center gap-4">
         {unlockEnabled ? (
           <button
             type="button"
-            disabled={busy !== null}
+            disabled={busy}
             onClick={() => void handleUnlock()}
             className="rounded-full bg-zinc-900 px-6 py-2.5 text-sm font-medium text-white disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900"
           >
-            {busy === "unlock"
+            {busy
               ? "Confirming…"
               : `Unlock this post · ${unlockPriceUsdc} USDC`}
           </button>
@@ -242,34 +149,12 @@ export function PostPaywallCheckout({
           </p>
         )}
 
-        {showSubscribe && subscriptionPlans.length > 0 ? (
-          <div className="flex flex-col items-center gap-2 sm:items-stretch">
-            <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-              Subscribe to this writer
-              <select
-                className="mt-1 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-                value={selectedPlan}
-                onChange={(e) =>
-                  setSelectedPlan(e.target.value as SubscriptionPlan)
-                }
-                disabled={busy !== null}
-              >
-                {subscriptionPlans.map((plan) => (
-                  <option key={plan.plan} value={plan.plan}>
-                    ${plan.priceUsdc} / {plan.periodDays} days
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              disabled={busy !== null || !payToSplitAddress}
-              onClick={() => void handleSubscribe()}
-              className="rounded-full border border-zinc-900 px-6 py-2.5 text-sm font-medium text-zinc-900 disabled:opacity-60 dark:border-zinc-100 dark:text-zinc-100"
-            >
-              {busy === "subscribe" ? "Confirming…" : "Subscribe with USDC"}
-            </button>
-          </div>
+        {showUnlockProtocolSubscribeOffer ? (
+          <p className="max-w-md text-center text-xs text-zinc-600 dark:text-zinc-400">
+            Writer subscriptions ($8 / 30 days or $80 / 365 days) will use{" "}
+            <strong>Unlock Protocol</strong> with auto-renewal — scope only; see{" "}
+            <code className="text-[11px]">docs/paywall/unlock-subscriptions-scope.md</code>.
+          </p>
         ) : null}
       </div>
 

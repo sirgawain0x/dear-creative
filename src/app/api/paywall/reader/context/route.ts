@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/db/client";
 import { isPaywallEnabled } from "@/lib/paywall/feature-flag";
 import { paywallDisabledResponse } from "@/lib/paywall/paywall-disabled-response";
-import { loadReaderCheckoutContext } from "@/lib/paywall/reader-checkout-service";
+import { loadReaderPostUnlockContext } from "@/lib/paywall/reader-checkout-service";
 
 export async function GET(request: Request) {
   if (!isPaywallEnabled()) {
@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     );
   }
 
-  const context = await loadReaderCheckoutContext(getDb(), slug);
+  const context = await loadReaderPostUnlockContext(getDb(), slug);
   if (!context) {
     return NextResponse.json(
       { error: "Post not found", code: "post_not_found" },

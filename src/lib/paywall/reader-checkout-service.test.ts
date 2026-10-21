@@ -7,11 +7,10 @@ import { drizzle } from "drizzle-orm/libsql";
 import { migrate } from "drizzle-orm/libsql/migrator";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as schema from "@/db/schema";
-import { authors, posts, readerCheckoutRecords, writers } from "@/db/schema";
+import { authors, posts, readerPostUnlockPurchases, writers } from "@/db/schema";
 import {
-  loadReaderCheckoutContext,
+  loadReaderPostUnlockContext,
   verifyAndRecordPostUnlock,
-  verifyAndRecordSubscription,
 } from "./reader-checkout-service";
 import {
   resetReaderCheckoutReceiptReaderForTests,
@@ -19,19 +18,16 @@ import {
 } from "./reader-checkout-receipt";
 import { BASE_USDC_ADDRESS } from "@/lib/payments/subscription-config";
 import { setPaywallEnabledForTests } from "./feature-flag";
-import { resolveSubscriptionAccess } from "./can-read-full";
 
-const PAYEE = "0xfc150000000000000000000000000000000002af";
+const PAYEE = "0xfc1577e86d0bc18c562a92e7e3a748e7177902af";
 const PAYER = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TX1 =
   "0x1111111111111111111111111111111111111111111111111111111111111111";
-const TX2 =
-  "0x2222222222222222222222222222222222222222222222222222222222222222";
 
 let testDb: ReturnType<typeof drizzle>;
 
 async function createTestDb() {
-  const dir = mkdtempSync(join(tmpdir(), "dear-reader-checkout-"));
+  const dir = mkdtempSync(join(tmpdir(), "dear-reader-unlock-"));
   const url = `file:${join(dir, "test.db")}`;
   const client = createClient({ url });
   const db = drizzle({ client, schema });
@@ -62,15 +58,15 @@ async function seedWriterAndGatedPost(writerId: string, slug: string) {
   });
 }
 
-describe("reader checkout service", () => {
+describe("reader post unlock service", () => {
   beforeEach(async () => {
     testDb = await createTestDb();
-    vi.stubEnv("POST_UNLOCK_PRICE_USDC", "2");
+    vi.stubEnv("POST_UNLOCK_PRICE_USDC", "1");
     setReaderCheckoutReceiptReaderForTests({
       fetchTransfer: vi.fn().mockResolvedValue({
         from: PAYER,
         to: PAYEE,
-        value: BigInt(2_000000),
+        value: BigInt(1_000000),
         confirmations: 3,
         logEmitter: BASE_USDC_ADDRESS,
       }),
@@ -83,7 +79,7 @@ describe("reader checkout service", () => {
     setPaywallEnabledForTests(undefined);
   });
 
-  it("hides subscribe in context when the writer has no gated posts", async () => {
+  it("does not offer Unlock subscription UI context on ungated posts", async () => {
     const writerId = "writer-no-gated";
     await testDb.insert(writers).values({
       id: writerId,
@@ -105,36 +101,42 @@ describe("reader checkout service", () => {
       isGated: false,
     });
 
-    const ctx = await loadReaderCheckoutContext(testDb, "only-free");
+    const ctx = await loadReaderPostUnlockContext(testDb, "only-free");
     expect(ctx).toBeNull();
   });
 
-  it("includes subscribe plans when the writer has gated posts", async () => {
+  it("sets showUnlockProtocolSubscribeOffer when the writer has gated posts", async () => {
     const writerId = "g2";
     await seedWriterAndGatedPost(writerId, "paid-one");
-    const ctx = await loadReaderCheckoutContext(testDb, "paid-one");
-    expect(ctx?.showSubscribe).toBe(true);
-    expect(ctx?.subscriptionPlans).toHaveLength(2);
-    expect(ctx?.unlockPriceUsdc).toBe(2);
+    const ctx = await loadReaderPostUnlockContext(testDb, "paid-one");
+    expect(ctx?.showUnlockProtocolSubscribeOffer).toBe(true);
+    expect(ctx?.unlockPriceUsdc).toBe(1);
   });
 
-  it("rejects reused tx hash for a different checkout kind", async () => {
+  it("rejects reused tx hash for a different post", async () => {
     const writerId = "g2";
     await seedWriterAndGatedPost(writerId, "paid-one");
-    await testDb.insert(readerCheckoutRecords).values({
+    const otherPostId = randomUUID();
+    await testDb.insert(posts).values({
+      id: otherPostId,
+      slug: "paid-two",
+      title: "Paid 2",
+      authorId: writerId,
+      status: "published",
+      publishedAt: new Date(),
+      isGated: true,
+    });
+
+    await testDb.insert(readerPostUnlockPurchases).values({
       id: randomUUID(),
-      kind: "subscription",
       privyUserId: "did:privy:u1",
       walletAddress: PAYER,
       writerId,
-      postId: null,
-      plan: "monthly",
+      postId: otherPostId,
       txHash: TX1,
       chainId: 8453,
       tokenAddress: BASE_USDC_ADDRESS.toLowerCase(),
-      amountRaw: "8000000",
-      periodStart: new Date(),
-      periodEnd: new Date(Date.now() + 30 * 86400000),
+      amountRaw: "1000000",
     });
 
     await expect(
@@ -145,33 +147,5 @@ describe("reader checkout service", () => {
         privyUserId: "did:privy:u1",
       }),
     ).rejects.toMatchObject({ code: "tx_hash_reused" });
-  });
-
-  it("grants subscription access until period_end then expires", async () => {
-    const writerId = "g2";
-    await seedWriterAndGatedPost(writerId, "paid-one");
-    const periodEnd = new Date("2030-01-01T00:00:00.000Z");
-    await verifyAndRecordSubscription(testDb, {
-      writerId,
-      plan: "monthly",
-      txHash: TX2,
-      walletAddress: PAYER,
-      privyUserId: "did:privy:sub",
-      nowMs: periodEnd.getTime() - 30 * 86400000,
-    });
-
-    const active = await resolveSubscriptionAccess(testDb, {
-      privyUserId: "did:privy:sub",
-      writerId,
-      asOf: new Date("2029-12-15T00:00:00.000Z"),
-    });
-    expect(active).toBe(true);
-
-    const expired = await resolveSubscriptionAccess(testDb, {
-      privyUserId: "did:privy:sub",
-      writerId,
-      asOf: new Date("2030-01-02T00:00:00.000Z"),
-    });
-    expect(expired).toBe(false);
   });
 });

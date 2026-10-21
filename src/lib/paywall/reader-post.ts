@@ -107,8 +107,6 @@ export async function resolveReaderPostView(
   const paywallCheckout = await resolvePostPaywallCheckoutProps(db, {
     slug,
     showPaywall,
-    authorId: row.authorId,
-    readCookie,
   });
 
   return {
