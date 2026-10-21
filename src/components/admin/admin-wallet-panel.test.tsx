@@ -1,10 +1,12 @@
 /**
  * @vitest-environment jsdom
  */
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getAddress } from "viem";
 import { STUDIO_TOKEN_STORAGE_KEY } from "@/components/providers/app-providers";
-import { AdminWalletPanel } from "./admin-wallet-panel";
+import { buildEip681BaseUsdcReceiveUri } from "@/lib/wallet/eip681-receive-uri";
+import { AdminWalletPanel, type AdminWalletPreviewData } from "./admin-wallet-panel";
 
 const mockUseAuthSession = vi.fn();
 
@@ -17,10 +19,10 @@ vi.mock("@/components/providers/app-providers", async (importOriginal) => {
   };
 });
 
-vi.mock("qrcode", () => ({
-  default: {
-    toDataURL: vi.fn(async () => "data:image/png;base64,test"),
-  },
+vi.mock("qrcode.react", () => ({
+  QRCodeSVG: ({ value, title }: { value: string; title?: string }) => (
+    <svg data-testid="admin-wallet-receive-qr" data-value={value} aria-label={title} />
+  ),
 }));
 
 function mockBrowserStorage() {
@@ -60,6 +62,7 @@ describe("AdminWalletPanel admin fetch auth", () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -160,5 +163,47 @@ describe("AdminWalletPanel admin fetch auth", () => {
         Authorization: "Bearer privy-access-token",
       });
     }
+  });
+});
+
+const previewFixture: AdminWalletPreviewData = {
+  summary: {
+    configured: true,
+    address: getAddress("0xAE48B6dB64772b9CC24e33A79c809896776a20f6"),
+    network: "base",
+    chainId: 8453,
+    balances: {
+      eth: { formatted: "0.042" },
+      usdc: { formatted: "1250.50" },
+    },
+  },
+  history: {
+    configured: true,
+    transfers: [],
+    pagination: { incomingPageKey: null, outgoingPageKey: null },
+  },
+};
+
+describe("AdminWalletPanel receive QR", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("encodes EIP-681 USDC transfer URI in the QR and shows USDC on Base only", async () => {
+    await act(async () => {
+      render(<AdminWalletPanel walletEnabled previewData={previewFixture} />);
+    });
+
+    const expectedUri = buildEip681BaseUsdcReceiveUri(
+      previewFixture.summary.address,
+    );
+    const qr = screen.getByTestId("admin-wallet-receive-qr");
+    expect(qr).toHaveAttribute("data-value", expectedUri);
+
+    expect(
+      screen.getByTestId("admin-wallet-receive-network-label"),
+    ).toHaveTextContent("USDC on Base only");
   });
 });
