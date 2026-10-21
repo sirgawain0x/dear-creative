@@ -44,7 +44,6 @@ export function AdminConsole() {
     user,
     getAccessToken,
     privyConfigured,
-    privyTimedOut,
     authenticated,
   } = useAuthSession();
 
