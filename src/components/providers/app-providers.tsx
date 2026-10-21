@@ -7,9 +7,11 @@ import {
   useEffect,
   useMemo,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { PrivyBridgeContext, PrivyRootProvider } from "./privy-root-provider";
 import { ToastProvider } from "@/components/ui/toast";
+import { isReaderWalletE2eSessionActive } from "@/lib/wallet/reader-wallet-e2e-auth";
 
 export const STUDIO_TOKEN_STORAGE_KEY = "dear_creative_studio_token";
 
@@ -76,8 +78,23 @@ export function StudioTokenProvider({ children }: { children: React.ReactNode })
 
 export function useSafePrivy() {
   const privy = useContext(PrivyBridgeContext);
-  const { privyConfigured, adamTokenConfigured, configLoaded } = useContext(
-    AuthRuntimeConfigContext,
+  const { privyConfigured, adamTokenConfigured, configLoaded, readerWalletE2eAuthEnabled } =
+    useContext(AuthRuntimeConfigContext);
+  const e2eAuthActive = useSyncExternalStore(
+    (onStoreChange) => {
+      if (!readerWalletE2eAuthEnabled) {
+        return () => {};
+      }
+      const onStorage = () => onStoreChange();
+      window.addEventListener("storage", onStorage);
+      queueMicrotask(onStorage);
+      return () => window.removeEventListener("storage", onStorage);
+    },
+    () =>
+      readerWalletE2eAuthEnabled
+        ? isReaderWalletE2eSessionActive(readerWalletE2eAuthEnabled)
+        : false,
+    () => false,
   );
   const [privyTimedOut, setPrivyTimedOut] = useState(false);
 
@@ -102,6 +119,22 @@ export function useSafePrivy() {
   const noopLogin = useCallback(() => {}, []);
   const noopLogout = useCallback(async () => {}, []);
   const nullAccessToken = useCallback(async () => null, []);
+  const e2eAccessToken = useCallback(async () => "e2e-fixture-token", []);
+
+  if (readerWalletE2eAuthEnabled && e2eAuthActive) {
+    return {
+      ready: true,
+      authenticated: true,
+      user: null,
+      login: noopLogin,
+      logout: noopLogout,
+      getAccessToken: e2eAccessToken,
+      privyConfigured: true,
+      adamTokenConfigured,
+      configLoaded: true,
+      privyTimedOut: false,
+    };
+  }
 
   return {
     ready,
@@ -149,20 +182,27 @@ type AuthRuntimeConfig = {
   privyConfigured: boolean;
   adamTokenConfigured: boolean;
   configLoaded: boolean;
+  readerWalletE2eAuthEnabled: boolean;
 };
 
 const AuthRuntimeConfigContext = createContext<AuthRuntimeConfig>({
   privyConfigured: false,
   adamTokenConfigured: false,
   configLoaded: false,
+  readerWalletE2eAuthEnabled: false,
 });
 
 type AppProvidersProps = {
   privyAppId?: string;
+  readerWalletE2eAuthEnabled?: boolean;
   children: React.ReactNode;
 };
 
-export function AppProviders({ privyAppId, children }: AppProvidersProps) {
+export function AppProviders({
+  privyAppId,
+  readerWalletE2eAuthEnabled = false,
+  children,
+}: AppProvidersProps) {
   const [runtimeAppId, setRuntimeAppId] = useState<string | undefined>(
     privyAppId?.trim() || undefined,
   );
@@ -202,11 +242,12 @@ export function AppProviders({ privyAppId, children }: AppProvidersProps) {
   const resolvedAppId = privyAppId?.trim() || runtimeAppId;
   const contextValue = useMemo<AuthRuntimeConfig>(
     () => ({
-      privyConfigured: Boolean(resolvedAppId),
+      privyConfigured: Boolean(resolvedAppId) || readerWalletE2eAuthEnabled,
       adamTokenConfigured,
       configLoaded,
+      readerWalletE2eAuthEnabled,
     }),
-    [resolvedAppId, adamTokenConfigured, configLoaded],
+    [resolvedAppId, adamTokenConfigured, configLoaded, readerWalletE2eAuthEnabled],
   );
 
   if (!resolvedAppId) {
