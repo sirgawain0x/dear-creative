@@ -64,6 +64,7 @@ export async function loadPublishedPostWithPaywallFields(
   db: DearCreativeDb,
   slug: string,
 ): Promise<PublishedPostWithPaywallFields | null> {
+  await connection();
   return getPublishedPostRowBySlug(db, slug);
 }
 
@@ -75,10 +76,6 @@ export async function resolveReaderPostView(
   const row = await loadPublishedPostWithPaywallFields(db, slug);
   if (!row) {
     return null;
-  }
-
-  if (isPaywallEnabled() && row.isGated) {
-    await connection();
   }
 
   if (!isPaywallEnabled()) {
@@ -120,7 +117,6 @@ export async function resolvePublicPostForMetadata(
     return null;
   }
   if (isPaywallEnabled() && row.isGated) {
-    await connection();
     return applyReaderBodyToPost(row, false);
   }
   return applyReaderBodyToPost(row, true);
