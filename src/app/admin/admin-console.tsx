@@ -53,6 +53,7 @@ export function AdminConsole() {
   const [walletEnabled, setWalletEnabled] = useState(false);
   const [walletSendEnabled, setWalletSendEnabled] = useState(false);
   const [earnEnabled, setEarnEnabled] = useState(false);
+  const [earnActionsEnabled, setEarnActionsEnabled] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,6 +69,9 @@ export function AdminConsole() {
           }
           if (typeof json.earnEnabled === "boolean") {
             setEarnEnabled(json.earnEnabled);
+          }
+          if (typeof json.earnActionsEnabled === "boolean") {
+            setEarnActionsEnabled(json.earnActionsEnabled);
           }
         }
       })
@@ -212,7 +216,10 @@ export function AdminConsole() {
             walletSendEnabled={walletSendEnabled}
             isAdmin={Boolean(session?.isAdmin)}
           />
-          <AdminEarnPanel earnEnabled={earnEnabled} />
+          <AdminEarnPanel
+            earnEnabled={earnEnabled}
+            earnActionsEnabled={earnActionsEnabled}
+          />
         </div>
       ) : null}
 
