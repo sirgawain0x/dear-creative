@@ -115,7 +115,16 @@ export async function submitAdminSwapPreparedCall(
 
 function extractQuoteFields(
   prepared: Record<string, unknown> | unknown[],
-): Omit<SwapQuoteSealPayload, "from" | "direction" | "amount" | "slippageBps"> | null {
+): Omit<
+  SwapQuoteSealPayload,
+  | "from"
+  | "direction"
+  | "amount"
+  | "slippageBps"
+  | "chainId"
+  | "preparedDigest"
+  | "signatureRequestDigest"
+> | null {
   const record = Array.isArray(prepared)
     ? (prepared.find(
         (item) =>

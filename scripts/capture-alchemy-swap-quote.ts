@@ -23,6 +23,8 @@ if (!KEY || !ADMIN) {
   process.exit(1);
 }
 
+const ADMIN_ADDRESS = getAddress(ADMIN);
+
 async function requestQuote(params: Record<string, unknown>): Promise<unknown> {
   const res = await fetch(`https://api.g.alchemy.com/v2/${KEY}`, {
     method: "POST",
@@ -60,7 +62,7 @@ function redact(value: unknown): unknown {
 }
 
 async function capture(direction: "USDC_TO_ETH" | "ETH_TO_USDC") {
-  const from = getAddress(ADMIN);
+  const from = ADMIN_ADDRESS;
   const isUsdcToEth = direction === "USDC_TO_ETH";
   const params = {
     from,
