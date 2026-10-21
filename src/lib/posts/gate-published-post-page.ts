@@ -9,10 +9,12 @@ export type GatedReaderPostView = NonNullable<
   Awaited<ReturnType<typeof resolveReaderPostView>>
 >;
 
-/** Skip slug-specific metadata during static build (PPR shell); live requests still gate. */
-export function shouldSkipPostReaderMetadataAtBuild(): boolean {
+/** Ensures PPR shell is a 404 template at build; no effect on live requests. */
+export function abortPostReaderMetadataAtBuild(): void {
   const phase = process.env.NEXT_PHASE;
-  return phase === "phase-production-build" || phase === "phase-export";
+  if (phase === "phase-production-build" || phase === "phase-export") {
+    notFound();
+  }
 }
 
 /** One published-post fetch per request (metadata, page shell, and body). */

@@ -22,9 +22,9 @@ import {
   shouldRenderPostTipCard,
 } from "@/lib/posts/post-tip-payee";
 import {
+  abortPostReaderMetadataAtBuild,
   requirePublishedPostBySlug,
   resolveGatedReaderPostView,
-  shouldSkipPostReaderMetadataAtBuild,
 } from "@/lib/posts/gate-published-post-page";
 import { getDb } from "@/db/client";
 import {
@@ -199,9 +199,7 @@ function PostArticle({
 }
 
 export async function generateMetadata({ params }: PageProps) {
-  if (shouldSkipPostReaderMetadataAtBuild()) {
-    return {};
-  }
+  abortPostReaderMetadataAtBuild();
   const { slug } = await params;
   const post = await requirePublishedPostBySlug(slug);
   return buildPostPageMetadata(post);
