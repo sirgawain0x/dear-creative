@@ -1,5 +1,5 @@
 import { connection } from "next/server";
-import { formatActiveSubscriberCount } from "@/lib/subscribers/active-subscriber-count";
+import { ActiveSubscriberLineContent } from "@/components/home/active-subscriber-line-content";
 import { getPublicActiveSubscriberCount } from "@/lib/subscribers/get-public-active-subscriber-count";
 
 export async function ActiveSubscriberLine() {
@@ -9,9 +9,5 @@ export async function ActiveSubscriberLine() {
     return null;
   }
 
-  return (
-    <p className="text-sm text-zinc-500 dark:text-zinc-400">
-      Join {formatActiveSubscriberCount(count)} creatives reading Dear Creative
-    </p>
-  );
+  return <ActiveSubscriberLineContent count={count} />;
 }
