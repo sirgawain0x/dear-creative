@@ -16,6 +16,13 @@ import {
 } from "./known-dropped-images";
 import { safeDatabaseHost } from "./prod-mode";
 import { slugifyBeehiivTitle } from "./slug";
+import { parseBeehiivUtcTimestamp } from "./dates";
+import {
+  applyExistingSubscriberDbRules,
+  mergeSubscriberImports,
+  type CombinedSubscriberSummary,
+  type SubscriberFileSummary,
+} from "./subscribers-merge";
 
 import {
   assertImportDatabaseUrl,
@@ -25,6 +32,12 @@ import {
 export { assertImportDatabaseUrl, isValidEmail };
 export { parseCsvRows } from "./csv";
 export { isBeehiivHostedImageUrl } from "./images";
+export { parseBeehiivUtcTimestamp } from "./dates";
+export {
+  parseBeehiivSubscriberRow,
+  countBeehiivSubscriberStatuses,
+} from "./beehiiv-subscribers";
+export { parseParagraphSubscriberRow } from "./subscribers-merge";
 
 export type BeehiivPostRow = {
   beehiivId: string;
@@ -85,14 +98,11 @@ export type BeehiivImportSummary = {
     knownDroppedImagesApplied: string[];
   };
   subscribers: {
-    csvRows: number;
-    activeImported: number;
-    suppressedStored: number;
-    pendingSkipped: number;
-    invalidSkipped: number;
+    beehiiv: SubscriberFileSummary;
+    paragraph: SubscriberFileSummary | null;
+    combined: CombinedSubscriberSummary;
     existingEmails: string[];
-    toInsertActive: number;
-    toInsertSuppressed: number;
+    openQuestions: readonly string[];
   };
   writesPerformed: boolean;
 };
@@ -116,19 +126,6 @@ export function maskEmail(email: string): string {
   const domain = email.slice(at + 1);
   const visible = local.slice(0, 1);
   return `${visible}***@${domain}`;
-}
-
-export function parseBeehiivUtcTimestamp(raw: string): Date | null {
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    return null;
-  }
-  const normalized = trimmed.replace(" UTC", "Z").replace(" ", "T");
-  const ms = Date.parse(normalized);
-  if (Number.isNaN(ms)) {
-    return null;
-  }
-  return new Date(ms);
 }
 
 export function slugFromBeehiivUrl(url: string | null | undefined): string {
@@ -234,70 +231,62 @@ export function countBeehiivPostStatuses(content: string): {
   };
 }
 
-export type SubscriberPlanRow = {
-  email: string;
-  status: "active" | "inactive" | "pending" | "other";
-  subscribedAt: Date | null;
-  unsubscribedAt: Date | null;
-};
-
-export function parseBeehiivSubscriberRow(
-  row: Record<string, string>,
-): SubscriberPlanRow | null {
-  const rawEmail = (row.email ?? "").trim();
-  if (!rawEmail) {
-    return null;
+function isMissingSqliteTableError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
   }
-  const email = rawEmail.toLowerCase();
-  const status = (row.status ?? "").trim().toLowerCase();
-  if (status === "pending") {
-    return { email, status: "pending", subscribedAt: null, unsubscribedAt: null };
+  const message =
+    "message" in error && typeof error.message === "string"
+      ? error.message
+      : "";
+  if (message.includes("no such table")) {
+    return true;
   }
-  if (status === "active") {
-    return {
-      email,
-      status: "active",
-      subscribedAt: parseBeehiivUtcTimestamp(row.created_at ?? ""),
-      unsubscribedAt: null,
-    };
+  const cause = "cause" in error ? error.cause : undefined;
+  if (cause && typeof cause === "object" && "message" in cause) {
+    return String(cause.message).includes("no such table");
   }
-  if (status === "inactive") {
-    return {
-      email,
-      status: "inactive",
-      subscribedAt: parseBeehiivUtcTimestamp(row.created_at ?? ""),
-      unsubscribedAt: parseBeehiivUtcTimestamp(row.unsubscribed_at ?? ""),
-    };
-  }
-  return { email, status: "other", subscribedAt: null, unsubscribedAt: null };
+  return false;
 }
 
-export function countBeehiivSubscriberStatuses(content: string): {
-  total: number;
-  active: number;
-  inactive: number;
-  pending: number;
-  other: number;
-} {
-  const { rows } = parseCsvRows(content);
-  let active = 0;
-  let inactive = 0;
-  let pending = 0;
-  let other = 0;
-
-  for (const row of rows) {
-    const parsed = parseBeehiivSubscriberRow(row);
-    if (!parsed) {
-      other += 1;
-      continue;
+async function loadExistingPostsForImport(
+  db: DearCreativeDb,
+  allowMissingTables: boolean,
+) {
+  try {
+    return await db
+      .select({
+        slug: posts.slug,
+        sourceGuid: posts.sourceGuid,
+      })
+      .from(posts);
+  } catch (error: unknown) {
+    if (allowMissingTables && isMissingSqliteTableError(error)) {
+      return [];
     }
-    if (parsed.status === "active") active += 1;
-    else if (parsed.status === "inactive") inactive += 1;
-    else if (parsed.status === "pending") pending += 1;
-    else other += 1;
+    throw error;
   }
+}
 
-  return { total: rows.length, active, inactive, pending, other };
+async function loadExistingSubscribersForImport(
+  db: DearCreativeDb,
+  emails: string[],
+  allowMissingTables: boolean,
+) {
+  if (emails.length === 0) {
+    return [];
+  }
+  try {
+    return await db
+      .select({ email: subscribers.email, status: subscribers.status })
+      .from(subscribers)
+      .where(inArray(subscribers.email, emails));
+  } catch (error: unknown) {
+    if (allowMissingTables && isMissingSqliteTableError(error)) {
+      return [];
+    }
+    throw error;
+  }
 }
 
 function findSlugCollisions(slugs: string[]): string[] {
@@ -464,6 +453,7 @@ export async function runBeehiivImport(input: {
   databaseUrl: string;
   postsCsv: string;
   subscribersCsv: string;
+  paragraphSubscribersCsv?: string;
   live: boolean;
   prod?: boolean;
   fetchFn?: FetchLike;
@@ -473,21 +463,17 @@ export async function runBeehiivImport(input: {
   const databaseHost = safeDatabaseHost(input.databaseUrl);
   const fetchFn = input.fetchFn ?? fetch;
   const postStatusCounts = countBeehiivPostStatuses(input.postsCsv);
-  const subscriberStatusCounts = countBeehiivSubscriberStatuses(
-    input.subscribersCsv,
-  );
   const parsedPosts = parseBeehiivPosts(input.postsCsv);
   const slugRenamed = parsedPosts.filter((row) => row.slug === "welcome-2023").length;
 
   const importSlugs = parsedPosts.map((row) => row.slug);
   const slugCollisionsAmongImport = findSlugCollisions(importSlugs);
 
-  const existingPosts = await input.db
-    .select({
-      slug: posts.slug,
-      sourceGuid: posts.sourceGuid,
-    })
-    .from(posts);
+  const allowMissingTables = !input.live;
+  const existingPosts = await loadExistingPostsForImport(
+    input.db,
+    allowMissingTables,
+  );
   const existingSlugs = new Set(existingPosts.map((row) => row.slug));
   const existingGuids = new Set(
     existingPosts
@@ -526,69 +512,39 @@ export async function runBeehiivImport(input: {
     [];
   const knownDroppedImagesApplied: string[] = [];
 
-  const subscriberRows = parseCsvRows(input.subscribersCsv).rows;
-  let activeImported = 0;
-  let suppressedStored = 0;
-  let pendingSkipped = 0;
-  let invalidSkipped = 0;
-  let toInsertActive = 0;
-  let toInsertSuppressed = 0;
-  const existingEmails: string[] = [];
+  const subscriberMerge = mergeSubscriberImports({
+    beehiivCsv: input.subscribersCsv,
+    paragraphCsv: input.paragraphSubscribersCsv,
+  });
 
-  const emailsToCheck: string[] = [];
-  for (const row of subscriberRows) {
-    const parsed = parseBeehiivSubscriberRow(row);
-    if (!parsed) {
-      invalidSkipped += 1;
-      continue;
-    }
-    if (parsed.status === "pending") {
-      pendingSkipped += 1;
-      continue;
-    }
-    if (parsed.status === "other") {
-      invalidSkipped += 1;
-      continue;
-    }
-    if (!isValidEmail(parsed.email)) {
-      invalidSkipped += 1;
-      continue;
-    }
-    if (parsed.status === "active") {
-      activeImported += 1;
-    } else if (parsed.status === "inactive") {
-      suppressedStored += 1;
-    }
-    emailsToCheck.push(parsed.email);
-  }
+  const emailsToCheck = subscriberMerge.inserts.map((row) => row.email);
+  let existingSubscriberRows: Array<{
+    email: string;
+    status: (typeof subscribers.$inferSelect)["status"];
+  }> = [];
+  existingSubscriberRows = await loadExistingSubscribersForImport(
+    input.db,
+    emailsToCheck,
+    allowMissingTables,
+  );
 
-  let existingEmailSet = new Set<string>();
-  if (emailsToCheck.length > 0) {
-    const existing = await input.db
-      .select({ email: subscribers.email })
-      .from(subscribers)
-      .where(inArray(subscribers.email, emailsToCheck));
-    existingEmailSet = new Set(existing.map((row) => row.email));
-  }
+  const dbApplied = applyExistingSubscriberDbRules({
+    inserts: subscriberMerge.inserts,
+    existingRows: existingSubscriberRows,
+  });
 
-  for (const row of subscriberRows) {
-    const parsed = parseBeehiivSubscriberRow(row);
-    if (!parsed || parsed.status === "pending" || parsed.status === "other") {
-      continue;
-    }
-    if (!isValidEmail(parsed.email)) {
-      continue;
-    }
-    if (existingEmailSet.has(parsed.email)) {
-      existingEmails.push(parsed.email);
-      continue;
-    }
-    if (parsed.status === "active") {
-      toInsertActive += 1;
-    } else if (parsed.status === "inactive") {
-      toInsertSuppressed += 1;
-    }
-  }
+  const combined: CombinedSubscriberSummary = {
+    ...subscriberMerge.combined,
+    existingEmailsSkipped: dbApplied.existingEmailsSkipped.length,
+    dbSuppressedBlocksResubscribe: dbApplied.dbSuppressedBlocksResubscribe,
+    toInsertActive: dbApplied.toInsert.filter((row) => row.status === "subscribed")
+      .length,
+    toInsertSuppressed: dbApplied.toInsert.filter(
+      (row) => row.status === "unsubscribed",
+    ).length,
+  };
+
+  const existingEmails = dbApplied.existingEmailsSkipped;
 
   let writesPerformed = false;
 
@@ -630,42 +586,7 @@ export async function runBeehiivImport(input: {
       postsReadyForInsert.push({ row, bodyHtml: prepared.html });
     }
 
-    const subscriberInserts: Array<{
-      email: string;
-      status: "subscribed" | "unsubscribed";
-      subscribedAt: Date | null;
-      unsubscribedAt: Date | null;
-    }> = [];
-
-    for (const row of subscriberRows) {
-      const parsed = parseBeehiivSubscriberRow(row);
-      if (!parsed || parsed.status === "pending" || parsed.status === "other") {
-        continue;
-      }
-      if (!isValidEmail(parsed.email)) {
-        continue;
-      }
-      if (existingEmailSet.has(parsed.email)) {
-        continue;
-      }
-
-      if (parsed.status === "active") {
-        subscriberInserts.push({
-          email: parsed.email,
-          status: "subscribed",
-          subscribedAt: parsed.subscribedAt ?? new Date(),
-          unsubscribedAt: null,
-        });
-      } else if (parsed.status === "inactive") {
-        subscriberInserts.push({
-          email: parsed.email,
-          status: "unsubscribed",
-          subscribedAt: parsed.subscribedAt,
-          unsubscribedAt:
-            parsed.unsubscribedAt ?? parsed.subscribedAt ?? new Date(),
-        });
-      }
-    }
+    const subscriberInserts = dbApplied.toInsert;
 
     if (postsReadyForInsert.length > 0 || subscriberInserts.length > 0) {
       await input.db.transaction(async (tx) => {
@@ -692,8 +613,10 @@ export async function runBeehiivImport(input: {
             id: randomUUID(),
             email: sub.email,
             status: sub.status,
-            source: "beehiiv_import",
-            subscribedAt: sub.subscribedAt,
+            source: sub.source,
+            subscribedAt:
+              sub.subscribedAt ??
+              (sub.status === "subscribed" ? new Date() : null),
             unsubscribedAt: sub.unsubscribedAt,
           });
         }
@@ -726,14 +649,11 @@ export async function runBeehiivImport(input: {
       knownDroppedImagesApplied: [...new Set(knownDroppedImagesApplied)],
     },
     subscribers: {
-      csvRows: subscriberStatusCounts.total,
-      activeImported,
-      suppressedStored,
-      pendingSkipped,
-      invalidSkipped,
+      beehiiv: subscriberMerge.beehiiv,
+      paragraph: subscriberMerge.paragraph,
+      combined,
       existingEmails,
-      toInsertActive,
-      toInsertSuppressed,
+      openQuestions: subscriberMerge.openQuestions,
     },
     writesPerformed,
   };

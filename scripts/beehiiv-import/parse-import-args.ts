@@ -2,7 +2,8 @@ export type BeehiivImportCliMode = {
   prod: boolean;
   live: boolean;
   postsPath: string;
-  subscribersPath: string;
+  beehiivSubscribersPath: string;
+  paragraphSubscribersPath?: string;
   /** Set when --prod --live; exact confirmation phrase from argv or env. */
   prodLiveConfirmation?: string;
 };
@@ -22,7 +23,7 @@ export function parseImportBeehiivArgs(argv: string[]): BeehiivImportCliMode {
 
   if (paths.length < 2) {
     throw new Error(
-      "Usage: npm run import:beehiiv -- [--prod] [--live] [--confirm \"IMPORT TO PROD\"] <posts.csv> <subscribers.csv>",
+      "Usage: npm run import:beehiiv -- [--prod] [--live] [--confirm \"IMPORT TO PROD\"] <posts.csv> <beehiiv-subscribers.csv> [paragraph-subscribers.csv]",
     );
   }
 
@@ -30,7 +31,8 @@ export function parseImportBeehiivArgs(argv: string[]): BeehiivImportCliMode {
     prod,
     live,
     postsPath: paths[0]!,
-    subscribersPath: paths[1]!,
+    beehiivSubscribersPath: paths[1]!,
+    paragraphSubscribersPath: paths[2],
     prodLiveConfirmation,
   };
 }

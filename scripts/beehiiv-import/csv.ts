@@ -74,7 +74,9 @@ export function parseCsvRows(content: string): {
     return { headers: [], rows: [] };
   }
 
-  const headers = records[0] ?? [];
+  const headers = (records[0] ?? []).map((header) =>
+    header.replace(/^\uFEFF/, "").trim(),
+  );
   const rows = records.slice(1).map((cells) => {
     const record: Record<string, string> = {};
     headers.forEach((header, index) => {

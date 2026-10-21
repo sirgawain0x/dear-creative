@@ -10,12 +10,12 @@ import * as schema from "../../src/db/schema";
 import { posts, subscribers } from "../../src/db/schema";
 import { parseCsvRows } from "./csv";
 import { isBeehiivHostedImageUrl } from "./images";
+import { countBeehiivSubscriberStatuses } from "./beehiiv-subscribers";
 import {
   applyBeehiivSlugRules,
   assertLiveImportCollisions,
   BeehiivLiveCollisionError,
   countBeehiivPostStatuses,
-  countBeehiivSubscriberStatuses,
   formatBeehiivImportSummaryForLog,
   KNOWN_DROPPED_BEEHIIV_IMAGE_MARKERS,
   maskEmail,
@@ -128,9 +128,11 @@ describe("runBeehiivImport", () => {
     expect(summary.writesPerformed).toBe(false);
     expect(uploadFn).not.toHaveBeenCalled();
     expect(summary.posts.toInsert).toBe(2);
-    expect(summary.subscribers.toInsertActive).toBe(1);
-    expect(summary.subscribers.toInsertSuppressed).toBe(1);
-    expect(summary.subscribers.pendingSkipped).toBe(1);
+    expect(summary.subscribers.beehiiv.active).toBe(1);
+    expect(summary.subscribers.beehiiv.suppressed).toBe(1);
+    expect(summary.subscribers.beehiiv.skipped).toBe(1);
+    expect(summary.subscribers.combined.toInsertActive).toBe(1);
+    expect(summary.subscribers.combined.toInsertSuppressed).toBe(1);
 
     const postCount = await db.select().from(posts);
     const subCount = await db.select().from(subscribers);
@@ -281,9 +283,7 @@ drop-1,Drop Post,confirmed,https://example.test/p/drop,Sub,Preview,"<img src=${s
       uploadFn,
     });
     expect(secondDry.posts.existingSourceGuids).toHaveLength(2);
-    expect(secondDry.subscribers.existingEmails).toEqual(
-      expect.arrayContaining(["active@example.test", "quiet@example.test"]),
-    );
+    expect(secondDry.subscribers.combined.existingEmailsSkipped).toBe(2);
 
     const welcome = await db
       .select()
@@ -317,14 +317,26 @@ drop-1,Drop Post,confirmed,https://example.test/p/drop,Sub,Preview,"<img src=${s
         knownDroppedImagesApplied: [],
       },
       subscribers: {
-        csvRows: 1,
-        activeImported: 1,
-        suppressedStored: 0,
-        pendingSkipped: 0,
-        invalidSkipped: 0,
+        beehiiv: {
+          csvRows: 1,
+          active: 1,
+          suppressed: 0,
+          skipped: 0,
+        },
+        paragraph: null,
+        combined: {
+          crossFileDuplicateEmails: 0,
+          conflictsResolvedToSuppressed: 0,
+          activeAfterMerge: 1,
+          suppressedAfterMerge: 0,
+          skippedAfterMerge: 0,
+          existingEmailsSkipped: 0,
+          dbSuppressedBlocksResubscribe: 0,
+          toInsertActive: 0,
+          toInsertSuppressed: 0,
+        },
         existingEmails: ["secret@example.test"],
-        toInsertActive: 0,
-        toInsertSuppressed: 0,
+        openQuestions: [],
       },
       writesPerformed: false,
     });

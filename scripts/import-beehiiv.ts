@@ -80,7 +80,10 @@ export async function runImportBeehiivMain(
 ): Promise<void> {
   const mode = parseImportBeehiivArgs(argv);
   const postsCsv = readFileSync(mode.postsPath, "utf8");
-  const subscribersCsv = readFileSync(mode.subscribersPath, "utf8");
+  const subscribersCsv = readFileSync(mode.beehiivSubscribersPath, "utf8");
+  const paragraphSubscribersCsv = mode.paragraphSubscribersPath
+    ? readFileSync(mode.paragraphSubscribersPath, "utf8")
+    : undefined;
 
   let databaseUrl: string;
   if (mode.prod) {
@@ -103,6 +106,7 @@ export async function runImportBeehiivMain(
     databaseUrl,
     postsCsv,
     subscribersCsv,
+    paragraphSubscribersCsv,
     live: mode.live,
     prod: mode.prod,
     uploadFn: mode.live ? groveUploadFn : undefined,

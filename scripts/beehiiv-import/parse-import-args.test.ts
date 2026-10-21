@@ -16,7 +16,8 @@ describe("parseImportBeehiivArgs", () => {
       live: true,
       prodLiveConfirmation: "IMPORT TO PROD",
       postsPath: "posts.csv",
-      subscribersPath: "subs.csv",
+      beehiivSubscribersPath: "subs.csv",
+      paragraphSubscribersPath: undefined,
     });
   });
 });
