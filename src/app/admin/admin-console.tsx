@@ -99,13 +99,6 @@ export function AdminConsole() {
     }
   }, [authenticated, getAccessToken, privyConfigured]);
 
-  useEffect(() => {
-    if (!ready || !authenticated) {
-      return;
-    }
-    void refreshSession();
-  }, [ready, authenticated, refreshSession]);
-
   if (!ready) {
     return <p className="text-zinc-500">Loading authentication status…</p>;
   }

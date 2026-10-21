@@ -80,15 +80,6 @@ describe("AdminConsole owner tools", () => {
   it("renders four tool links when signed in", async () => {
     render(<AdminConsole />);
 
-    await waitFor(() => {
-      expect(globalThis.fetch).toHaveBeenCalledWith(
-        "/api/admin/me",
-        expect.objectContaining({
-          headers: { Authorization: "Bearer test-token" },
-        }),
-      );
-    });
-
     for (const tool of ADMIN_OWNER_TOOL_LINKS) {
       expect(screen.getByRole("link", { name: new RegExp(tool.title.replace("→", "").trim(), "i") })).toHaveAttribute(
         "href",
@@ -99,6 +90,19 @@ describe("AdminConsole owner tools", () => {
 
   it("shows payouts card after Privy /me returns privy_admin", async () => {
     render(<AdminConsole />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Verify Server Token/i }),
+    );
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "/api/admin/me",
+        expect.objectContaining({
+          headers: { Authorization: "Bearer test-token" },
+        }),
+      );
+    });
 
     await waitFor(() => {
       expect(screen.getByTestId("admin-payouts-card")).toBeInTheDocument();
