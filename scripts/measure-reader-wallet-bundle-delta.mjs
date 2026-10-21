@@ -54,15 +54,16 @@ function measureBuild(root) {
   }
 
   let rootLayoutClientGzip = 0;
-  const manifestPath = join(root, ".next/app-build-manifest.json");
+  const manifestPath = join(root, ".next/build-manifest.json");
   if (existsSync(manifestPath)) {
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-    const layoutEntry = manifest.pages?.["/layout"] ?? manifest.rootMainFiles;
-    const files = Array.isArray(layoutEntry) ? layoutEntry : [];
+    const files = Array.isArray(manifest.rootMainFiles) ? manifest.rootMainFiles : [];
     for (const rel of files) {
       const normalized = join(root, ".next", rel.replace(/^\//, ""));
-      if (existsSync(normalized) && normalized.endsWith(".js")) {
-        rootLayoutClientGzip += gzipBytes(normalized);
+      const alt = join(root, rel.replace(/^\//, ""));
+      const filePath = existsSync(normalized) ? normalized : alt;
+      if (existsSync(filePath) && filePath.endsWith(".js")) {
+        rootLayoutClientGzip += gzipBytes(filePath);
       }
     }
   }
