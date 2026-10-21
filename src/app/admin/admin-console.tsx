@@ -6,6 +6,7 @@ import { AdminWalletPanel } from "@/components/admin/admin-wallet-panel";
 import { OracleIngestForm } from "@/components/admin/oracle-ingest-form";
 import { useAuthSession } from "@/components/providers/app-providers";
 import { AdminPayoutsCard } from "./admin-payouts-card";
+import { AdminLinkedInConnect } from "./admin-linkedin-connect";
 
 export const ADMIN_OWNER_TOOL_LINKS = [
   {
@@ -217,6 +218,12 @@ export function AdminConsole() {
         </div>
       ) : null}
       {isSignedIn ? <AdminPayoutsCard /> : null}
+      {session?.isAdmin ? (
+        <AdminLinkedInConnect
+          isAdmin={session.isAdmin}
+          getAccessToken={getAccessToken}
+        />
+      ) : null}
       {session?.isAdmin ? (
         <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs dark:border-zinc-800 dark:bg-zinc-900/60">
           <h3 className="text-sm font-semibold">Oracle ingest</h3>

@@ -55,6 +55,12 @@ const RECONCILE_0017 = {
   hash: "4a75cd5194d7d0746bf52e9f0f56edb2430700044f545f793f148f0a6bbe886f",
 } as const;
 
+const RECONCILE_0018 = {
+  tag: "0018_linkedin_member_credentials",
+  when: 1792523000000,
+  hash: "ac80efa6c47c09486194cd8cb34fabefcb3e4c1980bd3a1f0e9ad4087360adea",
+} as const;
+
 describe("drizzle journal reconciliation hashes (0009–0014)", () => {
   it("matches drizzle-orm readMigrationFiles hash algorithm", () => {
     const migrations = readMigrationFiles({ migrationsFolder: "./drizzle" });
@@ -104,11 +110,31 @@ describe("drizzle journal reconciliation hashes (0017 null author backfill)", ()
     const journal = JSON.parse(
       readFileSync(join(process.cwd(), "drizzle/meta/_journal.json"), "utf8"),
     ) as { entries: Array<{ idx: number; tag: string; when: number }> };
-    expect(journal.entries).toHaveLength(17);
+    expect(journal.entries.length).toBeGreaterThanOrEqual(17);
     const backfillEntry = journal.entries.find(
       (entry) => entry.tag === RECONCILE_0017.tag,
     );
     expect(backfillEntry?.idx).toBe(16);
     expect(backfillEntry?.when).toBeGreaterThan(RECONCILE_0016.when);
+  });
+});
+
+describe("drizzle journal reconciliation hashes (0018 linkedin credentials)", () => {
+  it("matches drizzle-orm readMigrationFiles hash algorithm", () => {
+    const migrations = readMigrationFiles({ migrationsFolder: "./drizzle" });
+    const fromLib = migrations.find((m) => m.folderMillis === RECONCILE_0018.when);
+    expect(fromLib?.hash).toBe(RECONCILE_0018.hash);
+    expect(hashMigrationSqlFile(RECONCILE_0018.tag)).toBe(RECONCILE_0018.hash);
+  });
+
+  it("registers 0018 at journal idx 17 after 0017", () => {
+    const journal = JSON.parse(
+      readFileSync(join(process.cwd(), "drizzle/meta/_journal.json"), "utf8"),
+    ) as { entries: Array<{ idx: number; tag: string; when: number }> };
+    const linkedinEntry = journal.entries.find(
+      (entry) => entry.tag === RECONCILE_0018.tag,
+    );
+    expect(linkedinEntry?.idx).toBe(17);
+    expect(linkedinEntry?.when).toBeGreaterThan(RECONCILE_0017.when);
   });
 });
