@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, ne, sql } from "drizzle-orm";
-import type { DearCreativeDb } from "@/db/client";
+import type { DearCreativeDb, DearCreativeDbSession } from "@/db/client";
 import {
   authors,
   postWriters,
@@ -15,7 +15,7 @@ export type ActivePostWriterRow = typeof postWriters.$inferSelect;
 
 /** Backfill author membership for posts created after migration 0021. */
 export async function ensureAuthorPostWriterRow(
-  db: DearCreativeDb,
+  db: DearCreativeDbSession,
   postId: string,
 ): Promise<void> {
   const [postRow] = await db
@@ -42,7 +42,7 @@ export async function ensureAuthorPostWriterRow(
 }
 
 export async function listActivePostWriters(
-  db: DearCreativeDb,
+  db: DearCreativeDbSession,
   postId: string,
 ): Promise<ActivePostWriterRow[]> {
   const rows = await db
@@ -104,7 +104,7 @@ export async function ensureAuthorForPayoutAddress(
 }
 
 export async function rebalancePostWriterShares(
-  db: DearCreativeDb,
+  db: DearCreativeDbSession,
   postId: string,
 ): Promise<void> {
   const rows = await listActivePostWriters(db, postId);

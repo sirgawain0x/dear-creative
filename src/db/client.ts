@@ -6,6 +6,12 @@ import * as schema from "./schema";
 
 export type DearCreativeDb = LibSQLDatabase<typeof schema>;
 
+/** DB handle or transaction callback argument (same query surface). */
+export type DearCreativeDbSession = Pick<
+  DearCreativeDb,
+  "insert" | "select" | "update" | "delete"
+>;
+
 let cached: DearCreativeDb | null = null;
 
 export function resolveDatabaseUrl(): string {
