@@ -92,6 +92,7 @@ export async function publishDraftToTurso(
     emailSubject: snapshot.emailSubject,
     emailHtml: snapshot.emailHtml,
     bodyHtml: resolvedBodyHtml,
+    isGated: false,
     sponsorId: snapshot.sponsorId,
   });
 
