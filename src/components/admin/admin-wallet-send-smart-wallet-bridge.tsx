@@ -2,7 +2,7 @@
 
 import { useSmartWallets } from "@privy-io/react-auth/smart-wallets";
 import type { ReactNode } from "react";
-import type { SmartWalletSendClient } from "@/lib/wallet/admin-wallet-smart-wallet-send";
+import type { SmartWalletSendClient } from "@/lib/wallet/wallet-send-smart-wallet";
 
 export function useAdminSmartWalletSendClient(): SmartWalletSendClient | null {
   const { client } = useSmartWallets();

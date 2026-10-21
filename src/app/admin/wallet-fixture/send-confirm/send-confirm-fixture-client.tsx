@@ -8,6 +8,7 @@ export function AdminWalletSendConfirmFixtureClient() {
   return (
     <AdminWalletSendForm
       walletAddress={getAddress("0xAE48B6dB64772b9CC24e33A79c809896776a20f6")}
+      balances={{ eth: { formatted: "0.042" }, usdc: { formatted: "1250.50" } }}
       isAdmin
       walletSendEnabled
       getAccessToken={async () => null}

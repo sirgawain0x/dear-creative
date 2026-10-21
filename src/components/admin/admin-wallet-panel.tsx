@@ -326,6 +326,9 @@ export function AdminWalletPanel({
               {previewSendEnabled ? (
                 <AdminWalletSendForm
                   walletAddress={summary.address}
+                  balances={summary.balances}
+                  chainId={summary.chainId}
+                  network={summary.network}
                   isAdmin={true}
                   walletSendEnabled={true}
                   getAccessToken={getAccessToken}
@@ -338,6 +341,9 @@ export function AdminWalletPanel({
                   {(smartWalletClient) => (
                     <AdminWalletSendForm
                       walletAddress={summary.address}
+                      balances={summary.balances}
+                      chainId={summary.chainId}
+                      network={summary.network}
                       isAdmin={isAdmin}
                       walletSendEnabled={walletSendEnabled}
                       getAccessToken={getAccessToken}

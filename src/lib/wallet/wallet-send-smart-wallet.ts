@@ -1,7 +1,6 @@
 import type { Address, Hex } from "viem";
-import { base } from "viem/chains";
 
-export type ClientSendCall = {
+export type WalletSendCall = {
   to: Address;
   value: string;
   data: Hex;
@@ -13,13 +12,9 @@ export type SmartWalletSendClient = {
   }) => Promise<Hex>;
 };
 
-/**
- * Sends via Privy smart wallet client (Alchemy bundler + paymaster configured in Privy).
- * Injected in tests; production passes useSmartWallets().client.
- */
-export async function sendAdminWalletViaSmartWallet(
+export async function sendViaSmartWallet(
   client: SmartWalletSendClient,
-  calls: ClientSendCall[],
+  calls: WalletSendCall[],
 ): Promise<Hex> {
   return client.sendTransaction({
     calls: calls.map((call) => ({
@@ -29,5 +24,3 @@ export async function sendAdminWalletViaSmartWallet(
     })),
   });
 }
-
-export const ADMIN_WALLET_SEND_CHAIN = base;

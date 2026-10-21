@@ -40,8 +40,8 @@ test.describe("admin wallet send fixture screenshots", () => {
     ] as const) {
       await page.setViewportSize({ width, height });
       await page.goto(path, { waitUntil: "networkidle" });
-      await page.getByTestId("admin-wallet-send-form").or(
-        page.getByTestId("admin-wallet-send-confirm"),
+      await page.getByTestId("wallet-send-form").or(
+        page.getByTestId("wallet-send-confirm"),
       ).waitFor();
       await page.screenshot({ path: `${outDir}/${name}`, fullPage: true });
       const overflow = await page.evaluate(

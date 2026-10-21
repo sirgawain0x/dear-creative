@@ -50,7 +50,7 @@ describe("AdminWalletSendForm", () => {
       />,
     );
 
-    fireEvent.click(screen.getByTestId("admin-wallet-send-open"));
+    fireEvent.click(screen.getByTestId("wallet-send-open"));
     await act(async () => {
       fireEvent.change(screen.getByLabelText(/^recipient$/i), {
         target: { value: RECIPIENT },
@@ -61,13 +61,13 @@ describe("AdminWalletSendForm", () => {
       fireEvent.click(screen.getByRole("button", { name: /review send/i }));
     });
 
-    expect(await screen.findByTestId("admin-wallet-send-confirm")).toBeInTheDocument();
+    expect(await screen.findByTestId("wallet-send-confirm")).toBeInTheDocument();
     expect(screen.getByText(RECIPIENT)).toBeInTheDocument();
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /confirm send/i }));
     });
 
-    expect(await screen.findByTestId("admin-wallet-send-success")).toBeInTheDocument();
+    expect(await screen.findByTestId("wallet-send-success")).toBeInTheDocument();
   });
 });
