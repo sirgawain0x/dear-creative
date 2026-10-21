@@ -32,34 +32,35 @@ function transferLog(input: {
       `0x${from.slice(2).padStart(64, "0")}`,
       `0x${to.slice(2).padStart(64, "0")}`,
     ],
-    data: `0x${value.toString(16).padStart(64, "0")}`,
-    blockHash: "0x0",
-    blockNumber: 100n,
+    data: `0x${value.toString(16).padStart(64, "0")}` as `0x${string}`,
+    blockHash: "0x0000000000000000000000000000000000000000000000000000000000000000" as const,
+    blockNumber: BigInt(100),
     logIndex: 0,
     transactionHash: TX,
     transactionIndex: 0,
     removed: false,
-  };
+  } as TransactionReceipt["logs"][number];
 }
 
 function receipt(overrides?: Partial<TransactionReceipt>): TransactionReceipt {
   return {
-    blockHash: "0x0",
-    blockNumber: 100n,
+    blockHash: "0x0000000000000000000000000000000000000000000000000000000000000000" as const,
+    blockNumber: BigInt(100),
     contractAddress: null,
-    cumulativeGasUsed: 0n,
-    effectiveGasPrice: 0n,
+    cumulativeGasUsed: BigInt(0),
+    effectiveGasPrice: BigInt(0),
     from: PAYER,
-    gasUsed: 0n,
+    gasUsed: BigInt(0),
     logs: [transferLog({})],
-    logsBloom: "0x0",
+    logsBloom:
+      "0x0000000000000000000000000000000000000000000000000000000000000000" as const,
     status: "success",
     to: BASE_USDC_ADDRESS,
     transactionHash: TX,
     transactionIndex: 0,
     type: "eip1559",
     ...overrides,
-  } as TransactionReceipt;
+  } as unknown as TransactionReceipt;
 }
 
 describe("parseUsdcTransferFromReceipt", () => {

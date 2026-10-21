@@ -47,7 +47,10 @@ function PostArticle({
   post: PublishedPostDetail;
   payToAddress: Address | null;
   showPaywall: boolean;
-  paywallCheckout: ComponentProps<typeof PostPaywallCheckout> | null;
+  paywallCheckout: Omit<
+    ComponentProps<typeof PostPaywallCheckout>,
+    "title"
+  > | null;
 }) {
   const bodyHtml = publishedPostBodyForDisplay(post.bodyHtml);
   const metrics = calculateReadingTime(post.bodyHtml ?? post.excerpt);

@@ -6,6 +6,7 @@ import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { migrate } from "drizzle-orm/libsql/migrator";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { DearCreativeDb } from "@/db/client";
 import * as schema from "@/db/schema";
 import { authors, posts, readerPostUnlockPurchases, writers } from "@/db/schema";
 import {
@@ -24,7 +25,7 @@ const PAYER = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TX1 =
   "0x1111111111111111111111111111111111111111111111111111111111111111";
 
-let testDb: ReturnType<typeof drizzle>;
+let testDb: DearCreativeDb;
 
 async function createTestDb() {
   const dir = mkdtempSync(join(tmpdir(), "dear-reader-unlock-"));
@@ -32,7 +33,7 @@ async function createTestDb() {
   const client = createClient({ url });
   const db = drizzle({ client, schema });
   await migrate(db, { migrationsFolder: "./drizzle" });
-  return db;
+  return db as DearCreativeDb;
 }
 
 async function seedWriterAndGatedPost(writerId: string, slug: string) {
