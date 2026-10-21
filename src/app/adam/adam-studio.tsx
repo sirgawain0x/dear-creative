@@ -2099,7 +2099,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
 
   if (!ready) {
     return (
-      <div className="mx-auto w-full max-w-[1800px] px-4 sm:px-6 lg:px-8 py-10">
+      <div className="min-w-0 w-full">
         <p className="text-zinc-500">Loading Adam Editorial Studio…</p>
       </div>
     );
@@ -2231,9 +2231,9 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1800px] px-4 sm:px-6 lg:px-8 py-10">
+    <div className="min-w-0 w-full max-w-full">
       {/* Studio Header */}
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-200 pb-6 dark:border-zinc-800">
+      <header className="flex min-w-0 flex-wrap items-center justify-between gap-4 border-b border-zinc-200 pb-6 dark:border-zinc-800">
         <div>
           <div className="flex items-center gap-2.5">
             <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
@@ -3522,11 +3522,11 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
 
       {/* TAB 2.5: EDIT PUBLISHED & DRAFT POSTS */}
       {activeTab === "posts" ? (
-        <section className="mt-6 grid gap-6 lg:grid-cols-12 lg:items-stretch">
+        <section className="mt-6 grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-12 lg:items-stretch">
           {/* Left Column: Post Browser */}
-          <div className="flex h-full min-h-[400px] flex-col rounded-2xl border border-zinc-200 bg-white p-5 shadow-xs lg:col-span-4 lg:min-h-0 xl:col-span-3 dark:border-zinc-800 dark:bg-zinc-900/60">
-            <div className="shrink-0">
-              <div className="flex items-center justify-between gap-2">
+          <div className="flex h-full min-h-[400px] min-w-0 w-full max-w-full flex-col rounded-2xl border border-zinc-200 bg-white p-5 shadow-xs lg:col-span-4 lg:min-h-0 xl:col-span-3 dark:border-zinc-800 dark:bg-zinc-900/60">
+            <div className="shrink-0 min-w-0">
+              <div className="flex min-w-0 items-center justify-between gap-2">
                 <h2 className="text-base font-semibold">Posts &amp; Archive</h2>
                 <span className="text-xs text-zinc-500">
                   {adminPosts.length} total
@@ -3596,13 +3596,13 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                         <button
                           type="button"
                           onClick={() => selectPostForEditing(post)}
-                          className={`w-full rounded-xl border p-3 text-left transition ${
+                          className={`min-w-0 w-full max-w-full rounded-xl border p-3 text-left transition ${
                             isSelected
                               ? "border-zinc-900 bg-zinc-100/90 dark:border-zinc-100 dark:bg-zinc-800/80"
                               : "border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:border-zinc-700 dark:hover:bg-zinc-900"
                           }`}
                         >
-                          <div className="flex items-center justify-between gap-2">
+                          <div className="flex min-w-0 items-center justify-between gap-2">
                             <span
                               className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
                                 post.status === "published"
@@ -3623,7 +3623,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                           <p className="mt-1.5 line-clamp-2 text-xs font-semibold">
                             {post.title}
                           </p>
-                          <code className="mt-1 block truncate text-[11px] text-zinc-500">
+                          <code className="mt-1 block min-w-0 truncate break-all text-[11px] text-zinc-500">
                             /posts/{post.slug}
                           </code>
                         </button>
@@ -3638,9 +3638,9 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
           {/* Right Column: Post Editor */}
           <form
             onSubmit={(e) => void handleSaveEditedPost(e)}
-            className="h-full min-h-[400px] rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs lg:col-span-8 lg:min-h-0 xl:col-span-9 dark:border-zinc-800 dark:bg-zinc-900/60"
+            className="h-full min-h-[400px] min-w-0 w-full max-w-full rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs lg:col-span-8 lg:min-h-0 xl:col-span-9 dark:border-zinc-800 dark:bg-zinc-900/60"
           >
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 pb-4 dark:border-zinc-800">
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-zinc-200 pb-4 dark:border-zinc-800">
               <div>
                 <h2 className="text-lg font-semibold">
                   {selectedEditPostId ? "Edit Post" : "Select a Post to Edit"}
@@ -3716,7 +3716,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                     required
                     value={editPostSlug}
                     onChange={(e) => setEditPostSlug(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 font-mono text-xs dark:border-zinc-700 dark:bg-zinc-950"
+                    className="mt-1 w-full min-w-0 max-w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 font-mono text-xs dark:border-zinc-700 dark:bg-zinc-950"
                   />
                 </div>
 
@@ -3852,7 +3852,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                     onChange={(e) => setAiBannerPrompt(e.target.value)}
                     placeholder="AI Banner prompt (optional — leave blank to generate from post title & teaser)…"
                     aria-label="AI Banner visual prompt"
-                    className="min-w-[220px] flex-1 rounded-md border border-zinc-300 bg-zinc-50 px-2.5 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-950"
+                    className="min-w-0 w-full flex-1 basis-full rounded-md border border-zinc-300 bg-zinc-50 px-2.5 py-1.5 text-xs sm:min-w-[12rem] sm:basis-auto dark:border-zinc-700 dark:bg-zinc-950"
                   />
                   <select
                     value={aiBannerAspectRatio}
@@ -4086,7 +4086,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                         href={editPostAudioUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="font-mono underline"
+                        className="break-all font-mono underline"
                       >
                         Lens Grove MP3 ↗
                       </a>
@@ -4419,7 +4419,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                 )}
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 pt-2">
                 <button
                   type="submit"
                   disabled={isSavingPost || !selectedEditPostId}
@@ -4428,9 +4428,10 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                   {isSavingPost ? "Saving Changes…" : "Save & Update Post"}
                 </button>
                 {editPostSlug ? (
-                  <span className="text-xs text-zinc-500">
+                  <span className="min-w-0 max-w-full break-words text-xs text-zinc-500">
                     Saving immediately revalidates{" "}
-                    <code>/posts/{editPostSlug}</code> and <code>/posts</code>.
+                    <code className="break-all">/posts/{editPostSlug}</code> and{" "}
+                    <code>/posts</code>.
                   </span>
                 ) : null}
               </div>

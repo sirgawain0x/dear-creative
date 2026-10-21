@@ -67,7 +67,7 @@ export function SiteHeader() {
         </div>
 
         {/* Desktop navigation */}
-        <nav aria-label="Main navigation" className="hidden items-center gap-1 md:flex">
+        <nav aria-label="Main navigation" className="hidden items-center gap-1 lg:flex">
           {visibleLinks.map((link) => {
             const active = isNavLinkActive(pathname, link);
             const isAuthAction = link.href === "/admin";
@@ -136,7 +136,7 @@ export function SiteHeader() {
           aria-controls={mobileMenuId}
           aria-label="Toggle navigation menu"
           onClick={() => setMobileMenuOpen((prev) => !prev)}
-          className="inline-flex items-center justify-center rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 md:hidden dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900"
+          className="inline-flex items-center justify-center rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 lg:hidden dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900"
         >
           {mobileMenuOpen ? "Close ✕" : "Menu ☰"}
         </button>
@@ -147,7 +147,7 @@ export function SiteHeader() {
         <nav
           id={mobileMenuId}
           aria-label="Mobile navigation"
-          className="border-t border-zinc-200 bg-white px-6 py-3 md:hidden dark:border-zinc-800 dark:bg-zinc-950"
+          className="border-t border-zinc-200 bg-white px-6 py-3 lg:hidden dark:border-zinc-800 dark:bg-zinc-950"
         >
           <ul className="flex flex-col gap-1">
             {visibleLinks.map((link) => {
