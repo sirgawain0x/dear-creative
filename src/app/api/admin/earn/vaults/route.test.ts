@@ -63,7 +63,7 @@ describe("GET /api/admin/earn/vaults", () => {
     expect(res.status).toBe(404);
   });
 
-  it("returns 403 for non-admin", async () => {
+  it("returns 404 for non-admin (same as flag off)", async () => {
     vi.mocked(requirePrivyAuth).mockResolvedValue({
       ok: false,
       response: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
@@ -73,7 +73,7 @@ describe("GET /api/admin/earn/vaults", () => {
         headers: { Authorization: "Bearer x" },
       }),
     );
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
     expect(res.headers.get("Cache-Control")).toBe("private, no-store");
   });
 

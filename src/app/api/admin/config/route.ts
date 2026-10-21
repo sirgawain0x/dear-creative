@@ -4,6 +4,7 @@ import { getPrivyAppId } from "@/lib/privy/config";
 import { isEarnActionsEnabled } from "@/lib/earn/actions-feature-flag";
 import { isEarnEnabled } from "@/lib/earn/feature-flag";
 import { isWalletEnabled } from "@/lib/wallet/feature-flag";
+import { isWalletSendEnabled } from "@/lib/wallet/send-feature-flag";
 
 const ADMIN_CONFIG_CACHE_CONTROL = "private, no-store";
 
@@ -28,6 +29,7 @@ export async function GET() {
       privyConfigured: Boolean(privyAppId),
       adamTokenConfigured: Boolean(getAdamApiToken()),
       walletEnabled: isWalletEnabled(),
+      walletSendEnabled: isWalletSendEnabled(),
       earnEnabled: isEarnEnabled(),
       earnActionsEnabled: isEarnActionsEnabled(),
     });

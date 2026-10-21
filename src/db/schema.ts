@@ -391,6 +391,40 @@ export const subscriptionQuotes = sqliteTable(
   ],
 );
 
+/** Per-post USDC unlock purchases (PR C reader checkout). */
+export const readerPostUnlockPurchases = sqliteTable(
+  "reader_post_unlock_purchases",
+  {
+    id: text("id").primaryKey(),
+    privyUserId: text("privy_user_id").notNull(),
+    walletAddress: text("wallet_address").notNull(),
+    writerId: text("writer_id")
+      .notNull()
+      .references(() => writers.id),
+    postId: text("post_id")
+      .notNull()
+      .references(() => posts.id),
+    txHash: text("tx_hash").notNull(),
+    chainId: integer("chain_id").notNull(),
+    tokenAddress: text("token_address").notNull(),
+    amountRaw: text("amount_raw").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("reader_post_unlock_tx_hash_unique").on(table.txHash),
+    index("reader_post_unlock_post_wallet_idx").on(
+      table.postId,
+      table.walletAddress,
+    ),
+    index("reader_post_unlock_privy_writer_idx").on(
+      table.privyUserId,
+      table.writerId,
+    ),
+  ],
+);
+
 export const approvals = sqliteTable(
   "approvals",
   {
@@ -652,5 +686,32 @@ export const linkedinMemberCredentials = sqliteTable("linkedin_member_credential
 
 export type LinkedInMemberCredentialRecord =
   typeof linkedinMemberCredentials.$inferSelect;
+
+export const earnAuditActionEnum = ["deposit", "withdraw"] as const;
+
+/** Append-only audit trail for Privy Earn admin actions (written by actions PR). */
+export const earnAuditLog = sqliteTable(
+  "earn_audit_log",
+  {
+    id: text("id").primaryKey(),
+    adminPrivyUserId: text("admin_privy_user_id").notNull(),
+    adminWalletId: text("admin_wallet_id").notNull(),
+    action: text("action", { enum: earnAuditActionEnum }).notNull(),
+    vaultId: text("vault_id").notNull(),
+    asset: text("asset").notNull(),
+    amount: text("amount").notNull(),
+    txHash: text("tx_hash"),
+    status: text("status").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("earn_audit_log_created_at_idx").on(table.createdAt),
+    index("earn_audit_log_vault_id_idx").on(table.vaultId),
+  ],
+);
+
+export type EarnAuditLogRecord = typeof earnAuditLog.$inferSelect;
 
 

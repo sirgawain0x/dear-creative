@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuthSession } from "@/components/providers/app-providers";
+import {
+  EarnActionsFlow,
+  type EarnActionsPreviewState,
+} from "@/components/earn/earn-actions-flow";
 import { adminPrivyAuthorizationHeaders } from "@/lib/admin/admin-api-auth";
 import {
   computeEarnedYieldRaw,
@@ -15,10 +19,6 @@ import {
   EARN_VAULT_AAVE_ID,
   EARN_VAULT_MORPHO_ID,
 } from "@/lib/earn/vaults";
-import {
-  EarnActionsFlow,
-  type EarnActionsPreviewState,
-} from "@/components/earn/earn-actions-flow";
 
 type PositionPayload =
   | {
@@ -29,8 +29,6 @@ type PositionPayload =
   | {
       configured: true;
       vaultId: string;
-      walletId?: string;
-      walletAddress?: string | null;
       position: {
         asset: { symbol: string; decimals: number };
         total_deposited: string;
@@ -105,30 +103,14 @@ export function AdminEarnPanel({
     : undefined;
 
   const actionWallet = useMemo(() => {
-    if (previewData) {
-      const configured = Object.values(previewData.positions).find(
-        (entry) => entry.configured,
-      );
-      if (
-        configured?.configured &&
-        configured.walletId &&
-        configured.walletAddress
-      ) {
-        return {
-          walletId: configured.walletId,
-          walletAddress: configured.walletAddress,
-        };
-      }
+    if (!selectedVault) {
       return { walletId: "", walletAddress: "" };
     }
-    if (selectedPosition?.configured) {
-      return {
-        walletId: selectedPosition.walletId ?? "",
-        walletAddress: selectedPosition.walletAddress ?? "",
-      };
-    }
-    return { walletId: "", walletAddress: "" };
-  }, [previewData, selectedPosition]);
+    return {
+      walletId: selectedVault.admin_wallet_id,
+      walletAddress: selectedVault.admin_wallet_address,
+    };
+  }, [selectedVault]);
 
   const positionDisplay = useMemo(() => {
     if (!selectedPosition || !selectedPosition.configured) {
@@ -174,10 +156,6 @@ export function AdminEarnPanel({
       const vaultsRes = await fetch("/api/admin/earn/vaults", { headers });
       if (vaultsRes.status === 404) {
         setError("Earn feature is disabled.");
-        return;
-      }
-      if (vaultsRes.status === 403) {
-        setError("Admin access required.");
         return;
       }
       if (!vaultsRes.ok) {
