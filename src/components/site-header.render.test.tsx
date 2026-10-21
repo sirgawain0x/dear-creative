@@ -9,6 +9,8 @@ const mockSignOut = vi.fn();
 
 let mockIsSignedIn = false;
 let mockAuthenticated = false;
+let mockPrivyConfigured = true;
+let mockPrivyTimedOut = false;
 
 vi.mock("next/link", () => ({
   default: ({
@@ -35,8 +37,8 @@ vi.mock("./providers/app-providers", () => ({
     authenticated: mockAuthenticated,
     signOut: mockSignOut,
     login: mockLogin,
-    privyConfigured: true,
-    privyTimedOut: false,
+    privyConfigured: mockPrivyConfigured,
+    privyTimedOut: mockPrivyTimedOut,
   }),
 }));
 
@@ -48,6 +50,8 @@ describe("SiteHeader auth control", () => {
   beforeEach(async () => {
     mockIsSignedIn = false;
     mockAuthenticated = false;
+    mockPrivyConfigured = true;
+    mockPrivyTimedOut = false;
     mockLogin.mockReset();
     mockSignOut.mockReset();
     vi.resetModules();
@@ -97,6 +101,18 @@ describe("SiteHeader auth control", () => {
 
     fireEvent.click(screen.getByTestId("reader-wallet-header-button"));
     expect(mockLogin).toHaveBeenCalledTimes(1);
+  });
+
+  it("links Wallet to /admin when signed out and Privy is unavailable", async () => {
+    mockPrivyConfigured = false;
+    const { SiteHeader } = await import("./site-header");
+    render(<SiteHeader readerWalletEnabled />);
+
+    const wallet = screen.getByTestId("reader-wallet-header-button");
+    expect(wallet).toHaveAttribute("href", "/admin");
+    fireEvent.click(wallet);
+    expect(mockLogin).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("reader-wallet-sheet")).not.toBeInTheDocument();
   });
 
   it("does not render Admin or Admin Console links in the header when signed in", async () => {
