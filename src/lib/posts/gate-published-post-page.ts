@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { notFound } from "next/navigation";
+import { connection } from "next/server";
 import { getDb } from "@/db/client";
 import { getPublishedPostBySlug } from "@/lib/posts/published-posts";
 import type { PublishedPostDetail } from "@/lib/posts/published-posts";
@@ -14,15 +15,24 @@ export function isNextProductionBuildPhase(): boolean {
   return phase === "phase-production-build" || phase === "phase-export";
 }
 
-/** Stable as-of during prerender so published lookups do not call `new Date()`. */
-export function buildStablePublishedAsOf(): Date {
-  return new Date("2099-12-31T23:59:59.999Z");
+/**
+ * Fail-closed as-of during production build: no post (including scheduled future
+ * publishes) can prerender as published. Uses epoch instead of `new Date()`.
+ */
+export function buildFailClosedPublishedAsOf(): Date {
+  return new Date(0);
 }
 
-function publishedLookupOptions(): { asOf?: Date } | undefined {
-  return isNextProductionBuildPhase()
-    ? { asOf: buildStablePublishedAsOf() }
-    : undefined;
+async function publishedAsOfForLookup(): Promise<Date> {
+  if (isNextProductionBuildPhase()) {
+    return buildFailClosedPublishedAsOf();
+  }
+  await connection();
+  return new Date();
+}
+
+async function publishedLookupOptions(): Promise<{ asOf: Date }> {
+  return { asOf: await publishedAsOfForLookup() };
 }
 
 /** Uncached existence gate for HTTP status (metadata + page shell). */
@@ -30,7 +40,7 @@ export async function rejectMissingPublishedPostSlug(slug: string): Promise<void
   const published = await getPublishedPostBySlug(
     getDb(),
     slug,
-    publishedLookupOptions(),
+    await publishedLookupOptions(),
   );
   if (!published) {
     notFound();
@@ -43,7 +53,7 @@ export const requirePublishedPostBySlug = cache(
     const published = await getPublishedPostBySlug(
       getDb(),
       slug,
-      publishedLookupOptions(),
+      await publishedLookupOptions(),
     );
     if (!published) {
       notFound();
