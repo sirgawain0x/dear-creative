@@ -3522,15 +3522,15 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
               </div>
             </div>
 
-            <div className="mt-4 flex min-h-0 flex-1 flex-col">
             {adminPosts.length === 0 ? (
-              <p className="text-xs text-zinc-500">
+              <p className="mt-4 text-xs text-zinc-500">
                 {authenticated
                   ? "No posts loaded yet."
                   : "Sign In to load and edit posts."}
               </p>
             ) : (
-              <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+              <div className="mt-4 min-h-48 max-h-[60vh] overflow-y-auto lg:relative lg:max-h-none lg:min-h-0 lg:flex-1 lg:overflow-hidden">
+              <ul className="space-y-2 pr-1 lg:absolute lg:inset-0 lg:overflow-y-auto">
                 {adminPosts
                   .filter((p) => {
                     if (
@@ -3588,8 +3588,8 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                     );
                   })}
               </ul>
+              </div>
             )}
-            </div>
           </div>
 
           {/* Right Column: Post Editor */}
