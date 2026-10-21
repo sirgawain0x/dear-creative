@@ -36,6 +36,7 @@ import {
   parseSubscriberIdsJson,
 } from "./newsletter-chunks";
 import { subscriberIdsSendHash } from "./subscriber-id-set-hash";
+import { setPaywallEnabledForTests } from "@/lib/paywall/feature-flag";
 import { sendNewsletterEmail } from "./deliver-email";
 
 function chunkIndexFromIdempotencyKey(key: string): number | null {
@@ -69,7 +70,13 @@ async function createTestDb() {
 
 async function seedApprovedNewsletterPost(
   db: Awaited<ReturnType<typeof createTestDb>>,
-  options: { subscriberCount?: number } = {},
+  options: {
+    subscriberCount?: number;
+    isGated?: boolean;
+    freeContent?: string | null;
+    gatedContent?: string | null;
+    emailHtml?: string;
+  } = {},
 ) {
   const postId = randomUUID();
   const postRow = {
@@ -79,7 +86,10 @@ async function seedApprovedNewsletterPost(
     status: "draft" as const,
     teaserText: "Teaser",
     emailSubject: "Subject line",
-    emailHtml: "<p>Newsletter body</p>",
+    emailHtml: options.emailHtml ?? "<p>Newsletter body</p>",
+    isGated: options.isGated ?? false,
+    freeContent: options.freeContent ?? null,
+    gatedContent: options.gatedContent ?? null,
     sponsorId: null,
   };
   await db.insert(posts).values(postRow);
@@ -119,6 +129,8 @@ describe("sendNewsletterEmail", () => {
     process.env.NEXT_PUBLIC_SITE_URL = "https://dear.example.test";
     process.env.SUBSCRIBER_TOKEN_SECRET = "test-unsub-secret";
     delete process.env.RESEND_LIVE;
+    delete process.env.PAYWALL_ENABLED;
+    setPaywallEnabledForTests(undefined);
     resetResendBroadcastClientForTests();
   });
 
@@ -766,6 +778,68 @@ describe("sendNewsletterEmail", () => {
     expect(receiptTouchMs[1]).toBeGreaterThan(receiptTouchMs[0]!);
     expect(receiptTouchMs[2]).toBeGreaterThan(receiptTouchMs[1]!);
     expect(receipt!.updatedAt.getTime()).toBeGreaterThan(receiptTouchMs[2]!);
+  });
+
+  it("sends full emailHtml for gated posts when PAYWALL_ENABLED is off", async () => {
+    process.env.RESEND_LIVE = "true";
+    setPaywallEnabledForTests(false);
+    batchSend.mockResolvedValue({
+      data: { data: [{ id: "email-id-gated-off" }] },
+      error: null,
+    });
+
+    const db = await createTestDb();
+    const postId = await seedApprovedNewsletterPost(db, {
+      isGated: true,
+      freeContent: "<p>Free only</p>",
+      gatedContent: "<p>Paid secret</p>",
+      emailHtml: "<p>Free only</p><p>Paid secret</p>",
+    });
+
+    await sendNewsletterEmail(db, {
+      postId,
+      idempotencyKey: "post:paywall-off",
+    });
+
+    const [payload] = batchSend.mock.calls[0] as [{ html: string }[]];
+    expect(payload[0]!.html).toBe("<p>Free only</p><p>Paid secret</p>");
+    expect(payload[0]!.html).toContain("Paid secret");
+  });
+
+  it("sends paywalled preview with Read the rest link when PAYWALL_ENABLED is on", async () => {
+    process.env.RESEND_LIVE = "true";
+    setPaywallEnabledForTests(true);
+    batchSend.mockResolvedValue({
+      data: { data: [{ id: "email-id-gated-on" }] },
+      error: null,
+    });
+
+    const db = await createTestDb();
+    const postId = await seedApprovedNewsletterPost(db, {
+      isGated: true,
+      freeContent: "<p>Free only</p>",
+      gatedContent: "<p>Paid secret</p>",
+      emailHtml: "<p>Free only</p><p>Paid secret</p>",
+    });
+
+    await sendNewsletterEmail(db, {
+      postId,
+      idempotencyKey: "post:paywall-on",
+    });
+
+    const [payload] = batchSend.mock.calls[0] as [
+      { html: string; text?: string; previewText?: string }[],
+    ];
+    const email = payload[0]!;
+    expect(email.html).toContain("Free only");
+    expect(email.html).not.toContain("Paid secret");
+    expect(email.html).toContain("Read the rest");
+    expect(email.html).toContain("/posts/newsletter-");
+    expect(email.text).toContain("Free only");
+    expect(email.text).not.toContain("Paid secret");
+    expect(email.text).toMatch(/Read the rest: https:\/\//);
+    expect(email.previewText).toContain("Free only");
+    expect(email.previewText).not.toContain("Paid secret");
   });
 
   it("aborts the provider call when the timeout elapses", async () => {

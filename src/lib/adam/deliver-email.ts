@@ -1,4 +1,7 @@
+import { eq } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
+import { ensurePostsSchema } from "@/db/ensure-schema";
+import { posts } from "@/db/schema";
 import {
   claimDeliverySlot,
   markDeliveryCompleted,
@@ -33,6 +36,7 @@ import {
   resolveFrozenChunkRecipients,
   touchDeliveryReceiptActivity,
 } from "./newsletter-chunks";
+import { buildNewsletterEmailContent } from "./newsletter-email-content";
 
 export type DeliverEmailInput = {
   postId: string;
@@ -81,6 +85,8 @@ async function sendNewsletterChunks(
     receiptId: string;
     subject: string;
     html: string;
+    text?: string;
+    previewText?: string;
     providerTimeoutMs?: number;
     clock: Clock;
   },
@@ -188,6 +194,8 @@ async function sendNewsletterChunks(
             {
               subject: input.subject,
               html: input.html,
+              text: input.text,
+              previewText: input.previewText,
               recipients,
             },
             {
@@ -255,10 +263,35 @@ export async function sendNewsletterEmail(
   }
 
   const subject = gate.value.post.emailSubject?.trim();
-  const html = gate.value.post.emailHtml?.trim();
-  if (!subject || !html) {
+  const emailHtml = gate.value.post.emailHtml?.trim();
+  if (!subject || !emailHtml) {
     return { outcome: "blocked", reason: "not_found" };
   }
+
+  await ensurePostsSchema(db);
+  const [paywallRow] = await db
+    .select({
+      slug: posts.slug,
+      canonicalUrl: posts.canonicalUrl,
+      isGated: posts.isGated,
+      freeContent: posts.freeContent,
+      gatedContent: posts.gatedContent,
+    })
+    .from(posts)
+    .where(eq(posts.id, input.postId))
+    .limit(1);
+
+  const emailContent = buildNewsletterEmailContent({
+    emailHtml,
+    slug: paywallRow?.slug ?? gate.value.post.slug,
+    canonicalUrl: paywallRow?.canonicalUrl ?? null,
+    isGated: paywallRow?.isGated ?? false,
+    freeContent: paywallRow?.freeContent ?? null,
+    gatedContent: paywallRow?.gatedContent ?? null,
+  });
+  const html = emailContent.html;
+  const text = emailContent.text;
+  const previewText = emailContent.previewText;
 
   const dryRun = Boolean(input.dryRun);
   if (dryRun) {
@@ -298,6 +331,8 @@ export async function sendNewsletterEmail(
     receiptId: claim.receiptId,
     subject,
     html,
+    text,
+    previewText,
     providerTimeoutMs: input.providerTimeoutMs,
     clock,
   });

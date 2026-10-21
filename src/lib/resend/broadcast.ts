@@ -9,6 +9,8 @@ export type NewsletterEmailRecipient = {
 export type BroadcastChunkPayload = {
   subject: string;
   html: string;
+  text?: string;
+  previewText?: string;
   recipients: NewsletterEmailRecipient[];
 };
 
@@ -107,6 +109,8 @@ const liveClient: ResendBroadcastClient = {
         to: [recipient.email],
         subject: payload.subject,
         html: payload.html,
+        ...(payload.text ? { text: payload.text } : {}),
+        ...(payload.previewText ? { previewText: payload.previewText } : {}),
         headers: recipient.headers,
       })),
       {
