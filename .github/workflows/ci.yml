@@ -32,7 +32,13 @@ jobs:
           CI: true
           LOCAL_DATABASE_URL: file:./data/ci-dear-creative.db
         run: |
-          npx playwright install --with-deps chromium
+          for attempt in 1 2 3; do
+            if npx playwright install --with-deps chromium; then
+              break
+            fi
+            echo "Playwright browser install attempt ${attempt} failed; retrying in 15s..."
+            sleep 15
+          done
           npm run test:e2e
       - name: Post slug not-found includes noindex meta
         env:
