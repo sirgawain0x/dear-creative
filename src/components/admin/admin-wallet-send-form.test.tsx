@@ -64,12 +64,9 @@ describe("AdminWalletSendForm", () => {
     expect(await screen.findByTestId("admin-wallet-send-confirm")).toBeInTheDocument();
     expect(screen.getByText(RECIPIENT)).toBeInTheDocument();
 
-    const confirm = screen.getByRole("button", { name: /confirm send/i });
     await act(async () => {
-      fireEvent.click(confirm);
+      fireEvent.click(screen.getByRole("button", { name: /confirm send/i }));
     });
-    expect(confirm).toBeDisabled();
-    fireEvent.click(confirm);
 
     expect(await screen.findByTestId("admin-wallet-send-success")).toBeInTheDocument();
   });

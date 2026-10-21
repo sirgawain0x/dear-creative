@@ -46,6 +46,8 @@ export type AdminWalletSendFormProps = {
   authenticated: boolean;
   smartWalletClient?: SmartWalletSendClient | null;
   previewMode?: boolean;
+  /** Screenshot fixtures: skip open click and land on a step. */
+  fixtureInitialStep?: "form" | "confirm";
 };
 
 function newIdempotencyKey(): string {
@@ -64,18 +66,38 @@ export function AdminWalletSendForm({
   authenticated,
   smartWalletClient,
   previewMode = false,
+  fixtureInitialStep,
 }: AdminWalletSendFormProps) {
   const recipientId = useId();
   const amountId = useId();
   const assetId = useId();
-  const [open, setOpen] = useState(false);
-  const [step, setStep] = useState<"form" | "confirm" | "done">("form");
-  const [recipient, setRecipient] = useState("");
-  const [amount, setAmount] = useState("");
+  const [open, setOpen] = useState(() => Boolean(fixtureInitialStep));
+  const [step, setStep] = useState<"form" | "confirm" | "done">(
+    () => fixtureInitialStep ?? "form",
+  );
+  const [recipient, setRecipient] = useState(() =>
+    fixtureInitialStep === "confirm"
+      ? getAddress("0x2222222222222222222222222222222222222222")
+      : "",
+  );
+  const [amount, setAmount] = useState(() =>
+    fixtureInitialStep === "confirm" ? "10.5" : "",
+  );
   const [asset, setAsset] = useState<AdminWalletSendAsset>("USDC");
   const [localError, setLocalError] = useState<string | null>(null);
   const [localWarning, setLocalWarning] = useState<string | null>(null);
-  const [estimate, setEstimate] = useState<EstimateResponse | null>(null);
+  const [estimate, setEstimate] = useState<EstimateResponse | null>(() =>
+    fixtureInitialStep === "confirm"
+      ? {
+          recipient: getAddress("0x2222222222222222222222222222222222222222"),
+          amount: "10.5",
+          asset: "USDC",
+          warnings: [],
+          chain: { network: "base", chainId: 8453 },
+          gas: { estimatedEth: "0.000021", sponsoredByPaymaster: true },
+        }
+      : null,
+  );
   const [pending, setPending] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
   const idempotencyKeyRef = useRef<string | null>(null);
