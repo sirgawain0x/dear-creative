@@ -1,8 +1,9 @@
 /**
  * @vitest-environment jsdom
  */
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { STUDIO_TOKEN_STORAGE_KEY } from "@/components/providers/app-providers";
 import { AdminPayoutsCard } from "./admin-payouts-card";
 
 const mockUseAuthSession = vi.fn();
@@ -28,7 +29,44 @@ describe("AdminPayoutsCard", () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.restoreAllMocks();
+    window.localStorage.clear();
+  });
+
+  it("never sends studio token to /api/admin/payouts", async () => {
+    window.localStorage.setItem(STUDIO_TOKEN_STORAGE_KEY, "studio-fallback-token");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          payoutWalletAddress: null,
+          payoutSplitAddress: null,
+          treasuryAddress: null,
+        }),
+        { status: 200 },
+      ),
+    );
+
+    render(<AdminPayoutsCard />);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/admin/payouts",
+        expect.objectContaining({
+          headers: { Authorization: "Bearer admin-token" },
+        }),
+      );
+    });
+
+    const payoutsCall = fetchMock.mock.calls.find(
+      (call) => String(call[0]) === "/api/admin/payouts",
+    );
+    expect(payoutsCall?.[1]?.headers).toEqual({
+      Authorization: "Bearer admin-token",
+    });
+    expect(
+      String(payoutsCall?.[1]?.headers?.Authorization),
+    ).not.toContain("studio-fallback-token");
   });
 
   it("renders checksummed addresses with BaseScan links", async () => {

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useAuthSession } from "@/components/providers/app-providers";
-import { adminApiAuthorizationHeaders } from "@/lib/admin/admin-api-auth";
+import { adminPrivyAuthorizationHeaders } from "@/lib/admin/admin-api-auth";
 import type { AdminPayoutsSnapshot } from "@/lib/admin/admin-payouts";
 import { AdminPayoutAddressRow } from "./admin-payout-address-row";
 
@@ -44,13 +44,13 @@ export function AdminPayoutsCard({
       setError(null);
       setData(null);
 
-      const headers = await adminApiAuthorizationHeaders({
+      const headers = await adminPrivyAuthorizationHeaders({
         privyConfigured,
         authenticated,
         getAccessToken,
       });
 
-      if (!isSignedIn || !headers) {
+      if (!authenticated || !headers) {
         if (!cancelled) {
           setLoading(false);
         }
@@ -85,16 +85,9 @@ export function AdminPayoutsCard({
     return () => {
       cancelled = true;
     };
-  }, [
-    ready,
-    isSignedIn,
-    authenticated,
-    getAccessToken,
-    privyConfigured,
-    skipFetch,
-  ]);
+  }, [ready, authenticated, getAccessToken, privyConfigured, skipFetch]);
 
-  if (!skipFetch && !isSignedIn) {
+  if (!skipFetch && !authenticated) {
     return null;
   }
 

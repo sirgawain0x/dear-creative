@@ -7,7 +7,9 @@ import { OracleIngestForm } from "@/components/admin/oracle-ingest-form";
 import { useAuthSession } from "@/components/providers/app-providers";
 import { AdminLinkedInConnect } from "./admin-linkedin-connect";
 
+import type { AdminMeSession } from "./admin-session";
 import { AdminPayoutsSection } from "./admin-payouts-section";
+import { resolveStudioBearerToken } from "@/lib/admin/studio-bearer-token";
 
 export { ADMIN_PAYOUTS_PRIVY_SIGN_IN_NOTE } from "./admin-payouts-section";
 
@@ -45,13 +47,9 @@ export function AdminConsole() {
     privyConfigured,
     privyTimedOut,
     authenticated,
-    hasStudioToken,
   } = useAuthSession();
 
-  const [session, setSession] = useState<{
-    userId: string;
-    isAdmin: boolean;
-  } | null>(null);
+  const [session, setSession] = useState<AdminMeSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [walletEnabled, setWalletEnabled] = useState(false);
@@ -75,7 +73,11 @@ export function AdminConsole() {
     setError(null);
     setIsVerifying(true);
     try {
-      const token = await getAccessToken();
+      const token = await resolveStudioBearerToken({
+        privyConfigured,
+        authenticated,
+        getAccessToken,
+      });
       if (!token) {
         setSession(null);
         setError("No access token available. Please sign in first.");
@@ -89,13 +91,20 @@ export function AdminConsole() {
         setError("Could not verify admin session. Ensure your Privy DID is in PRIVY_ADMIN_USER_IDS.");
         return;
       }
-      setSession(await response.json());
+      setSession((await response.json()) as AdminMeSession);
     } catch {
       setError("Failed to verify session with server.");
     } finally {
       setIsVerifying(false);
     }
-  }, [getAccessToken]);
+  }, [authenticated, getAccessToken, privyConfigured]);
+
+  useEffect(() => {
+    if (!ready || !authenticated) {
+      return;
+    }
+    void refreshSession();
+  }, [ready, authenticated, refreshSession]);
 
   if (!ready) {
     return <p className="text-zinc-500">Loading authentication status…</p>;
@@ -226,7 +235,6 @@ export function AdminConsole() {
         session={session}
         isSignedIn={isSignedIn}
         authenticated={authenticated}
-        hasStudioToken={hasStudioToken}
       />
       {session?.isAdmin ? (
         <AdminLinkedInConnect

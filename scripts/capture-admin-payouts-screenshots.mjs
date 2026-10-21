@@ -7,8 +7,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "@playwright/test";
-const assetDir =
-  process.env.PR_ASSET_DIR ?? "docs/pr-assets/admin-payouts-privy";
+const assetDir = process.env.PR_ASSET_DIR ?? "docs/pr-assets/89";
 const baseUrl = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3000";
 
 /** @param {import('@playwright/test').Page} page */
