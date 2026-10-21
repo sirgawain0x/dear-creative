@@ -20,6 +20,13 @@ describe("isCowritersEnabled", () => {
     expect(isCowritersEnabled()).toBe(true);
   });
 
+  it("treats TRUE and True as off (exact lowercase true only)", () => {
+    vi.stubEnv("COWRITERS_ENABLED", "TRUE");
+    expect(isCowritersEnabled()).toBe(false);
+    vi.stubEnv("COWRITERS_ENABLED", "True");
+    expect(isCowritersEnabled()).toBe(false);
+  });
+
   it("respects test override", () => {
     setCowritersEnabledForTests(true);
     expect(isCowritersEnabled()).toBe(true);

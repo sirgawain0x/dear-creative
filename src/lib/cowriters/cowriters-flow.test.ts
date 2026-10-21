@@ -9,6 +9,7 @@ import {
   postWriters,
   posts,
   writerGroupSplits,
+  writerInvites,
 } from "@/db/schema";
 import { acceptCowriterInvite } from "./accept-invite";
 import {
@@ -124,6 +125,117 @@ describe("co-writer invites and limits", () => {
     expect(memberships.some((m) => m.role === "cowriter" && m.status === "accepted")).toBe(
       true,
     );
+
+    client.close();
+  });
+
+  it("backfills author membership and splits 5000/5000 for a new post plus one co-writer", async () => {
+    const { client, db } = await createMigratedDb();
+    await db.insert(authors).values({
+      id: "author-new",
+      name: "Primary",
+      slug: "primary",
+      payoutAddress: "0x1111111111111111111111111111111111111111",
+    });
+    await db.insert(posts).values({
+      id: "post-new",
+      slug: "post-new",
+      title: "New post",
+      status: "draft",
+      authorId: "author-new",
+    });
+
+    const created = await createCowriterInvite(db, {
+      postId: "post-new",
+      invitedBy: "admin",
+      email: "cowriter@example.com",
+      inviteBaseUrl: "https://news.example.com",
+    });
+    const token = decodeURIComponent(created.inviteUrl.split("token=")[1]!);
+
+    const accepted = await acceptCowriterInvite(db, token, {
+      emails: ["cowriter@example.com"],
+      wallets: [],
+    });
+    expect(accepted.ok).toBe(true);
+
+    const memberships = await listActivePostWriters(db, "post-new");
+    expect(memberships).toHaveLength(2);
+    const authorRow = memberships.find((m) => m.role === "author");
+    const cowriterRow = memberships.find((m) => m.role === "cowriter");
+    expect(authorRow?.shareBps).toBe(5000);
+    expect(cowriterRow?.shareBps).toBe(5000);
+    expect(authorRow?.writerId).toBe("author-new");
+
+    client.close();
+  });
+
+  it("returns already_used on a second accept", async () => {
+    const { client, db } = await createMigratedDb();
+    await db.insert(posts).values({
+      id: "p-dup",
+      slug: "p-dup",
+      title: "Dup",
+      status: "draft",
+    });
+    await db.insert(postWriters).values({
+      id: "author:p-dup",
+      postId: "p-dup",
+      role: "author",
+      shareBps: 10_000,
+      status: "accepted",
+    });
+
+    const created = await createCowriterInvite(db, {
+      postId: "p-dup",
+      invitedBy: "admin",
+      email: "dup@example.com",
+      inviteBaseUrl: "https://news.example.com",
+    });
+    const token = decodeURIComponent(created.inviteUrl.split("token=")[1]!);
+    const identity = { emails: ["dup@example.com"], wallets: [] as string[] };
+
+    expect((await acceptCowriterInvite(db, token, identity)).ok).toBe(true);
+    const second = await acceptCowriterInvite(db, token, identity);
+    expect(second).toEqual({ ok: false, reason: "already_used" });
+
+    client.close();
+  });
+
+  it("returns already_used when the invite is expired", async () => {
+    const { client, db } = await createMigratedDb();
+    await db.insert(posts).values({
+      id: "p-exp",
+      slug: "p-exp",
+      title: "Expired",
+      status: "draft",
+    });
+    await db.insert(postWriters).values({
+      id: "author:p-exp",
+      postId: "p-exp",
+      role: "author",
+      shareBps: 10_000,
+      status: "accepted",
+    });
+
+    const created = await createCowriterInvite(db, {
+      postId: "p-exp",
+      invitedBy: "admin",
+      email: "expired@example.com",
+      inviteBaseUrl: "https://news.example.com",
+    });
+    const token = decodeURIComponent(created.inviteUrl.split("token=")[1]!);
+
+    await db
+      .update(writerInvites)
+      .set({ expiresAt: new Date(Date.now() - 60_000) })
+      .where(eq(writerInvites.id, created.inviteId));
+
+    const result = await acceptCowriterInvite(db, token, {
+      emails: ["expired@example.com"],
+      wallets: [],
+    });
+    expect(result).toEqual({ ok: false, reason: "already_used" });
 
     client.close();
   });

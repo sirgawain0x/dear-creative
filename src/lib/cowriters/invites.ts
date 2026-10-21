@@ -9,6 +9,7 @@ import {
 } from "./invite-token";
 import {
   assertCanAddCowriter,
+  ensureAuthorPostWriterRow,
   findAuthorIdByPayoutAddress,
   listActivePostWriters,
   rebalancePostWriterShares,
@@ -46,6 +47,8 @@ export async function createCowriterInvite(
   if (email && wallet) {
     throw new Error("Provide either email or wallet, not both");
   }
+
+  await ensureAuthorPostWriterRow(db, input.postId);
 
   const active = await listActivePostWriters(db, input.postId);
   assertCanAddCowriter(active);

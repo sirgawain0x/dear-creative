@@ -8,5 +8,5 @@ export function isCowritersEnabled(): boolean {
   if (cowritersEnabledOverride !== undefined) {
     return cowritersEnabledOverride;
   }
-  return process.env.COWRITERS_ENABLED?.trim().toLowerCase() === "true";
+  return process.env.COWRITERS_ENABLED?.trim() === "true";
 }

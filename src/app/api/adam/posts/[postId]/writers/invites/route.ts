@@ -5,6 +5,7 @@ import { requireCowritersEnabled } from "@/lib/cowriters/api-guard";
 import { createCowriterInvite } from "@/lib/cowriters/invites";
 import { getEditorWritersSnapshot } from "@/lib/cowriters/editor-writers";
 import { getAdminPostByIdOrSlug } from "@/lib/posts/manage-posts";
+import { getRequiredPublicSiteUrl } from "@/lib/site/public-origin";
 
 type RouteContext = {
   params: Promise<{ postId: string }>;
@@ -39,7 +40,13 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Post not found" }, { status: 404 });
   }
 
-  const inviteBaseUrl = new URL(request.url).origin;
+  const inviteBaseUrl = getRequiredPublicSiteUrl();
+  if (!inviteBaseUrl) {
+    return NextResponse.json(
+      { error: "NEXT_PUBLIC_SITE_URL is not configured" },
+      { status: 503 },
+    );
+  }
 
   try {
     const created = await createCowriterInvite(getDb(), {

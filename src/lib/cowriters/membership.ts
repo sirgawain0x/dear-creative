@@ -13,6 +13,34 @@ import { formatWalletLabel, normalizeWalletAddress } from "./wallet";
 
 export type ActivePostWriterRow = typeof postWriters.$inferSelect;
 
+/** Backfill author membership for posts created after migration 0021. */
+export async function ensureAuthorPostWriterRow(
+  db: DearCreativeDb,
+  postId: string,
+): Promise<void> {
+  const [postRow] = await db
+    .select({ authorId: posts.authorId })
+    .from(posts)
+    .where(eq(posts.id, postId))
+    .limit(1);
+  if (!postRow) {
+    throw new Error("Post not found");
+  }
+
+  await db
+    .insert(postWriters)
+    .values({
+      id: `author:${postId}`,
+      postId,
+      writerId: postRow.authorId,
+      inviteId: null,
+      role: "author",
+      shareBps: 10_000,
+      status: "accepted",
+    })
+    .onConflictDoNothing();
+}
+
 export async function listActivePostWriters(
   db: DearCreativeDb,
   postId: string,

@@ -1,7 +1,7 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, gte } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
 import { postWriters, writerInvites } from "@/db/schema";
-import { findPendingInviteByToken } from "./invites";
+import { hashInviteToken } from "./invite-token";
 import {
   ensureAuthorForPayoutAddress,
   rebalancePostWriterShares,
@@ -52,7 +52,13 @@ export async function acceptCowriterInvite(
   token: string,
   identity: CowriterAcceptIdentity,
 ): Promise<AcceptCowriterInviteResult> {
-  const invite = await findPendingInviteByToken(db, token);
+  const tokenHash = hashInviteToken(token);
+  const [invite] = await db
+    .select()
+    .from(writerInvites)
+    .where(eq(writerInvites.tokenHash, tokenHash))
+    .limit(1);
+
   if (!invite) {
     return { ok: false, reason: "invalid_token" };
   }
@@ -72,8 +78,8 @@ export async function acceptCowriterInvite(
     )
     .limit(1);
 
-  if (!membership || membership.status === "accepted") {
-    return { ok: false, reason: "already_used" };
+  if (!membership) {
+    return { ok: false, reason: "invalid_token" };
   }
 
   let writerId = membership.writerId;
@@ -87,23 +93,38 @@ export async function acceptCowriterInvite(
     }
   }
 
-  await db
-    .update(writerInvites)
-    .set({
-      status: "accepted",
-      acceptedWriterId: writerId,
-    })
-    .where(eq(writerInvites.id, invite.id));
+  const now = new Date();
 
-  await db
-    .update(postWriters)
-    .set({
-      status: "accepted",
-      writerId,
-    })
-    .where(eq(postWriters.id, membership.id));
+  return db.transaction(async (tx) => {
+    const claimed = await tx
+      .update(writerInvites)
+      .set({
+        status: "accepted",
+        acceptedWriterId: writerId,
+      })
+      .where(
+        and(
+          eq(writerInvites.id, invite.id),
+          eq(writerInvites.status, "pending"),
+          gte(writerInvites.expiresAt, now),
+        ),
+      )
+      .returning({ id: writerInvites.id });
 
-  await rebalancePostWriterShares(db, invite.postId);
+    if (claimed.length === 0) {
+      return { ok: false as const, reason: "already_used" as const };
+    }
 
-  return { ok: true, postId: invite.postId, writerId };
+    await tx
+      .update(postWriters)
+      .set({
+        status: "accepted",
+        writerId,
+      })
+      .where(eq(postWriters.id, membership.id));
+
+    await rebalancePostWriterShares(tx, invite.postId);
+
+    return { ok: true as const, postId: invite.postId, writerId };
+  });
 }
