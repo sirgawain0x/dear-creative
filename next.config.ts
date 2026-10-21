@@ -7,11 +7,6 @@ const nextConfig: NextConfig = {
   pageExtensions: ["js", "jsx", "md", "mdx", "ts", "tsx"],
   cacheComponents: true,
   partialPrefetching: true,
-  async rewrites() {
-    return {
-      beforeFiles: [{ source: "/posts", destination: "/post-archive" }],
-    };
-  },
   images: {
     remotePatterns: optimizedImageRemotePatterns,
   },

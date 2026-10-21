@@ -1,6 +1,5 @@
 import Link from "next/link";
 import Script from "next/script";
-import { connection } from "next/server";
 import { Suspense } from "react";
 import type { Address } from "viem";
 import { DispatchAudioPlayer } from "@/components/audio/dispatch-audio-player";
@@ -23,11 +22,11 @@ import {
   shouldRenderPostTipCard,
 } from "@/lib/posts/post-tip-payee";
 import {
-  gatePublishedPostMetadata,
-  gatePublishedPostPage,
+  abortPostReaderMetadataAtBuild,
+  requirePublishedPostBySlug,
+  resolveGatedReaderPostView,
 } from "@/lib/posts/gate-published-post-page";
 import { getDb } from "@/db/client";
-import { gatePublishedPostReaderMetadataShell } from "@/lib/posts/post-reader-metadata-gate";
 import {
   classifyArticleTopic,
   getTopicLabel,
@@ -193,15 +192,14 @@ function PostArticle({
 }
 
 export async function generateMetadata({ params }: PageProps) {
-  gatePublishedPostReaderMetadataShell();
+  abortPostReaderMetadataAtBuild();
   const { slug } = await params;
-  const post = await gatePublishedPostMetadata(slug);
+  const post = await requirePublishedPostBySlug(slug);
   return buildPostPageMetadata(post);
 }
 
 async function PostPageBody({ slug }: { slug: string }) {
-  const view = await gatePublishedPostPage(slug);
-  await connection();
+  const view = await resolveGatedReaderPostView(slug);
   const payToAddress = await resolvePostTipPayToAddress(getDb(), slug);
   return (
     <PostArticle
@@ -214,7 +212,7 @@ async function PostPageBody({ slug }: { slug: string }) {
 
 export default async function PostPage(props: PageProps) {
   const { slug } = await props.params;
-  await gatePublishedPostMetadata(slug);
+  await requirePublishedPostBySlug(slug);
 
   return (
     <Suspense

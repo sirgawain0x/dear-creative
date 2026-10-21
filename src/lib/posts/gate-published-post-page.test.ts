@@ -6,6 +6,14 @@ const notFoundMock = vi.hoisted(() =>
   }),
 );
 
+vi.mock("react", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react")>();
+  return {
+    ...actual,
+    cache: <T,>(fn: T) => fn,
+  };
+});
+
 vi.mock("next/navigation", () => ({
   notFound: notFoundMock,
 }));
@@ -28,23 +36,35 @@ vi.mock("@/lib/paywall/reader-post", () => ({
 
 import { getDb } from "@/db/client";
 import { getPublishedPostBySlug } from "@/lib/posts/published-posts";
-import { resolveReaderPostView } from "@/lib/paywall/reader-post";
-import { gatePublishedPostPage } from "./gate-published-post-page";
+import {
+  abortPostReaderMetadataAtBuild,
+  requirePublishedPostBySlug,
+} from "./gate-published-post-page";
 
-describe("gatePublishedPostPage", () => {
+describe("abortPostReaderMetadataAtBuild", () => {
+  afterEach(() => {
+    notFoundMock.mockClear();
+    delete process.env.NEXT_PHASE;
+  });
+
+  it("terminates during production build", () => {
+    process.env.NEXT_PHASE = "phase-production-build";
+    expect(() => abortPostReaderMetadataAtBuild()).toThrow("NOT_FOUND");
+  });
+});
+
+describe("requirePublishedPostBySlug", () => {
   afterEach(() => {
     notFoundMock.mockClear();
     vi.mocked(getPublishedPostBySlug).mockReset();
-    vi.mocked(resolveReaderPostView).mockReset();
   });
 
   it("terminates with notFound when the slug is missing or unpublished", async () => {
     vi.mocked(getDb).mockReturnValue({} as ReturnType<typeof getDb>);
     vi.mocked(getPublishedPostBySlug).mockResolvedValue(null);
-    await expect(gatePublishedPostPage("bogus-slug")).rejects.toThrow(
+    await expect(requirePublishedPostBySlug("bogus-slug")).rejects.toThrow(
       "NOT_FOUND",
     );
     expect(notFoundMock).toHaveBeenCalledTimes(1);
-    expect(resolveReaderPostView).not.toHaveBeenCalled();
   });
 });

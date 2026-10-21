@@ -26,6 +26,7 @@ describeHttp("page routes return HTTP 404 before streaming (production server)",
       stdio: "pipe",
       env: {
         ...process.env,
+        NEXT_PUBLIC_SITE_URL: baseUrl,
         LOCAL_DATABASE_URL:
           process.env.LOCAL_DATABASE_URL ?? "file:./data/ci-dear-creative.db",
       },
@@ -79,6 +80,7 @@ describeHttp("page routes return HTTP 404 before streaming (production server)",
       env: {
         ...process.env,
         AUTHOR_PROFILES_ENABLED: "true",
+        NEXT_PUBLIC_SITE_URL: baseUrl,
         LOCAL_DATABASE_URL:
           process.env.LOCAL_DATABASE_URL ?? "file:./data/ci-dear-creative.db",
       },
