@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
+import { ActiveSubscriberLine } from "@/components/home/active-subscriber-line";
 import { HomeSpotlight } from "@/components/home/home-spotlight";
 
 export default function Home() {
@@ -23,6 +24,9 @@ export default function Home() {
           <p className="mt-2 text-base text-zinc-600 dark:text-zinc-400">
             The publication for autonomous creators, onchain builders, and independent founders.
           </p>
+          <Suspense fallback={null}>
+            <ActiveSubscriberLine />
+          </Suspense>
         </div>
       </div>
 
