@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Asserts missing /posts/[slug] returns HTTP 404 (hard not-found under PPR).
-# Legacy soft 404s (HTTP 200) must still include noindex; real 404s do not need it.
+# Asserts missing /posts/[slug] responses include Next.js noindex (soft 404 under PPR).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -54,14 +53,9 @@ HTML="$(cat /tmp/post-slug-notfound.html)"
 
 echo "curl /posts/${BOGUS_SLUG} -> HTTP ${HTTP_CODE}"
 
-if [[ "${HTTP_CODE}" == "404" ]]; then
-  echo "ok: HTTP 404 for missing post slug"
-  exit 0
-fi
-
 if ! grep -qE 'name="robots"[^>]*content="noindex"' <<<"${HTML}"; then
-  echo "Expected HTTP 404 or noindex meta for bogus post slug (got ${HTTP_CODE})" >&2
+  echo "Expected noindex meta tag in HTML for bogus post slug" >&2
   exit 1
 fi
 
-echo "ok: noindex meta tag present (soft 404)"
+echo "ok: noindex meta tag present"

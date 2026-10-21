@@ -27,6 +27,7 @@ import {
   gatePublishedPostPage,
 } from "@/lib/posts/gate-published-post-page";
 import { getDb } from "@/db/client";
+import { gatePublishedPostReaderMetadataShell } from "@/lib/posts/post-reader-metadata-gate";
 import {
   classifyArticleTopic,
   getTopicLabel,
@@ -192,6 +193,7 @@ function PostArticle({
 }
 
 export async function generateMetadata({ params }: PageProps) {
+  gatePublishedPostReaderMetadataShell();
   const { slug } = await params;
   const post = await gatePublishedPostMetadata(slug);
   return buildPostPageMetadata(post);

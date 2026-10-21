@@ -29,7 +29,10 @@ export async function gatePublishedPostPage(
   return view;
 }
 
-/** Metadata / early exits: no connection() before notFound(). */
+/**
+ * Metadata and PPR status codes: call from generateMetadata (and the page shell
+ * before Suspense) so notFound() runs before the response streams.
+ */
 export async function gatePublishedPostMetadata(slug: string) {
   const published = await getPublishedPostBySlug(getDb(), slug);
   if (!published) {
