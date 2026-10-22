@@ -5,6 +5,8 @@ export type CleanupCounts = {
   badgeRemoved: number;
   subscriberBlocksRemoved: number;
   utmParamsStripped: number;
+  utmParamsStrippedFromBeehiivSource: number;
+  beehiivSubscriberLinksRemoved: number;
   linksRewritten: number;
   linksDropped: number;
 };
@@ -20,9 +22,92 @@ function emptyCounts(): CleanupCounts {
     badgeRemoved: 0,
     subscriberBlocksRemoved: 0,
     utmParamsStripped: 0,
+    utmParamsStrippedFromBeehiivSource: 0,
+    beehiivSubscriberLinksRemoved: 0,
     linksRewritten: 0,
     linksDropped: 0,
   };
+}
+
+const SUBSCRIBER_ID_TOKEN = "{{subscriber_id}}";
+const SUBSCRIBER_ID_ENCODED = encodeURIComponent(SUBSCRIBER_ID_TOKEN).toLowerCase();
+
+const BEEHIIV_NAV_LINK_LABELS = new Set([
+  "view online",
+  "view in browser",
+  "read online",
+  "manage preferences",
+  "email preferences",
+  "update preferences",
+  "subscriber preferences",
+  "unsubscribe",
+  "preferences",
+  "here",
+]);
+
+function isBeehiivHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return host === "beehiiv.com" || host.endsWith(".beehiiv.com");
+}
+
+function hrefContainsSubscriberId(href: string): boolean {
+  if (href.includes(SUBSCRIBER_ID_TOKEN)) {
+    return true;
+  }
+  try {
+    return decodeURIComponent(href).includes(SUBSCRIBER_ID_TOKEN);
+  } catch {
+    return href.toLowerCase().includes(SUBSCRIBER_ID_ENCODED);
+  }
+}
+
+function visibleAnchorText(innerHtml: string): string {
+  return innerHtml
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isBeehiivNavLinkLabel(innerHtml: string): boolean {
+  const text = visibleAnchorText(innerHtml).toLowerCase();
+  if (text.length === 0) {
+    return true;
+  }
+  return BEEHIIV_NAV_LINK_LABELS.has(text);
+}
+
+function utmSourceValuesContainBeehiiv(parsed: URL): boolean {
+  for (const [key, value] of parsed.searchParams.entries()) {
+    if (key.toLowerCase() === "utm_source" && value.toLowerCase().includes("beehiiv")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function stripUtmParamsWhenSourceContainsBeehiiv(rawUrl: string): {
+  url: string;
+  stripped: number;
+} {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return { url: rawUrl, stripped: 0 };
+  }
+  if (!utmSourceValuesContainBeehiiv(parsed)) {
+    return { url: rawUrl, stripped: 0 };
+  }
+
+  let stripped = 0;
+  for (const key of [...parsed.searchParams.keys()]) {
+    if (key.toLowerCase().startsWith("utm_")) {
+      parsed.searchParams.delete(key);
+      stripped += 1;
+    }
+  }
+  return { url: parsed.toString(), stripped };
 }
 
 function isDearcrtvBeehiivUrl(url: URL): boolean {
@@ -153,9 +238,68 @@ function stripUtmInHtml(html: string): { html: string; stripped: number } {
   return { html: result, stripped };
 }
 
+function stripUtmBeehiivSourceInHtml(html: string): { html: string; stripped: number } {
+  let stripped = 0;
+  const result = html.replace(
+    /(\b(?:href|src)=)(["'])(https?:\/\/[^"']+)\2/gi,
+    (full, prefix, quote, url) => {
+      const cleaned = stripUtmParamsWhenSourceContainsBeehiiv(url);
+      stripped += cleaned.stripped;
+      if (cleaned.stripped === 0) {
+        return full;
+      }
+      return `${prefix}${quote}${cleaned.url}${quote}`;
+    },
+  );
+  return { html: result, stripped };
+}
+
+function removeBeehiivSubscriberIdLinks(html: string): { html: string; removed: number } {
+  let removed = 0;
+  let result = html.replace(
+    /<a\b([^>]*?)href=(["'])([^"']+)\2([^>]*)>([\s\S]*?)<\/a>/gi,
+    (full, before, quote, href, after, inner) => {
+      let parsed: URL;
+      try {
+        parsed = new URL(href);
+      } catch {
+        return full;
+      }
+      if (!isBeehiivHost(parsed.hostname) || !hrefContainsSubscriberId(href)) {
+        return full;
+      }
+      removed += 1;
+      if (isBeehiivNavLinkLabel(inner)) {
+        return "";
+      }
+      return inner;
+    },
+  );
+
+  result = removeEmptyInlineWrappers(result);
+  return { html: result, removed };
+}
+
+function removeEmptyInlineWrappers(html: string): string {
+  let result = html;
+  const emptyTag = /<(p|td|div|span)(\s[^>]*)?>\s*(?:&nbsp;|\u00a0|\s)*<\/\1>/gi;
+  let prev = "";
+  while (prev !== result) {
+    prev = result;
+    result = result.replace(emptyTag, "");
+  }
+  return result;
+}
+
+export type CleanBeehiivPostHtmlOptions = {
+  /** Skip pass-2 rules (prod already ran the initial cleanup). */
+  skipExtendedRules?: boolean;
+};
+
 export function cleanBeehiivPostHtml(
   html: string,
   slugMap: ReadonlyMap<string, string>,
+  options?: CleanBeehiivPostHtmlOptions,
 ): CleanupResult {
   const counts = emptyCounts();
   let result = html;
@@ -171,6 +315,16 @@ export function cleanBeehiivPostHtml(
   const utm = stripUtmInHtml(result);
   result = utm.html;
   counts.utmParamsStripped = utm.stripped;
+
+  if (!options?.skipExtendedRules) {
+    const beehiivSubscriberLinks = removeBeehiivSubscriberIdLinks(result);
+    result = beehiivSubscriberLinks.html;
+    counts.beehiivSubscriberLinksRemoved = beehiivSubscriberLinks.removed;
+
+    const utmBeehiivSource = stripUtmBeehiivSourceInHtml(result);
+    result = utmBeehiivSource.html;
+    counts.utmParamsStrippedFromBeehiivSource = utmBeehiivSource.stripped;
+  }
 
   const links = rewriteDearcrtvPostLinks(result, slugMap);
   result = links.html;
