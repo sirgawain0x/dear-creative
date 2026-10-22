@@ -16,6 +16,7 @@
     "seed:home-spotlight:no-teaser": "tsx scripts/seed-home-spotlight-fixtures.ts --no-teaser-shot",
     "import:paragraph": "tsx scripts/import-paragraph-subscribers.ts",
     "import:news-archive": "tsx scripts/import-news-archive.ts",
+    "import:beehiiv": "tsx scripts/import-beehiiv.ts",
     "import:beehiiv:cleanup": "tsx scripts/cleanup-beehiiv-bodies.ts"
   },
   "dependencies": {
