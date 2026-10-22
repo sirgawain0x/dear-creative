@@ -148,6 +148,13 @@
       "when": 1792602394384,
       "tag": "0021_cowriters",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1792605000000,
+      "tag": "0022_beehiiv_import",
+      "breakpoints": true
     }
   ]
 }

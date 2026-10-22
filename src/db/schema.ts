@@ -12,7 +12,7 @@ export const postStatusEnum = ["draft", "published"] as const;
 export type PostStatus = (typeof postStatusEnum)[number];
 
 /** Imported Paragraph archive rows; null means Adam newsletter content. */
-export const postSourceEnum = ["paragraph"] as const;
+export const postSourceEnum = ["paragraph", "beehiiv"] as const;
 export type PostSource = (typeof postSourceEnum)[number];
 
 export const subscriberStatusEnum = [
@@ -24,6 +24,7 @@ export const subscriberStatusEnum = [
 
 export const subscriberSourceEnum = [
   "paragraph_import",
+  "beehiiv_import",
   "signup",
   "resend_webhook",
 ] as const;

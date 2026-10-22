@@ -20,8 +20,8 @@ describe("schema enums", () => {
     expect(postStatusEnum).toContain("draft");
   });
 
-  it("includes paragraph source for archive imports", () => {
-    expect(postSourceEnum).toEqual(["paragraph"]);
+  it("includes paragraph and beehiiv post sources", () => {
+    expect(postSourceEnum).toEqual(["paragraph", "beehiiv"]);
   });
 
   it("includes paywall pay methods from spec v2", () => {
