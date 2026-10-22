@@ -1,5 +1,9 @@
 const DEARCRTV_HOST = "dearcrtv.beehiiv.com";
 const BEEHIIV_POST_PATH = /\/p\/([^/?#]+)/i;
+const NEWS_SITE_ORIGIN = "https://news.creativeplatform.xyz";
+const CLEANUP_VOID_MARKER = "<!--beehiiv-cleanup-void-->";
+const OMNivery_HONEYPOT_TOKEN = "{{omnivery_honeypot_hash}}";
+const OMNivery_HONEYPOT_ENCODED = encodeURIComponent(OMNivery_HONEYPOT_TOKEN).toLowerCase();
 
 export type CleanupCounts = {
   badgeRemoved: number;
@@ -7,6 +11,10 @@ export type CleanupCounts = {
   utmParamsStripped: number;
   utmParamsStrippedFromBeehiivSource: number;
   beehiivSubscriberLinksRemoved: number;
+  shareUrlsRewritten: number;
+  omniveryHoneypotLinksRemoved: number;
+  authorLinksUnwrapped: number;
+  danielbaarnsUtmParamsStripped: number;
   linksRewritten: number;
   linksDropped: number;
 };
@@ -24,6 +32,10 @@ function emptyCounts(): CleanupCounts {
     utmParamsStripped: 0,
     utmParamsStrippedFromBeehiivSource: 0,
     beehiivSubscriberLinksRemoved: 0,
+    shareUrlsRewritten: 0,
+    omniveryHoneypotLinksRemoved: 0,
+    authorLinksUnwrapped: 0,
+    danielbaarnsUtmParamsStripped: 0,
     linksRewritten: 0,
     linksDropped: 0,
   };
@@ -42,7 +54,6 @@ const BEEHIIV_NAV_LINK_LABELS = new Set([
   "subscriber preferences",
   "unsubscribe",
   "preferences",
-  "here",
 ]);
 
 function isBeehiivHost(hostname: string): boolean {
@@ -254,6 +265,239 @@ function stripUtmBeehiivSourceInHtml(html: string): { html: string; stripped: nu
   return { html: result, stripped };
 }
 
+function isDanielbaarnsSubscribeUrl(hostname: string, pathname: string): boolean {
+  return (
+    hostname.toLowerCase() === "danielbaarns.beehiiv.com" &&
+    pathname.toLowerCase().includes("/subscribe")
+  );
+}
+
+function buildNewsPostUrl(beehiivSlug: string, slugMap: ReadonlyMap<string, string>): string | null {
+  const decoded = decodeURIComponent(beehiivSlug);
+  const ourSlug = slugMap.get(decoded) ?? slugMap.get(beehiivSlug);
+  if (!ourSlug) {
+    return null;
+  }
+  return `${NEWS_SITE_ORIGIN}/posts/${ourSlug}`;
+}
+
+function mapDearcrtvPostTargetToNews(rawTarget: string, slugMap: ReadonlyMap<string, string>): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawTarget);
+  } catch {
+    return null;
+  }
+  if (!isDearcrtvBeehiivUrl(parsed)) {
+    return null;
+  }
+  const match = BEEHIIV_POST_PATH.exec(parsed.pathname);
+  if (!match?.[1]) {
+    return null;
+  }
+  return buildNewsPostUrl(match[1], slugMap);
+}
+
+function isSocialShareHref(href: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(href);
+  } catch {
+    return false;
+  }
+  const host = parsed.hostname.toLowerCase();
+  if (host.includes("facebook.com") && parsed.pathname.includes("/sharer")) {
+    return true;
+  }
+  if ((host === "twitter.com" || host === "x.com") && parsed.pathname.includes("/intent/tweet")) {
+    return true;
+  }
+  if (host.includes("threads.net") && parsed.pathname.includes("/intent/post")) {
+    return true;
+  }
+  if (host.includes("linkedin.com") && parsed.pathname.includes("/share")) {
+    return true;
+  }
+  return false;
+}
+
+export function rewriteSocialShareHref(
+  href: string,
+  slugMap: ReadonlyMap<string, string>,
+): { href: string; rewritten: number } {
+  if (!isSocialShareHref(href)) {
+    return { href, rewritten: 0 };
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(href);
+  } catch {
+    return { href, rewritten: 0 };
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  if (host.includes("threads.net")) {
+    const text = parsed.searchParams.get("text");
+    if (!text) {
+      return { href, rewritten: 0 };
+    }
+    const { text: nextText, count } = replaceDearcrtvPostUrlsInShareText(text, slugMap);
+    if (count === 0) {
+      return { href, rewritten: 0 };
+    }
+    parsed.searchParams.set("text", nextText);
+    return { href: parsed.toString(), rewritten: count };
+  }
+
+  const paramName = host.includes("facebook.com") ? "u" : "url";
+  const target = parsed.searchParams.get(paramName);
+  if (!target) {
+    return { href, rewritten: 0 };
+  }
+  const newsUrl = mapDearcrtvPostTargetToNews(target, slugMap);
+  if (!newsUrl) {
+    return { href, rewritten: 0 };
+  }
+  parsed.searchParams.set(paramName, newsUrl);
+  return { href: parsed.toString(), rewritten: 1 };
+}
+
+function replaceDearcrtvPostUrlsInShareText(
+  text: string,
+  slugMap: ReadonlyMap<string, string>,
+): { text: string; count: number } {
+  let count = 0;
+  let result = text;
+
+  result = result.replace(
+    /https:\/\/dearcrtv\.beehiiv\.com\/p\/([^/?#\s&+]+)/gi,
+    (full, slug: string) => {
+      const news = buildNewsPostUrl(slug, slugMap);
+      if (!news) {
+        return full;
+      }
+      count += 1;
+      return news;
+    },
+  );
+
+  result = result.replace(
+    /https%3A%2F%2Fdearcrtv\.beehiiv\.com%2Fp%2F([^/?#\s&+%]+)/gi,
+    (full, slug: string) => {
+      const news = buildNewsPostUrl(decodeURIComponent(slug.replace(/\+/g, "%20")), slugMap);
+      if (!news) {
+        return full;
+      }
+      count += 1;
+      return encodeURIComponent(news);
+    },
+  );
+
+  return { text: result, count };
+}
+
+function rewriteShareButtonUrlsInHtml(
+  html: string,
+  slugMap: ReadonlyMap<string, string>,
+): { html: string; rewritten: number } {
+  let rewritten = 0;
+  const result = html.replace(
+    /(\bhref=)(["'])([^"']+)\2/gi,
+    (full, prefix, quote, href) => {
+      const next = rewriteSocialShareHref(href, slugMap);
+      rewritten += next.rewritten;
+      if (next.rewritten === 0) {
+        return full;
+      }
+      return `${prefix}${quote}${next.href}${quote}`;
+    },
+  );
+  return { html: result, rewritten };
+}
+
+function hrefContainsOmniveryHoneypot(href: string): boolean {
+  if (href.includes(OMNivery_HONEYPOT_TOKEN)) {
+    return true;
+  }
+  try {
+    return decodeURIComponent(href).includes(OMNivery_HONEYPOT_TOKEN);
+  } catch {
+    return href.toLowerCase().includes(OMNivery_HONEYPOT_ENCODED);
+  }
+}
+
+function removeOmniveryHoneypotLinks(html: string): { html: string; removed: number } {
+  let removed = 0;
+  const result = html.replace(
+    /<a\b([^>]*?)href=(["'])([^"']+)\2([^>]*)>([\s\S]*?)<\/a>/gi,
+    (full, before, quote, href, after, inner) => {
+      let parsed: URL;
+      try {
+        parsed = new URL(href);
+      } catch {
+        return full;
+      }
+      if (
+        parsed.hostname.toLowerCase() !== "email.beehiivstatus.com" ||
+        !hrefContainsOmniveryHoneypot(href)
+      ) {
+        return full;
+      }
+      removed += 1;
+      if (visibleAnchorText(inner).length === 0) {
+        return CLEANUP_VOID_MARKER;
+      }
+      return inner;
+    },
+  );
+  return { html: result, removed };
+}
+
+function unwrapDearcrtvAuthorLinks(html: string): { html: string; unwrapped: number } {
+  let unwrapped = 0;
+  const result = html.replace(
+    /<a\b([^>]*?)href=(["'])(https?:\/\/dearcrtv\.beehiiv\.com\/authors\/[^"']+)\2([^>]*)>([\s\S]*?)<\/a>/gi,
+    (full, before, quote, href, after, inner) => {
+      unwrapped += 1;
+      return inner;
+    },
+  );
+  return { html: result, unwrapped };
+}
+
+export function stripAllUtmParams(rawUrl: string): { url: string; stripped: number } {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return { url: rawUrl, stripped: 0 };
+  }
+  let stripped = 0;
+  for (const key of [...parsed.searchParams.keys()]) {
+    if (key.toLowerCase().startsWith("utm_")) {
+      parsed.searchParams.delete(key);
+      stripped += 1;
+    }
+  }
+  return { url: parsed.toString(), stripped };
+}
+
+function stripDanielbaarnsSubscribeUtmInHtml(html: string): { html: string; stripped: number } {
+  let stripped = 0;
+  const result = html.replace(
+    /(\bhref=)(["'])(https?:\/\/danielbaarns\.beehiiv\.com\/subscribe[^"']*)\2/gi,
+    (full, prefix, quote, url) => {
+      const cleaned = stripAllUtmParams(url);
+      stripped += cleaned.stripped;
+      if (cleaned.stripped === 0) {
+        return full;
+      }
+      return `${prefix}${quote}${cleaned.url}${quote}`;
+    },
+  );
+  return { html: result, stripped };
+}
+
 function removeBeehiivSubscriberIdLinks(html: string): { html: string; removed: number } {
   let removed = 0;
   let result = html.replace(
@@ -265,35 +509,44 @@ function removeBeehiivSubscriberIdLinks(html: string): { html: string; removed: 
       } catch {
         return full;
       }
+      if (isDanielbaarnsSubscribeUrl(parsed.hostname, parsed.pathname)) {
+        return full;
+      }
       if (!isBeehiivHost(parsed.hostname) || !hrefContainsSubscriberId(href)) {
         return full;
       }
       removed += 1;
       if (isBeehiivNavLinkLabel(inner)) {
-        return "";
+        return CLEANUP_VOID_MARKER;
       }
       return inner;
     },
   );
 
-  result = removeEmptyInlineWrappers(result);
+  result = removeWrappersAroundVoidMarker(result);
   return { html: result, removed };
 }
 
-function removeEmptyInlineWrappers(html: string): string {
+function removeWrappersAroundVoidMarker(html: string): string {
   let result = html;
-  const emptyTag = /<(p|td|div|span)(\s[^>]*)?>\s*(?:&nbsp;|\u00a0|\s)*<\/\1>/gi;
+  const marker = CLEANUP_VOID_MARKER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const wrapped = new RegExp(
+    `<(?:p|td|div|span)(\\s[^>]*)?>\\s*(?:&nbsp;|\\u00a0|\\s)*${marker}(?:\\s*(?:&nbsp;|\\u00a0|\\s)*)?<\\/(?:p|td|div|span)>`,
+    "gi",
+  );
   let prev = "";
   while (prev !== result) {
     prev = result;
-    result = result.replace(emptyTag, "");
+    result = result.replace(wrapped, "");
   }
-  return result;
+  return result.replaceAll(CLEANUP_VOID_MARKER, "");
 }
 
 export type CleanBeehiivPostHtmlOptions = {
   /** Skip pass-2 rules (prod already ran the initial cleanup). */
   skipExtendedRules?: boolean;
+  /** Skip pass-3 rules (prod already ran pass 1 and 2). */
+  skipPass3Rules?: boolean;
 };
 
 export function cleanBeehiivPostHtml(
@@ -330,6 +583,25 @@ export function cleanBeehiivPostHtml(
   result = links.html;
   counts.linksRewritten = links.rewritten;
   counts.linksDropped = links.dropped;
+
+  if (!options?.skipPass3Rules) {
+    const share = rewriteShareButtonUrlsInHtml(result, slugMap);
+    result = share.html;
+    counts.shareUrlsRewritten = share.rewritten;
+
+    const honeypot = removeOmniveryHoneypotLinks(result);
+    result = honeypot.html;
+    counts.omniveryHoneypotLinksRemoved = honeypot.removed;
+    result = removeWrappersAroundVoidMarker(result);
+
+    const authors = unwrapDearcrtvAuthorLinks(result);
+    result = authors.html;
+    counts.authorLinksUnwrapped = authors.unwrapped;
+
+    const danielbaarns = stripDanielbaarnsSubscribeUtmInHtml(result);
+    result = danielbaarns.html;
+    counts.danielbaarnsUtmParamsStripped = danielbaarns.stripped;
+  }
 
   return {
     html: result,
