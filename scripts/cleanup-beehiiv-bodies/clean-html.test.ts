@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   cleanBeehiivPostHtml,
   rewriteSocialShareHref,
-  stripAllUtmParams,
   stripUtmParamsFromDearcrtvUrl,
   stripUtmParamsWhenSourceContainsBeehiiv,
 } from "./clean-html";
