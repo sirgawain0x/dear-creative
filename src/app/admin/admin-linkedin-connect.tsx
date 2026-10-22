@@ -3,9 +3,9 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
-  LINKEDIN_CALLBACK_SUCCESS_MESSAGE,
-  linkedInCallbackErrorMessage,
-} from "@/lib/linkedin/callback-banner-messages";
+  readLinkedInCallbackBanner,
+  type LinkedInCallbackBanner,
+} from "@/lib/linkedin/read-linkedin-callback-banner";
 import { stripLinkedInCallbackSearchParams } from "@/lib/linkedin/strip-linkedin-callback-search-params";
 
 type AdminLinkedInConnectProps = {
@@ -13,19 +13,14 @@ type AdminLinkedInConnectProps = {
   isSignedIn: boolean;
 };
 
-type CallbackBanner =
-  | { kind: "success"; message: string }
-  | { kind: "error"; message: string };
-
 function AdminLinkedInConnectInner({
   isAdmin,
   isSignedIn,
 }: AdminLinkedInConnectProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [callbackBanner, setCallbackBanner] = useState<CallbackBanner | null>(
-    null,
-  );
+  const [callbackBanner, setCallbackBanner] =
+    useState<LinkedInCallbackBanner | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const handledCallbackKeyRef = useRef<string | null>(null);
@@ -42,16 +37,11 @@ function AdminLinkedInConnectInner({
     }
     handledCallbackKeyRef.current = callbackKey;
 
-    if (linkedin === "connected") {
-      setCallbackBanner({
-        kind: "success",
-        message: LINKEDIN_CALLBACK_SUCCESS_MESSAGE,
-      });
-    } else if (linkedin === "error") {
-      setCallbackBanner({
-        kind: "error",
-        message: linkedInCallbackErrorMessage(searchParams.get("reason")),
-      });
+    const banner = readLinkedInCallbackBanner(searchParams);
+    if (banner) {
+      // Mirror URL params into state, then strip them from the address bar.
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- banner must survive router.replace clearing searchParams
+      setCallbackBanner(banner);
     }
 
     const cleanPath = stripLinkedInCallbackSearchParams(
