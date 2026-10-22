@@ -1,17 +1,23 @@
 /**
  * @vitest-environment jsdom
  */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdminLinkedInConnect } from "./admin-linkedin-connect";
 
 describe("AdminLinkedInConnect", () => {
   afterEach(() => {
+    cleanup();
     vi.unstubAllGlobals();
-    vi.restoreAllMocks();
   });
 
-  it("starts OAuth by fetching /api/admin/linkedin/auth with Bearer token", async () => {
+  it("starts OAuth with same-origin cookie credentials (no bearer header)", async () => {
     const assign = vi.fn();
     Object.defineProperty(window, "location", {
       configurable: true,
@@ -20,23 +26,20 @@ describe("AdminLinkedInConnect", () => {
 
     const fetchMock = vi.fn(async () => ({
       ok: true,
+      status: 200,
       json: async () => ({
         url: "https://www.linkedin.com/oauth/v2/authorization?state=test",
       }),
     }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const getAccessToken = vi.fn(async () => "privy-admin-token");
-
-    render(
-      <AdminLinkedInConnect isAdmin={true} getAccessToken={getAccessToken} />,
-    );
+    render(<AdminLinkedInConnect isAdmin={true} isSignedIn={true} />);
 
     fireEvent.click(screen.getByRole("button", { name: /connect linkedin/i }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/admin/linkedin/auth", {
-        headers: { Authorization: "Bearer privy-admin-token" },
+        credentials: "include",
       });
     });
     expect(assign).toHaveBeenCalledWith(
@@ -44,12 +47,17 @@ describe("AdminLinkedInConnect", () => {
     );
   });
 
+  it("prompts sign-in when Privy session is missing locally", async () => {
+    render(<AdminLinkedInConnect isAdmin={true} isSignedIn={false} />);
+    fireEvent.click(screen.getByRole("button", { name: /connect linkedin/i }));
+    expect(
+      await screen.findByText(/sign in with privy before connecting linkedin/i),
+    ).toBeInTheDocument();
+  });
+
   it("renders nothing when not admin", () => {
     const { container } = render(
-      <AdminLinkedInConnect
-        isAdmin={false}
-        getAccessToken={vi.fn(async () => null)}
-      />,
+      <AdminLinkedInConnect isAdmin={false} isSignedIn={true} />,
     );
     expect(container).toBeEmptyDOMElement();
   });

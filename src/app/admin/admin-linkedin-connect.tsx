@@ -4,28 +4,35 @@ import { useCallback, useState } from "react";
 
 type AdminLinkedInConnectProps = {
   isAdmin: boolean;
-  getAccessToken: () => Promise<string | null>;
+  isSignedIn: boolean;
 };
 
 export function AdminLinkedInConnect({
   isAdmin,
-  getAccessToken,
+  isSignedIn,
 }: AdminLinkedInConnectProps) {
   const [error, setError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
 
   const startLinkedInConnect = useCallback(async () => {
     setError(null);
+    if (!isSignedIn) {
+      setError("Sign in with Privy before connecting LinkedIn.");
+      return;
+    }
     setIsStarting(true);
     try {
-      const token = await getAccessToken();
-      if (!token) {
+      const response = await fetch("/api/admin/linkedin/auth", {
+        credentials: "include",
+      });
+      if (response.status === 401) {
         setError("Sign in with Privy before connecting LinkedIn.");
         return;
       }
-      const response = await fetch("/api/admin/linkedin/auth", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      if (response.status === 403) {
+        setError("Only Privy admins can connect LinkedIn.");
+        return;
+      }
       if (!response.ok) {
         setError("Could not start LinkedIn authorization.");
         return;
@@ -41,7 +48,7 @@ export function AdminLinkedInConnect({
     } finally {
       setIsStarting(false);
     }
-  }, [getAccessToken]);
+  }, [isSignedIn]);
 
   if (!isAdmin) {
     return null;

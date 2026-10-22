@@ -1,41 +1,54 @@
 import { NextResponse } from "next/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { requirePrivyAuth } from "@/lib/privy/require-auth";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { requirePrivyAdminSession } from "@/lib/privy/require-privy-admin-session";
 import { stubLinkedInOAuthEnv } from "@/lib/linkedin/test-helpers";
 import { GET, LINKEDIN_OAUTH_STATE_COOKIE } from "./route";
 
-vi.mock("@/lib/privy/require-auth", () => ({
-  requirePrivyAuth: vi.fn(),
+const mockCookieStore = {
+  get: vi.fn(),
+};
+
+vi.mock("next/headers", () => ({
+  cookies: vi.fn(async () => mockCookieStore),
+}));
+
+vi.mock("@/lib/privy/require-privy-admin-session", () => ({
+  requirePrivyAdminSession: vi.fn(),
 }));
 
 describe("GET /api/admin/linkedin/auth", () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-    vi.mocked(requirePrivyAuth).mockReset();
+  beforeEach(() => {
+    mockCookieStore.get.mockReturnValue(undefined);
   });
 
-  it("requires Privy admin auth", async () => {
-    vi.mocked(requirePrivyAuth).mockResolvedValue({
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.mocked(requirePrivyAdminSession).mockReset();
+  });
+
+  it("requires Privy admin session (cookie or bearer)", async () => {
+    vi.mocked(requirePrivyAdminSession).mockResolvedValue({
       ok: false,
       response: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
     });
     const res = await GET(new Request("http://localhost/api/admin/linkedin/auth"));
     expect(res.status).toBe(403);
-    expect(requirePrivyAuth).toHaveBeenCalledWith(expect.any(Request), {
-      requireAdmin: true,
-    });
+    expect(requirePrivyAdminSession).toHaveBeenCalledWith(
+      expect.any(Request),
+      expect.any(Function),
+    );
   });
 
   it("returns JSON authorization url and sets state cookie", async () => {
     stubLinkedInOAuthEnv();
-    vi.mocked(requirePrivyAuth).mockResolvedValue({
+    vi.mocked(requirePrivyAdminSession).mockResolvedValue({
       ok: true,
-      user: { userId: "did:privy:admin-g2" },
+      userId: "did:privy:admin-g2",
     });
 
     const res = await GET(
       new Request("http://localhost/api/admin/linkedin/auth", {
-        headers: { Authorization: "Bearer privy-token" },
+        headers: { cookie: "privy-token=server-cookie-token" },
       }),
     );
     expect(res.status).toBe(200);
