@@ -2,7 +2,10 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { completeLinkedInOAuth } from "@/lib/linkedin/complete-oauth";
 import { isLinkedInOAuthConfigured } from "@/lib/linkedin/config";
-import { LINKEDIN_OAUTH_STATE_COOKIE } from "@/lib/linkedin/auth-response";
+import {
+  LINKEDIN_OAUTH_STATE_COOKIE,
+  LINKEDIN_OAUTH_STATE_COOKIE_PATH,
+} from "@/lib/linkedin/auth-response";
 import { resolvePrivyAdminUserForLinkedIn } from "@/lib/privy/require-privy-admin-session";
 import { createCookieReaderFromHeader } from "@/lib/privy/session-from-cookies";
 
@@ -52,7 +55,10 @@ export async function GET(request: Request) {
     isPrivyAdmin,
   });
 
-  cookieStore.delete(LINKEDIN_OAUTH_STATE_COOKIE);
+  cookieStore.delete({
+    name: LINKEDIN_OAUTH_STATE_COOKIE,
+    path: LINKEDIN_OAUTH_STATE_COOKIE_PATH,
+  });
 
   if (result.ok) {
     return redirectWithReason(request, result.reason, true);

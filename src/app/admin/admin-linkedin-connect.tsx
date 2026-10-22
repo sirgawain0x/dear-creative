@@ -1,21 +1,58 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import {
+  readLinkedInCallbackBanner,
+  type LinkedInCallbackBanner,
+} from "@/lib/linkedin/read-linkedin-callback-banner";
+import { stripLinkedInCallbackSearchParams } from "@/lib/linkedin/strip-linkedin-callback-search-params";
 
 type AdminLinkedInConnectProps = {
   isAdmin: boolean;
   isSignedIn: boolean;
 };
 
-export function AdminLinkedInConnect({
+function AdminLinkedInConnectInner({
   isAdmin,
   isSignedIn,
 }: AdminLinkedInConnectProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [callbackBanner, setCallbackBanner] =
+    useState<LinkedInCallbackBanner | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
+  const handledCallbackKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const linkedin = searchParams.get("linkedin")?.trim();
+    if (!linkedin) {
+      return;
+    }
+
+    const callbackKey = `${linkedin}:${searchParams.get("reason")?.trim() ?? ""}`;
+    if (handledCallbackKeyRef.current === callbackKey) {
+      return;
+    }
+    handledCallbackKeyRef.current = callbackKey;
+
+    const banner = readLinkedInCallbackBanner(searchParams);
+    if (banner) {
+      // Mirror URL params into state, then strip them from the address bar.
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- banner must survive router.replace clearing searchParams
+      setCallbackBanner(banner);
+    }
+
+    const cleanPath = stripLinkedInCallbackSearchParams(
+      new URL(window.location.href),
+    );
+    router.replace(cleanPath, { scroll: false });
+  }, [router, searchParams]);
 
   const startLinkedInConnect = useCallback(async () => {
     setError(null);
+    setCallbackBanner(null);
     if (!isSignedIn) {
       setError("Sign in with Privy before connecting LinkedIn.");
       return;
@@ -61,6 +98,19 @@ export function AdminLinkedInConnect({
         Connect your personal LinkedIn member account for Adam posting. Uses OAuth
         with Privy-admin verification on callback.
       </p>
+      {callbackBanner ? (
+        <div
+          data-testid="admin-linkedin-callback-banner"
+          role="alert"
+          className={
+            callbackBanner.kind === "success"
+              ? "mt-4 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200"
+              : "mt-4 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200"
+          }
+        >
+          {callbackBanner.message}
+        </div>
+      ) : null}
       <button
         type="button"
         onClick={() => void startLinkedInConnect()}
@@ -71,5 +121,13 @@ export function AdminLinkedInConnect({
       </button>
       {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
     </div>
+  );
+}
+
+export function AdminLinkedInConnect(props: AdminLinkedInConnectProps) {
+  return (
+    <Suspense fallback={null}>
+      <AdminLinkedInConnectInner {...props} />
+    </Suspense>
   );
 }

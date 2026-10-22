@@ -25,6 +25,10 @@ vi.mock("@/lib/linkedin/config", () => ({
   isLinkedInOAuthConfigured: vi.fn(() => true),
 }));
 
+import {
+  LINKEDIN_OAUTH_STATE_COOKIE,
+  LINKEDIN_OAUTH_STATE_COOKIE_PATH,
+} from "@/lib/linkedin/auth-response";
 import { completeLinkedInOAuth } from "@/lib/linkedin/complete-oauth";
 import { resolvePrivyAdminUserForLinkedIn } from "@/lib/privy/require-privy-admin-session";
 
@@ -59,6 +63,13 @@ describe("GET /api/admin/linkedin/callback", () => {
     expect(location).toContain("/admin");
     expect(location).toContain("linkedin=connected");
     expect(location).not.toContain("user_cancelled");
+    expect(mockCookieStore.delete).toHaveBeenCalledWith({
+      name: LINKEDIN_OAUTH_STATE_COOKIE,
+      path: LINKEDIN_OAUTH_STATE_COOKIE_PATH,
+    });
+    expect(LINKEDIN_OAUTH_STATE_COOKIE_PATH).toBe(
+      "/api/admin/linkedin/callback",
+    );
     expect(completeLinkedInOAuth).toHaveBeenCalledWith(
       expect.objectContaining({
         privyUserId: ADMIN_DID,

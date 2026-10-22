@@ -6,6 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { STUDIO_TOKEN_STORAGE_KEY } from "@/components/providers/app-providers";
 import { ADMIN_OWNER_TOOL_LINKS, AdminConsole } from "./admin-console";
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 vi.mock("./admin-payouts-card", () => ({
   AdminPayoutsCard: () => <div data-testid="admin-payouts-card">Payouts</div>,
 }));
