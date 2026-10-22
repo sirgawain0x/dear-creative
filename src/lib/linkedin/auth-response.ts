@@ -3,6 +3,8 @@ import { buildLinkedInAuthorizationUrl } from "./oauth";
 import { createLinkedInOAuthState } from "./oauth-state";
 
 export const LINKEDIN_OAUTH_STATE_COOKIE = "linkedin_oauth_state";
+export const LINKEDIN_OAUTH_STATE_COOKIE_PATH =
+  "/api/admin/linkedin/callback";
 const STATE_COOKIE_MAX_AGE_SEC = 15 * 60;
 
 export function buildLinkedInAuthStartResponse(privyUserId: string): NextResponse {
@@ -13,7 +15,7 @@ export function buildLinkedInAuthStartResponse(privyUserId: string): NextRespons
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    path: "/api/admin/linkedin/callback",
+    path: LINKEDIN_OAUTH_STATE_COOKIE_PATH,
     maxAge: STATE_COOKIE_MAX_AGE_SEC,
   });
   return response;
