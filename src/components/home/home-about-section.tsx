@@ -6,22 +6,13 @@ import { getAuthorBySlug } from "@/lib/posts/post-author";
 
 export const HOME_PUBLICATION_AUTHOR_SLUG = "g2";
 
-export const HOME_ABOUT_PLACEHOLDER = {
-  name: "G2",
-  slug: HOME_PUBLICATION_AUTHOR_SLUG,
-  bio: "[Placeholder] Editor of Dear Creative and builder at Creative Platform. Author profile copy will appear here once loaded from the writers table.",
-} as const;
-
 export async function HomeAboutSection() {
   await connection();
-  const loaded = await getAuthorBySlug(getDb(), HOME_PUBLICATION_AUTHOR_SLUG);
-  const usedFallback = loaded === null;
-  const author = loaded ?? HOME_ABOUT_PLACEHOLDER;
-  const bio =
-    author.bio ??
-    (usedFallback
-      ? HOME_ABOUT_PLACEHOLDER.bio
-      : "Writer bio coming soon.");
+  const author = await getAuthorBySlug(getDb(), HOME_PUBLICATION_AUTHOR_SLUG);
+  const bio = author?.bio?.trim();
+  if (!author || !bio) {
+    return null;
+  }
 
   return (
     <section
@@ -35,9 +26,7 @@ export async function HomeAboutSection() {
         About this publication
       </h2>
       <AuthorByline author={author} className="border-none pb-0" />
-      <p
-        className={`text-base leading-relaxed text-zinc-600 dark:text-zinc-400 ${usedFallback ? "italic" : ""}`}
-      >
+      <p className="text-base leading-relaxed text-zinc-600 dark:text-zinc-400">
         {bio}
       </p>
       {author.slug ? (

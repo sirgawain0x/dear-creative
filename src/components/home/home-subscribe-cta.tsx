@@ -32,9 +32,8 @@ export function HomeSubscribeCta() {
               Paid dispatches
             </p>
             <p className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">
-              Some posts are subscriber-only. Open a gated dispatch and unlock it
-              with a one-time USDC payment on Base using the same wallet flow as
-              on the post page.
+              Some dispatches are subscriber-only. Choose a gated post in the
+              archive to unlock it with a one-time USDC payment on Base.
             </p>
             <Link
               href="/posts"

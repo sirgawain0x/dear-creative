@@ -27,7 +27,7 @@ describe("HomeAboutSection", () => {
     getAuthorBySlug.mockReset();
   });
 
-  it("renders loaded author bio from the writers table", async () => {
+  it("renders when g2 has a non-empty bio", async () => {
     getAuthorBySlug.mockResolvedValue({
       name: "G2",
       slug: "g2",
@@ -38,18 +38,32 @@ describe("HomeAboutSection", () => {
     });
     const { HomeAboutSection } = await import("./home-about-section");
     const view = await HomeAboutSection();
-    render(view);
+    expect(view).not.toBeNull();
+    render(view!);
+    expect(screen.getByRole("heading", { name: /About this publication/i })).toBeTruthy();
     expect(screen.getAllByText(/Onchain builder and editor/i).length).toBeGreaterThan(
       0,
     );
-    expect(screen.queryByText(/\[Placeholder\]/i)).toBeNull();
   });
 
-  it("uses marked placeholder copy when g2 is missing", async () => {
+  it("returns null when g2 is missing", async () => {
     getAuthorBySlug.mockResolvedValue(null);
     const { HomeAboutSection } = await import("./home-about-section");
     const view = await HomeAboutSection();
-    render(view);
-    expect(screen.getAllByText(/\[Placeholder\]/i).length).toBeGreaterThan(0);
+    expect(view).toBeNull();
+  });
+
+  it("returns null when bio is empty or whitespace", async () => {
+    getAuthorBySlug.mockResolvedValue({
+      name: "G2",
+      slug: "g2",
+      bio: "   ",
+      avatarUrl: null,
+      meTokenAddress: null,
+      meTokenSymbol: null,
+    });
+    const { HomeAboutSection } = await import("./home-about-section");
+    const view = await HomeAboutSection();
+    expect(view).toBeNull();
   });
 });

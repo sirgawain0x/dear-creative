@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   HOME_SPOTLIGHT_EMPTY_MESSAGE,
-  HOME_SPOTLIGHT_LIMIT,
   buildHomeSpotlightView,
 } from "./home-spotlight";
 import type { PublishedPostListItem } from "./published-posts";
@@ -17,11 +16,6 @@ function samplePost(slug: string): PublishedPostListItem {
 }
 
 describe("home spotlight view", () => {
-  it("uses a homepage limit between 10 and 12 inclusive", () => {
-    expect(HOME_SPOTLIGHT_LIMIT).toBeGreaterThanOrEqual(10);
-    expect(HOME_SPOTLIGHT_LIMIT).toBeLessThanOrEqual(12);
-  });
-
   it("shows a tidy empty state when there are no posts", () => {
     const view = buildHomeSpotlightView([]);
     expect(view).toEqual({

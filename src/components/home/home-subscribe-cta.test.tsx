@@ -28,6 +28,7 @@ describe("HomeSubscribeCta", () => {
     const { HomeSubscribeCta } = await import("./home-subscribe-cta");
     render(<HomeSubscribeCta />);
     expect(screen.getByText(/Paid dispatches/i)).toBeTruthy();
+    expect(screen.queryByText(/same wallet flow/i)).toBeNull();
     expect(screen.getByRole("link", { name: /Browse dispatches/i })).toHaveAttribute(
       "href",
       "/posts",
