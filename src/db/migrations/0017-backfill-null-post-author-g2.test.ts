@@ -16,6 +16,7 @@ const EARN_AUDIT_JOURNAL_WHEN = 1792524500000;
 const READER_UNLOCK_JOURNAL_WHEN = 1792525000000;
 const COWRITERS_JOURNAL_WHEN = 1792602394384;
 const BEEHIIV_IMPORT_JOURNAL_WHEN = 1792605000000;
+const PREVIEW_LINKS_JOURNAL_WHEN = 1792610000000;
 
 function createMigrationsFolderThrough0016(): string {
   const dir = mkdtempSync(join(tmpdir(), "dear-drizzle-through-0016-"));
@@ -26,9 +27,11 @@ function createMigrationsFolderThrough0016(): string {
   rmSync(join(dir, "0020_reader_post_unlock_purchases.sql"));
   rmSync(join(dir, "0021_cowriters.sql"));
   rmSync(join(dir, "0022_beehiiv_import.sql"));
+  rmSync(join(dir, "0023_post_preview_links.sql"));
   rmSync(join(dir, "meta/0017_snapshot.json"));
   rmSync(join(dir, "meta/0021_snapshot.json"), { force: true });
   rmSync(join(dir, "meta/0022_snapshot.json"), { force: true });
+  rmSync(join(dir, "meta/0023_snapshot.json"), { force: true });
   const journalPath = join(dir, "meta/_journal.json");
   const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
     entries: Array<{ when: number }>;
@@ -40,7 +43,8 @@ function createMigrationsFolderThrough0016(): string {
       entry.when !== EARN_AUDIT_JOURNAL_WHEN &&
       entry.when !== READER_UNLOCK_JOURNAL_WHEN &&
       entry.when !== COWRITERS_JOURNAL_WHEN &&
-      entry.when !== BEEHIIV_IMPORT_JOURNAL_WHEN,
+      entry.when !== BEEHIIV_IMPORT_JOURNAL_WHEN &&
+      entry.when !== PREVIEW_LINKS_JOURNAL_WHEN,
   );
   writeFileSync(journalPath, `${JSON.stringify(journal, null, 2)}\n`);
   return dir;

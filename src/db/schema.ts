@@ -816,8 +816,30 @@ export const writerGroupSplits = sqliteTable(
   (table) => [index("writer_group_splits_status_idx").on(table.status)],
 );
 
+export const postPreviewLinks = sqliteTable(
+  "post_preview_links",
+  {
+    id: text("id").primaryKey(),
+    postId: text("post_id")
+      .notNull()
+      .references(() => posts.id),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
+    createdBy: text("created_by").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("post_preview_links_token_hash_unique").on(table.tokenHash),
+    index("post_preview_links_post_id_idx").on(table.postId),
+  ],
+);
+
 export type PostWriterRecord = typeof postWriters.$inferSelect;
 export type WriterInviteRecord = typeof writerInvites.$inferSelect;
 export type WriterGroupSplitRecord = typeof writerGroupSplits.$inferSelect;
+export type PostPreviewLinkRecord = typeof postPreviewLinks.$inferSelect;
 
 
