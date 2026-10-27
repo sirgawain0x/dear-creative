@@ -33,12 +33,11 @@ describe("AdamAssistantGenerationBubble", () => {
     expect(screen.getByTestId("adam-streaming-cue")).toBeInTheDocument();
   });
 
-  it("done state: no generation bubble when studio is idle (indicator standalone)", () => {
+  it("done state: thinking indicator is decorative (no duplicate live region)", () => {
     render(<AdamThinkingIndicator reducedMotion />);
-    expect(screen.getByTestId("adam-thinking-indicator")).toHaveAttribute(
-      "aria-label",
-      "Adam is thinking",
-    );
+    const indicator = screen.getByTestId("adam-thinking-indicator");
+    expect(indicator).toHaveAttribute("aria-hidden", "true");
+    expect(indicator).not.toHaveAttribute("role", "status");
   });
 
   it("error state: streaming cue component remains available for reuse", () => {

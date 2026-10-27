@@ -13,8 +13,7 @@ export function AdamThinkingIndicator({
   return (
     <div
       data-testid={testId}
-      role="status"
-      aria-label="Adam is thinking"
+      aria-hidden="true"
       className="flex items-center gap-1.5 py-0.5"
     >
       {[0, 1, 2].map((index) => (

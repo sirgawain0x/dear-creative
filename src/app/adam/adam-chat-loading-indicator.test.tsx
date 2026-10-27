@@ -48,7 +48,24 @@ vi.mock("@/components/providers/app-providers", async (importOriginal) => {
   };
 });
 
-function mockStudioFetch(chatHandler?: (init: RequestInit) => Response | Promise<Response>) {
+const FIXTURE_THREADS = [
+  {
+    id: "thread_fixture_a",
+    title: "Thread A",
+    updatedAt: "2026-01-01T12:00:00.000Z",
+    createdAt: "2026-01-01T12:00:00.000Z",
+  },
+  {
+    id: "thread_fixture_b",
+    title: "Thread B",
+    updatedAt: "2026-01-02T12:00:00.000Z",
+    createdAt: "2026-01-02T12:00:00.000Z",
+  },
+];
+
+function mockStudioFetch(options?: {
+  chatHandler?: (init: RequestInit) => Response | Promise<Response>;
+}) {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = String(input);
     if (url.includes("/api/admin/config")) {
@@ -63,8 +80,30 @@ function mockStudioFetch(chatHandler?: (init: RequestInit) => Response | Promise
         { status: 200 },
       );
     }
+    if (url.includes("/api/adam/chat/threads/thread_fixture_")) {
+      const threadId = url.split("/").pop() ?? "thread_fixture_a";
+      return new Response(
+        JSON.stringify({
+          thread: { id: threadId, title: threadId.includes("_b") ? "Thread B" : "Thread A" },
+          messages: [
+            {
+              id: "msg_1",
+              role: "user",
+              content: "Prior message",
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (url.includes("/api/adam/chat/threads")) {
+      return new Response(JSON.stringify({ threads: FIXTURE_THREADS }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     if (url.includes("/api/adam/chat") && init?.method === "POST") {
-      if (chatHandler) return chatHandler(init);
+      if (options?.chatHandler) return options.chatHandler(init);
       return new Response(JSON.stringify({ reply: "Fixture reply from Adam." }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -122,7 +161,7 @@ describe("Adam chat loading indicator", () => {
     const chatPending = new Promise<Response>((resolve) => {
       resolveChat = resolve;
     });
-    mockStudioFetch(() => chatPending as Promise<Response>);
+    mockStudioFetch({ chatHandler: () => chatPending as Promise<Response> });
     localStorage.setItem(STUDIO_TOKEN_STORAGE_KEY, "fixture-key");
     render(
       <AppProviders>
@@ -146,19 +185,20 @@ describe("Adam chat loading indicator", () => {
     await waitFor(() =>
       expect(screen.queryByTestId("adam-thinking-indicator")).not.toBeInTheDocument(),
     );
-    await waitFor(() =>
-      expect(screen.queryByTestId("adam-assistant-generation-bubble")).not.toBeInTheDocument(),
+    await waitFor(
+      () => expect(screen.getByText("Hi!")).toBeInTheDocument(),
+      { timeout: 3000 },
     );
   });
 
   it("error: announces failure in the generation status region until the next send", async () => {
-    mockStudioFetch(
-      () =>
+    mockStudioFetch({
+      chatHandler: () =>
         new Response(JSON.stringify({ error: "Adam unavailable" }), {
           status: 503,
           headers: { "Content-Type": "application/json" },
         }),
-    );
+    });
     localStorage.setItem(STUDIO_TOKEN_STORAGE_KEY, "fixture-key");
     render(
       <AppProviders>
@@ -187,11 +227,13 @@ describe("Adam chat loading indicator", () => {
 
   it("aborts in-flight chat when the studio unmounts", async () => {
     let capturedSignal: AbortSignal | undefined;
-    mockStudioFetch((_init) => {
-      capturedSignal = _init?.signal ?? undefined;
-      return new Promise<Response>(() => {
-        /* never resolves */
-      });
+    mockStudioFetch({
+      chatHandler: (_init) => {
+        capturedSignal = _init?.signal ?? undefined;
+        return new Promise<Response>(() => {
+          /* never resolves */
+        });
+      },
     });
     localStorage.setItem(STUDIO_TOKEN_STORAGE_KEY, "fixture-key");
     const view = render(
@@ -205,5 +247,57 @@ describe("Adam chat loading indicator", () => {
     await waitFor(() => expect(capturedSignal).toBeDefined());
     view.unmount();
     await waitFor(() => expect(capturedSignal?.aborted).toBe(true));
+  });
+
+  it("aborts in-flight chat when switching threads", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    mockStudioFetch({
+      chatHandler: (init) => {
+        capturedSignal = init?.signal ?? undefined;
+        return new Promise<Response>(() => {
+          /* never resolves */
+        });
+      },
+    });
+    localStorage.setItem(STUDIO_TOKEN_STORAGE_KEY, "fixture-key");
+    render(
+      <AppProviders>
+        <AdamStudio />
+      </AppProviders>,
+    );
+    await screen.findByRole("button", { name: "Thread B" });
+    const input = await screen.findByLabelText(/Message Adam/i);
+    fireEvent.change(input, { target: { value: "On thread A" } });
+    fireEvent.click(screen.getAllByTestId("adam-chat-send")[0]!);
+    await waitFor(() => expect(capturedSignal).toBeDefined());
+
+    fireEvent.click(screen.getByRole("button", { name: "Thread B" }));
+    await waitFor(() => expect(capturedSignal?.aborted).toBe(true));
+  });
+
+  it("aborts the previous in-flight chat when sending again", async () => {
+    const signals: AbortSignal[] = [];
+    mockStudioFetch({
+      chatHandler: (init) => {
+        signals.push(init?.signal as AbortSignal);
+        return new Promise<Response>(() => {
+          /* never resolves */
+        });
+      },
+    });
+    localStorage.setItem(STUDIO_TOKEN_STORAGE_KEY, "fixture-key");
+    render(
+      <AppProviders>
+        <AdamStudio />
+      </AppProviders>,
+    );
+    const input = await screen.findByLabelText(/Message Adam/i);
+    fireEvent.change(input, { target: { value: "First message" } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    fireEvent.change(input, { target: { value: "Second message" } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    await waitFor(() => expect(signals.length).toBeGreaterThanOrEqual(2));
+    expect(signals[0]?.aborted).toBe(true);
+    expect(signals[1]?.aborted).toBe(false);
   });
 });
