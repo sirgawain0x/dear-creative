@@ -151,7 +151,7 @@ describe("Adam chat loading indicator", () => {
     );
   });
 
-  it("error: clears indicator and re-enables send", async () => {
+  it("error: announces failure in the generation status region until the next send", async () => {
     mockStudioFetch(
       () =>
         new Response(JSON.stringify({ error: "Adam unavailable" }), {
@@ -172,9 +172,38 @@ describe("Adam chat loading indicator", () => {
     await waitFor(() =>
       expect(screen.queryByTestId("adam-thinking-indicator")).not.toBeInTheDocument(),
     );
-    fireEvent.change(input, { target: { value: "Try again" } });
-    await waitFor(() =>
-      expect(screen.getAllByTestId("adam-chat-send")[0]).not.toBeDisabled(),
+    expect(screen.getByTestId("adam-chat-generation-status")).toHaveTextContent(
+      "Adam could not finish the response",
     );
+
+    fireEvent.change(input, { target: { value: "Try again" } });
+    fireEvent.click(screen.getAllByTestId("adam-chat-send")[0]!);
+    await waitFor(() =>
+      expect(screen.getByTestId("adam-chat-generation-status")).toHaveTextContent(
+        "Adam is thinking",
+      ),
+    );
+  });
+
+  it("aborts in-flight chat when the studio unmounts", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    mockStudioFetch((_init) => {
+      capturedSignal = _init?.signal ?? undefined;
+      return new Promise<Response>(() => {
+        /* never resolves */
+      });
+    });
+    localStorage.setItem(STUDIO_TOKEN_STORAGE_KEY, "fixture-key");
+    const view = render(
+      <AppProviders>
+        <AdamStudio />
+      </AppProviders>,
+    );
+    const input = await screen.findByLabelText(/Message Adam/i);
+    fireEvent.change(input, { target: { value: "Abort me" } });
+    fireEvent.click(screen.getAllByTestId("adam-chat-send")[0]!);
+    await waitFor(() => expect(capturedSignal).toBeDefined());
+    view.unmount();
+    await waitFor(() => expect(capturedSignal?.aborted).toBe(true));
   });
 });

@@ -17,7 +17,8 @@ export type AdamChatStreamEvent =
   | { type: "token"; textSoFar: string }
   | { type: "complete"; payload: AdamChatCompletionPayload };
 
-const STREAM_REVEAL_MS = 14;
+/** Upper bound for simulated JSON word reveal (UI-only). */
+export const MAX_JSON_REVEAL_MS = 1000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -32,13 +33,27 @@ async function* revealReplyText(
     return;
   }
 
+  const parts = reply.split(/(\s+)/).filter((part) => part.length > 0);
+  if (parts.length <= 1) {
+    yield { type: "token", textSoFar: reply };
+    return;
+  }
+
   let acc = "";
-  const parts = reply.split(/(\s+)/);
-  for (const part of parts) {
-    if (!part) continue;
-    acc += part;
+  const started = Date.now();
+  for (let i = 0; i < parts.length; i++) {
+    acc += parts[i]!;
     yield { type: "token", textSoFar: acc };
-    await sleep(STREAM_REVEAL_MS);
+    if (i >= parts.length - 1) break;
+
+    const elapsed = Date.now() - started;
+    const remainingMs = MAX_JSON_REVEAL_MS - elapsed;
+    const stepsLeft = parts.length - 1 - i;
+    if (remainingMs <= 0 || stepsLeft <= 0) {
+      yield { type: "token", textSoFar: reply };
+      return;
+    }
+    await sleep(Math.max(0, Math.floor(remainingMs / stepsLeft)));
   }
 }
 
@@ -50,7 +65,7 @@ function parseSseDataLine(line: string): string | null {
   return payload;
 }
 
-async function* consumeEventStreamBody(
+export async function* consumeEventStreamBody(
   body: ReadableStream<Uint8Array>,
   reducedMotion: boolean,
 ): AsyncGenerator<AdamChatStreamEvent> {

@@ -3,8 +3,6 @@
 import type { AdamAgentGenerationPhase } from "@/app/adam/adam-agent-generation-state";
 import { AdamStreamingCue } from "@/app/adam/adam-streaming-cue";
 import { AdamThinkingIndicator } from "@/app/adam/adam-thinking-indicator";
-import { renderMarkdownToSafeHtml } from "@/lib/html/markdown-to-html";
-
 export type AdamAssistantGenerationBubbleProps = {
   phase: Extract<AdamAgentGenerationPhase, "waiting" | "streaming">;
   content: string;
@@ -32,16 +30,12 @@ export function AdamAssistantGenerationBubble({
       {phase === "waiting" ? (
         <AdamThinkingIndicator reducedMotion={reducedMotion} />
       ) : (
-        <div className="prose prose-sm dark:prose-invert max-w-none">
-          <span
-            dangerouslySetInnerHTML={{
-              __html: renderMarkdownToSafeHtml(content) || content,
-            }}
-          />
+        <p className="m-0 whitespace-pre-wrap text-sm leading-relaxed">
+          {content}
           {showStreamingCue ? (
             <AdamStreamingCue reducedMotion={reducedMotion} />
           ) : null}
-        </div>
+        </p>
       )}
     </div>
   );

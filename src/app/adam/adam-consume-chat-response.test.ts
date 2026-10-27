@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { consumeAdamChatResponse } from "./adam-consume-chat-response";
+import { describe, expect, it, vi } from "vitest";
+import {
+  consumeAdamChatResponse,
+  consumeEventStreamBody,
+  MAX_JSON_REVEAL_MS,
+} from "./adam-consume-chat-response";
 
 async function collectEvents(
   response: Response,
@@ -29,13 +33,57 @@ describe("consumeAdamChatResponse", () => {
     });
   });
 
-  it("streams JSON replies word-by-word when motion is allowed", async () => {
-    const response = new Response(JSON.stringify({ reply: "Hi friend" }), {
-      headers: { "Content-Type": "application/json" },
-    });
-    const events = await collectEvents(response, false);
-    const tokens = events.filter((e) => e.type === "token");
+  it("caps simulated JSON reveal duration at about one second", async () => {
+    vi.useFakeTimers();
+    const response = new Response(
+      JSON.stringify({
+        reply: "word ".repeat(80).trim(),
+      }),
+      { headers: { "Content-Type": "application/json" } },
+    );
+
+    const events: unknown[] = [];
+    const pending = (async () => {
+      for await (const event of consumeAdamChatResponse(response, {
+        reducedMotion: false,
+      })) {
+        events.push(event);
+      }
+    })();
+
+    await vi.advanceTimersByTimeAsync(MAX_JSON_REVEAL_MS + 50);
+    await pending;
+
+    const tokens = events.filter(
+      (e) => (e as { type?: string }).type === "token",
+    );
     expect(tokens.length).toBeGreaterThan(1);
-    expect(tokens.at(-1)).toEqual({ type: "token", textSoFar: "Hi friend" });
+    vi.useRealTimers();
+  });
+
+  it("parses SSE payloads split across byte chunk boundaries", async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode('data: {"delta":"Hel'),
+        );
+        controller.enqueue(
+          encoder.encode('lo"}\n\ndata: {"done":true,"reply":"Hello"}\n\n'),
+        );
+        controller.close();
+      },
+    });
+
+    const events = [];
+    for await (const event of consumeEventStreamBody(stream, true)) {
+      events.push(event);
+    }
+
+    expect(events).toContainEqual({ type: "token", textSoFar: "Hello" });
+    expect(events.at(-1)).toMatchObject({
+      type: "complete",
+      payload: { reply: "Hello" },
+    });
   });
 });
