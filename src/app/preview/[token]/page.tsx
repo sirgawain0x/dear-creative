@@ -14,8 +14,6 @@ import { calculateReadingTime } from "@/lib/posts/reading-time";
 import { getAdminPostByIdOrSlug } from "@/lib/posts/manage-posts";
 import { resolvePublicPostCoverImage } from "@/lib/posts/post-cover-image";
 
-export const dynamic = "force-dynamic";
-
 export async function headers() {
   return {
     "Cache-Control": PREVIEW_PAGE_CACHE_CONTROL,
