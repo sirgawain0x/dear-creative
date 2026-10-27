@@ -147,6 +147,39 @@ describe("published posts queries", () => {
     expect(page2.items.map((p) => p.slug)).toEqual(["post-2", "post-1"]);
   });
 
+  it("includes Beehiiv-import-shaped rows with null author_id in public lists", async () => {
+    const db = await createPostsTestDb();
+    const asOf = new Date("2026-06-01T00:00:00.000Z");
+
+    await insertPost(db, {
+      slug: "newer-paragraph",
+      title: "Newer",
+      status: "published",
+      publishedAt: new Date("2026-01-01T00:00:00.000Z"),
+      source: "paragraph",
+    });
+    await insertPost(db, {
+      slug: "beehiiv-archive-issue",
+      title: "Beehiiv archive",
+      status: "published",
+      publishedAt: new Date("2023-06-01T00:00:00.000Z"),
+      authorId: null,
+      source: "beehiiv",
+      sourceGuid: "beehiiv:pub-archive-1",
+      canonicalUrl: "https://dearcrtv.beehiiv.com/p/beehiiv-archive-issue",
+    });
+
+    const recent = await listRecentPublishedPosts(db, 20, { asOf });
+    expect(recent.map((p) => p.slug)).toEqual([
+      "newer-paragraph",
+      "beehiiv-archive-issue",
+    ]);
+
+    const page = await listPublishedPosts(db, { page: 1, pageSize: 10, asOf });
+    expect(page.totalCount).toBe(2);
+    expect(page.items.some((p) => p.slug === "beehiiv-archive-issue")).toBe(true);
+  });
+
   it("returns null for draft slug (404 path)", async () => {
     const db = await createPostsTestDb();
     await insertPost(db, {

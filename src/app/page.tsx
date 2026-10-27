@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { ActiveSubscriberLine } from "@/components/home/active-subscriber-line";
+import { HomeAboutSection } from "@/components/home/home-about-section";
 import { HomeSpotlight } from "@/components/home/home-spotlight";
+import { HomeSubscribeCta } from "@/components/home/home-subscribe-cta";
 
 export default function Home() {
   return (
@@ -53,6 +55,18 @@ export default function Home() {
         }
       >
         <HomeSpotlight />
+      </Suspense>
+
+      <HomeSubscribeCta />
+
+      <Suspense
+        fallback={
+          <p className="text-sm text-zinc-500" aria-busy="true">
+            Loading about…
+          </p>
+        }
+      >
+        <HomeAboutSection />
       </Suspense>
     </main>
   );
