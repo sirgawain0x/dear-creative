@@ -92,10 +92,11 @@ describe("Adam chat loading indicator", () => {
       writable: true,
       configurable: true,
       value: (query: string) => ({
-        matches: query === "(prefers-reduced-motion: reduce)",
+        matches: query.includes("prefers-reduced-motion"),
         media: query,
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
       }),
     });
   });
@@ -144,6 +145,9 @@ describe("Adam chat loading indicator", () => {
 
     await waitFor(() =>
       expect(screen.queryByTestId("adam-thinking-indicator")).not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(screen.queryByTestId("adam-assistant-generation-bubble")).not.toBeInTheDocument(),
     );
   });
 
