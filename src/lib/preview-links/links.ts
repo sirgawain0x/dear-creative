@@ -84,7 +84,7 @@ export async function revokePostPreviewLink(
   postId: string,
   linkId: string,
 ): Promise<boolean> {
-  const [existing] = await db
+  const [active] = await db
     .select({ id: postPreviewLinks.id })
     .from(postPreviewLinks)
     .where(
@@ -95,7 +95,7 @@ export async function revokePostPreviewLink(
       ),
     )
     .limit(1);
-  if (!existing) {
+  if (!active) {
     return false;
   }
 
@@ -103,7 +103,13 @@ export async function revokePostPreviewLink(
   await db
     .update(postPreviewLinks)
     .set({ revokedAt: now })
-    .where(eq(postPreviewLinks.id, linkId));
+    .where(
+      and(
+        eq(postPreviewLinks.id, linkId),
+        eq(postPreviewLinks.postId, postId),
+        isNull(postPreviewLinks.revokedAt),
+      ),
+    );
   return true;
 }
 

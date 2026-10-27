@@ -48,13 +48,35 @@ describe("/preview/[token] page gate", () => {
     expect(notFoundMock).toHaveBeenCalledTimes(1);
   });
 
-  it("exports noindex metadata and anti-cache headers", async () => {
-    const { generateMetadata, headers } = await import("./page");
+  it("exports noindex metadata", async () => {
+    const { generateMetadata } = await import("./page");
     const metadata = await generateMetadata();
     expect(metadata.robots).toEqual({ index: false, follow: false });
-    await expect(headers()).resolves.toMatchObject({
-      "Cache-Control": expect.stringContaining("no-store"),
-      "X-Robots-Tag": "noindex, nofollow",
+  });
+
+  it("calls notFound for a published post target", async () => {
+    setPreviewLinksEnabledForTests(true);
+    resolvePreviewLinkByTokenMock.mockResolvedValue({
+      ok: true,
+      postId: "post-published",
+      linkId: "link-1",
     });
+    getAdminPostByIdOrSlugMock.mockResolvedValue({
+      id: "post-published",
+      slug: "already-live",
+      title: "Live",
+      status: "published",
+      teaserText: null,
+      bodyHtml: "<p>Hi</p>",
+      isGated: false,
+      freeContent: null,
+      gatedContent: null,
+    });
+
+    const { default: Page } = await import("./page");
+    await expect(
+      Page({ params: Promise.resolve({ token: "valid-token" }) }),
+    ).rejects.toThrow("NOT_FOUND");
+    expect(notFoundMock).toHaveBeenCalled();
   });
 });

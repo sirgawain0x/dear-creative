@@ -6,20 +6,9 @@ import { getDb } from "@/db/client";
 import { isPreviewLinksEnabled } from "@/lib/preview-links/feature-flag";
 import { resolvePreviewLinkByToken } from "@/lib/preview-links/links";
 import { previewPostBodyHtml } from "@/lib/preview-links/preview-post-body";
-import {
-  PREVIEW_PAGE_CACHE_CONTROL,
-  PREVIEW_PAGE_X_ROBOTS_TAG,
-} from "@/lib/preview-links/preview-response-headers";
 import { calculateReadingTime } from "@/lib/posts/reading-time";
 import { getAdminPostByIdOrSlug } from "@/lib/posts/manage-posts";
 import { resolvePublicPostCoverImage } from "@/lib/posts/post-cover-image";
-
-export async function headers() {
-  return {
-    "Cache-Control": PREVIEW_PAGE_CACHE_CONTROL,
-    "X-Robots-Tag": PREVIEW_PAGE_X_ROBOTS_TAG,
-  };
-}
 
 export async function generateMetadata(): Promise<Metadata> {
   return {

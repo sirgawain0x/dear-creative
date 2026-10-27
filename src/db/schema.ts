@@ -822,7 +822,7 @@ export const postPreviewLinks = sqliteTable(
     id: text("id").primaryKey(),
     postId: text("post_id")
       .notNull()
-      .references(() => posts.id),
+      .references(() => posts.id, { onDelete: "cascade" }),
     tokenHash: text("token_hash").notNull(),
     expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
     revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),

@@ -530,15 +530,6 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
       .catch(() => setCowritersEnabled(false));
   }, []);
 
-  useEffect(() => {
-    void fetch("/api/adam/preview-links/status")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { enabled?: boolean } | null) => {
-        setPreviewLinksEnabled(Boolean(data?.enabled));
-      })
-      .catch(() => setPreviewLinksEnabled(false));
-  }, []);
-
   const authFetch = useCallback(
     async (url: string, init: RequestInit = {}) => {
       let token: string | null = null;
@@ -560,6 +551,15 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
     },
     [authenticated, getAccessToken, privyConfigured, studioToken],
   );
+
+  useEffect(() => {
+    void authFetch("/api/adam/preview-links/status")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { enabled?: boolean } | null) => {
+        setPreviewLinksEnabled(Boolean(data?.enabled));
+      })
+      .catch(() => setPreviewLinksEnabled(false));
+  }, [authFetch]);
 
   const loadStudioData = useCallback(async () => {
     try {
