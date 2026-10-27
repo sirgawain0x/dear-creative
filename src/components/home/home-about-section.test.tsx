@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 
 vi.mock("next/server", () => ({
   connection: async () => {},
@@ -22,6 +22,7 @@ vi.mock("@/db/client", () => ({
 
 describe("HomeAboutSection", () => {
   afterEach(() => {
+    cleanup();
     vi.resetModules();
     getAuthorBySlug.mockReset();
   });
