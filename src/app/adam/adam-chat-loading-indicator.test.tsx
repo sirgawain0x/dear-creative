@@ -69,6 +69,8 @@ function mockStudioFetch(options?: {
   delayThreadsListUntil?: Promise<void>;
   /** Awaits `gate` before responding on the Nth chat threads list fetch (1-based). */
   blockThreadsListOnFetch?: { fetchNumber: number; gate: Promise<void> };
+  /** Awaits `gate` before responding on fetch N and every later threads list fetch. */
+  blockThreadsListFromFetch?: { fetchNumber: number; gate: Promise<void> };
 }) {
   let threadsListFetchCount = 0;
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
@@ -107,9 +109,13 @@ function mockStudioFetch(options?: {
     ) {
       threadsListFetchCount += 1;
       const n = threadsListFetchCount;
-      const block = options?.blockThreadsListOnFetch;
-      if (block && n === block.fetchNumber) {
-        await block.gate;
+      const blockOne = options?.blockThreadsListOnFetch;
+      if (blockOne && n === blockOne.fetchNumber) {
+        await blockOne.gate;
+      }
+      const blockFrom = options?.blockThreadsListFromFetch;
+      if (blockFrom && n >= blockFrom.fetchNumber) {
+        await blockFrom.gate;
       }
       if (options?.delayThreadsListUntil) {
         await options.delayThreadsListUntil;
@@ -371,7 +377,8 @@ describe("Adam chat loading indicator", () => {
     });
     let chatPostCount = 0;
     mockStudioFetch({
-      blockThreadsListOnFetch: { fetchNumber: 2, gate: studioReloadBlocked },
+      // #1 initial loadStudioData; #2 fire-and-forget loadChatThreads; #3 awaited loadStudioData
+      blockThreadsListFromFetch: { fetchNumber: 3, gate: studioReloadBlocked },
       chatHandler: () => {
         chatPostCount += 1;
         if (chatPostCount === 1) {
