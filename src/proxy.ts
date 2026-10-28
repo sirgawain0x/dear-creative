@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { applyPreviewRouteResponseHeaders } from "@/lib/preview-links/preview-response-headers";
 import {
   pageNotFoundProxyResponse,
   resolvePageNotFoundProxy,
@@ -12,14 +13,18 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const decision = await resolvePageNotFoundProxy(request.nextUrl.pathname);
+  const pathname = request.nextUrl.pathname;
+  const isPreviewRoute = pathname.startsWith("/preview/");
+
+  const decision = await resolvePageNotFoundProxy(pathname);
   const blocked = pageNotFoundProxyResponse(decision, request);
-  if (blocked) {
-    return blocked;
+  const response = blocked ?? NextResponse.next();
+  if (isPreviewRoute) {
+    return applyPreviewRouteResponseHeaders(response);
   }
-  return NextResponse.next();
+  return response;
 }
 
 export const config = {
-  matcher: ["/posts/:path*", "/authors/:path*"],
+  matcher: ["/posts/:path*", "/authors/:path*", "/preview/:path*"],
 };

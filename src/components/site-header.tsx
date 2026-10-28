@@ -2,33 +2,71 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useId, useState } from "react";
+import { useId, useState, type MouseEvent } from "react";
+import { HOME_SUBSCRIBE_SECTION_ID } from "@/components/home/home-subscribe-cta";
 import { useAuthSession } from "./providers/app-providers";
 import { ReaderAccountDropdown } from "./wallet/reader-account-dropdown";
 import type { ReaderWalletPreviewData } from "./wallet/reader-wallet-panel";
+
+export const SUBSCRIBE_NAV_HREF = "/#subscribe";
 
 export type SiteNavLink = {
   href: string;
   label: string;
   matchPrefix?: boolean;
   requiresAuth?: boolean;
+  /** Nav item scrolls to the homepage subscribe card (`/#subscribe`). */
+  homeSubscribeAnchor?: boolean;
 };
 
 export const SITE_NAV_LINKS: readonly SiteNavLink[] = [
   { href: "/", label: "Home", matchPrefix: false },
   { href: "/posts", label: "Posts", matchPrefix: true },
-  { href: "/subscribe", label: "Subscribe", matchPrefix: true },
+  {
+    href: SUBSCRIBE_NAV_HREF,
+    label: "Subscribe",
+    homeSubscribeAnchor: true,
+  },
   { href: "/adam", label: "Studio", matchPrefix: true, requiresAuth: true },
   { href: "/approvals", label: "Approvals", matchPrefix: true, requiresAuth: true },
   { href: "/admin", label: "Sign In", matchPrefix: true },
 ] as const;
 
+export function getSubscribeNavHref(pathname: string | null): string {
+  return pathname === "/" ? "#subscribe" : SUBSCRIBE_NAV_HREF;
+}
+
 export function isNavLinkActive(pathname: string | null, link: SiteNavLink): boolean {
   if (!pathname) return false;
+  if (link.homeSubscribeAnchor) {
+    return pathname === "/subscribe" || pathname.startsWith("/subscribe/");
+  }
   if (!link.matchPrefix || link.href === "/") {
     return pathname === link.href;
   }
   return pathname === link.href || pathname.startsWith(`${link.href}/`);
+}
+
+function scrollToHomeSubscribeCard(): void {
+  document.getElementById(HOME_SUBSCRIBE_SECTION_ID)?.scrollIntoView({
+    behavior: "smooth",
+    block: "start",
+  });
+  window.history.replaceState(null, "", "#subscribe");
+}
+
+function onSubscribeNavClick(
+  pathname: string | null,
+  afterNavigate?: () => void,
+): ((event: MouseEvent<HTMLAnchorElement>) => void) | undefined {
+  if (pathname !== "/") {
+    return undefined;
+  }
+  return (event) => {
+    event.preventDefault();
+    scrollToHomeSubscribeCard();
+    afterNavigate?.();
+  };
 }
 
 export function getVisibleNavLinks(isSignedIn: boolean): readonly SiteNavLink[] {
@@ -136,10 +174,15 @@ export function SiteHeader({
               );
             }
 
+            const href = link.homeSubscribeAnchor
+              ? getSubscribeNavHref(pathname)
+              : link.href;
+
             return (
               <Link
                 key={link.href}
-                href={link.href}
+                href={href}
+                onClick={link.homeSubscribeAnchor ? onSubscribeNavClick(pathname) : undefined}
                 aria-current={active ? "page" : undefined}
                 className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
                   active
@@ -241,12 +284,22 @@ export function SiteHeader({
                 );
               }
 
+              const href = link.homeSubscribeAnchor
+                ? getSubscribeNavHref(pathname)
+                : link.href;
+
               return (
                 <li key={link.href}>
                   <Link
-                    href={link.href}
+                    href={href}
                     aria-current={active ? "page" : undefined}
-                    onClick={() => setMobileMenuOpen(false)}
+                    onClick={
+                      link.homeSubscribeAnchor
+                        ? onSubscribeNavClick(pathname, () =>
+                            setMobileMenuOpen(false),
+                          )
+                        : () => setMobileMenuOpen(false)
+                    }
                     className={`block rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                       active
                         ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"

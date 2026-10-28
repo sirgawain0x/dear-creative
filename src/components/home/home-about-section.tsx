@@ -10,7 +10,8 @@ export async function HomeAboutSection() {
   await connection();
   const author = await getAuthorBySlug(getDb(), HOME_PUBLICATION_AUTHOR_SLUG);
   const bio = author?.bio?.trim();
-  if (!author || !bio) {
+  const tagline = author?.tagline?.trim();
+  if (!author || (!bio && !tagline)) {
     return null;
   }
 
@@ -26,9 +27,11 @@ export async function HomeAboutSection() {
         About this publication
       </h2>
       <AuthorByline author={author} className="border-none pb-0" />
-      <p className="text-base leading-relaxed text-zinc-600 dark:text-zinc-400">
-        {bio}
-      </p>
+      {bio ? (
+        <p className="text-base leading-relaxed text-zinc-600 dark:text-zinc-400">
+          {bio}
+        </p>
+      ) : null}
       {author.slug ? (
         <Link
           href={`/writers/${encodeURIComponent(author.slug)}`}

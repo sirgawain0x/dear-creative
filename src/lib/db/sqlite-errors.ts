@@ -1,18 +1,58 @@
+const MISSING_COLUMN_PATTERN = /no such column/i;
+const DEFAULT_MAX_CAUSE_DEPTH = 10;
+
+function walkErrorMessages(
+  error: unknown,
+  maxDepth = DEFAULT_MAX_CAUSE_DEPTH,
+): string[] {
+  const messages: string[] = [];
+  const seen = new Set<object>();
+  let current: unknown = error;
+
+  for (let depth = 0; depth < maxDepth && current != null; depth += 1) {
+    if (typeof current === "string") {
+      messages.push(current);
+      break;
+    }
+
+    if (current instanceof Error) {
+      if (seen.has(current)) {
+        break;
+      }
+      seen.add(current);
+      messages.push(current.message);
+      current = current.cause;
+      continue;
+    }
+
+    if (typeof current === "object") {
+      if (seen.has(current)) {
+        break;
+      }
+      seen.add(current);
+      messages.push(String(current));
+      current = (current as { cause?: unknown }).cause;
+      continue;
+    }
+
+    messages.push(String(current));
+    break;
+  }
+
+  return messages;
+}
+
+export function isMissingColumnError(error: unknown): boolean {
+  return walkErrorMessages(error).some((message) =>
+    MISSING_COLUMN_PATTERN.test(message),
+  );
+}
+
 function errorMessage(error: unknown): string {
   if (!(error instanceof Error)) {
     return "";
   }
-  const parts = [error.message];
-  let current: unknown = error;
-  for (let depth = 0; depth < 5; depth += 1) {
-    const cause = (current as { cause?: unknown }).cause;
-    if (!(cause instanceof Error)) {
-      break;
-    }
-    parts.push(cause.message);
-    current = cause;
-  }
-  return parts.join(" ").toLowerCase();
+  return walkErrorMessages(error).join(" ").toLowerCase();
 }
 
 export function isSqliteUniqueConstraintError(error: unknown): boolean {
