@@ -15,10 +15,6 @@ vi.mock("./admin-payouts-card", () => ({
   AdminPayoutsCard: () => <div data-testid="admin-payouts-card">Payouts</div>,
 }));
 
-vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(),
-}));
-
 const mockUseAuthSession = vi.fn();
 
 vi.mock("@/components/providers/app-providers", async (importOriginal) => {
