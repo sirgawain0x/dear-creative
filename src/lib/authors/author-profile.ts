@@ -5,6 +5,7 @@ import {
   validateAuthorDisplayName,
   validateAuthorTagline,
 } from "@/lib/authors/author-display-profile-limits";
+import { isMissingColumnError } from "@/lib/db/sqlite-errors";
 import { formatPublishedDateEt } from "@/lib/posts/format-published-date";
 
 export type AuthorProfileRecord = {
@@ -24,22 +25,6 @@ export type AuthorPublishedArticle = {
   /** Primary author vs collaboration (when co-writer data exists). */
   role: "author" | "cowriter";
 };
-
-function isMissingColumnError(error: unknown): boolean {
-  const parts: string[] = [];
-  if (error instanceof Error) {
-    parts.push(error.message);
-    const cause = (error as Error & { cause?: unknown }).cause;
-    if (cause instanceof Error) {
-      parts.push(cause.message);
-    } else if (cause) {
-      parts.push(String(cause));
-    }
-  } else {
-    parts.push(String(error));
-  }
-  return parts.some((message) => /no such column/i.test(message));
-}
 
 /**
  * Loads author profile fields, omitting avatar when the column is not migrated yet.
