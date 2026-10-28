@@ -54,6 +54,7 @@ import { NARRATION_VOICES, voiceLabel } from "@/lib/audio/narration-voices";
 import { playAdamGoogleTts } from "@/app/adam/adam-message-tts";
 import { stopDispatchAudioResources } from "@/lib/audio/stop-active-audio";
 import { RepurposePanel } from "@/app/adam/repurpose-panel";
+import { EditorPreviewLinksPanel } from "@/components/admin/EditorPreviewLinksPanel";
 import { EditorWritersPanel } from "@/components/admin/EditorWritersPanel";
 
 export type StudioTab = "chat" | "ideas" | "posts" | "approvals" | "schedule";
@@ -449,6 +450,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
   const [isSavingPost, setIsSavingPost] = useState(false);
   const [isPolishingPost, setIsPolishingPost] = useState(false);
   const [cowritersEnabled, setCowritersEnabled] = useState(false);
+  const [previewLinksEnabled, setPreviewLinksEnabled] = useState(false);
 
   // Schedule state
   const [schedule, setSchedule] = useState<AdamScheduleRecord | null>(null);
@@ -549,6 +551,15 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
     },
     [authenticated, getAccessToken, privyConfigured, studioToken],
   );
+
+  useEffect(() => {
+    void authFetch("/api/adam/preview-links/status")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { enabled?: boolean } | null) => {
+        setPreviewLinksEnabled(Boolean(data?.enabled));
+      })
+      .catch(() => setPreviewLinksEnabled(false));
+  }, [authFetch]);
 
   const loadStudioData = useCallback(async () => {
     try {
@@ -3743,6 +3754,14 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                 authFetch={authFetch}
                 enabled={cowritersEnabled}
                 isPublishedTarget={editPostStatus === "published"}
+              />
+              <EditorPreviewLinksPanel
+                key={`preview-${selectedEditPostId ?? "no-post"}`}
+                postId={selectedEditPostId}
+                authFetch={authFetch}
+                enabled={
+                  previewLinksEnabled && editPostStatus !== "published"
+                }
               />
 
               {/* Post Banner & Thumbnail (Lens Grove) */}
