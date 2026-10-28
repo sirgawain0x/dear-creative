@@ -63,7 +63,6 @@ describe("PATCH /api/authors/[id]/profile", () => {
     expect(response.status).toBe(400);
     expect(requireAuthorProfileEditAccess).toHaveBeenCalledWith(
       expect.any(Request),
-      "g2",
     );
   });
 

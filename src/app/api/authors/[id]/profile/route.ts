@@ -16,7 +16,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   const { id } = await context.params;
   const db = getDb();
-  const auth = await requireAuthorProfileEditAccess(request, id);
+  const auth = await requireAuthorProfileEditAccess(request);
   if (!auth.ok) {
     return auth.response;
   }
