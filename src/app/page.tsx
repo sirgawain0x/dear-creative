@@ -3,11 +3,13 @@ import { Suspense } from "react";
 import { ActiveSubscriberLine } from "@/components/home/active-subscriber-line";
 import { HomeAboutSection } from "@/components/home/home-about-section";
 import { HomeSpotlight } from "@/components/home/home-spotlight";
+import { HomeSubscribeHashScroll } from "@/components/home/home-subscribe-hash-scroll";
 import { HomeSubscribeCta } from "@/components/home/home-subscribe-cta";
 
 export default function Home() {
   return (
     <main className="mx-auto flex max-w-3xl flex-col gap-10 px-6 py-16 md:max-w-6xl">
+      <HomeSubscribeHashScroll />
       <div className="flex flex-col items-start gap-6 sm:flex-row sm:items-center">
         <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-3xl border border-zinc-200/90 bg-white shadow-md dark:border-zinc-800 dark:bg-zinc-900">
           <img

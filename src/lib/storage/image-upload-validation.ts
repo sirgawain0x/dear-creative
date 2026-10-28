@@ -10,6 +10,9 @@ export const ALLOWED_PROFILE_IMAGE_TYPES = new Set([
 /** Matches admin banner upload limits for profile avatars. */
 export const MAX_PROFILE_IMAGE_BYTES = 5 * 1024 * 1024;
 
+/** Writer profile avatars on /authors/[id]/edit. */
+export const MAX_AUTHOR_AVATAR_BYTES = 2 * 1024 * 1024;
+
 export type ImageUploadValidationResult =
   | { ok: true }
   | { ok: false; status: number; error: string };
@@ -27,6 +30,26 @@ export function validateProfileImageUpload(file: Blob): ImageUploadValidationRes
       ok: false,
       status: 400,
       error: `Image exceeds maximum size of ${MAX_PROFILE_IMAGE_BYTES} bytes`,
+    };
+  }
+  return { ok: true };
+}
+
+export function validateAuthorAvatarUpload(
+  file: Blob,
+): ImageUploadValidationResult {
+  if (file.type && !file.type.startsWith("image/")) {
+    return {
+      ok: false,
+      status: 400,
+      error: `Unsupported file type: ${file.type}. Allowed: image/*`,
+    };
+  }
+  if (file.size > MAX_AUTHOR_AVATAR_BYTES) {
+    return {
+      ok: false,
+      status: 400,
+      error: `Image exceeds maximum size of ${MAX_AUTHOR_AVATAR_BYTES} bytes`,
     };
   }
   return { ok: true };

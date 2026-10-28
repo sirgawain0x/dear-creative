@@ -3,7 +3,7 @@ import { getDb } from "@/db/client";
 import { requireAuthorProfileEditAccess } from "@/lib/authors/author-access";
 import { isAuthorProfilesEnabled } from "@/lib/authors/feature-flag";
 import { updateAuthorDisplayProfile } from "@/lib/authors/author-profile";
-import { validateProfileImageUpload } from "@/lib/storage/image-upload-validation";
+import { validateAuthorAvatarUpload } from "@/lib/storage/image-upload-validation";
 import { uploadToLensGrove } from "@/lib/storage/lens-grove";
 
 export const maxDuration = 60;
@@ -17,7 +17,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   const { id } = await context.params;
   const db = getDb();
-  const auth = await requireAuthorProfileEditAccess(request);
+  const auth = await requireAuthorProfileEditAccess(request, id);
   if (!auth.ok) {
     return auth.response;
   }
@@ -33,7 +33,7 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
-    const validation = validateProfileImageUpload(file);
+    const validation = validateAuthorAvatarUpload(file);
     if (!validation.ok) {
       return NextResponse.json(
         { error: validation.error },

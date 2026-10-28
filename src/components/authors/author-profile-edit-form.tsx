@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 import { useAuthSession } from "@/components/providers/app-providers";
+import { AUTHOR_TAGLINE_MAX_LENGTH } from "@/lib/authors/author-display-profile-limits";
 import type { AuthorProfileRecord } from "@/lib/authors/author-profile";
 
 export function AuthorProfileEditForm({
@@ -14,6 +15,7 @@ export function AuthorProfileEditForm({
   const router = useRouter();
   const { isSignedIn, getAccessToken, login } = useAuthSession();
   const [name, setName] = useState(author.name);
+  const [tagline, setTagline] = useState(author.tagline ?? "");
   const [avatarUrl, setAvatarUrl] = useState(author.avatarUrl ?? "");
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -70,6 +72,7 @@ export function AuthorProfileEditForm({
         headers: { ...headers, "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim(),
+          tagline: tagline.trim() || null,
           avatarUrl: avatarUrl.trim() || null,
         }),
       });
@@ -89,7 +92,7 @@ export function AuthorProfileEditForm({
     return (
       <main className="mx-auto max-w-lg px-4 py-12 sm:px-6">
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Sign in with a Privy admin account to edit this profile.
+          Sign in with your writer wallet or an admin account to edit this profile.
         </p>
         <button
           type="button"
@@ -128,6 +131,23 @@ export function AuthorProfileEditForm({
           />
         </label>
 
+        <label className="block">
+          <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            Tagline
+          </span>
+          <input
+            type="text"
+            value={tagline}
+            onChange={(e) => setTagline(e.target.value)}
+            maxLength={AUTHOR_TAGLINE_MAX_LENGTH}
+            placeholder="One sentence about what you publish."
+            className="mt-2 w-full max-w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          />
+          <span className="mt-1 block text-xs text-zinc-500">
+            {tagline.length}/{AUTHOR_TAGLINE_MAX_LENGTH} characters
+          </span>
+        </label>
+
         <div>
           <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
             Profile image
@@ -146,7 +166,7 @@ export function AuthorProfileEditForm({
             )}
             <input
               type="file"
-              accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+              accept="image/*"
               disabled={busy}
               onChange={(e) => {
                 const file = e.target.files?.[0];

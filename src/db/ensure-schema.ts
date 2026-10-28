@@ -52,6 +52,7 @@ const IDEMPOTENT_TABLE_STATEMENTS = [
     name text NOT NULL,
     slug text NOT NULL,
     bio text,
+    tagline text,
     avatar_url text,
     payout_address text NOT NULL,
     me_token_address text,

@@ -2,7 +2,11 @@
 
 import { useState } from "react";
 
-export function SubscribeForm() {
+type SubscribeFormProps = {
+  centered?: boolean;
+};
+
+export function SubscribeForm({ centered = false }: SubscribeFormProps) {
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -37,8 +41,13 @@ export function SubscribeForm() {
     }
   }
 
+  const alignment = centered ? "items-center text-center" : "";
+
   return (
-    <form onSubmit={onSubmit} className="flex w-full max-w-md flex-col gap-3">
+    <form
+      onSubmit={onSubmit}
+      className={`flex w-full max-w-md flex-col gap-3 ${alignment}`}
+    >
       <label className="text-sm font-medium" htmlFor="subscribe-email">
         Email
       </label>
@@ -48,7 +57,7 @@ export function SubscribeForm() {
         required
         value={email}
         onChange={(event) => setEmail(event.target.value)}
-        className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+        className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
         placeholder="you@example.test"
       />
       <button
@@ -58,7 +67,9 @@ export function SubscribeForm() {
       >
         {pending ? "Sending…" : "Subscribe"}
       </button>
-      {message ? <p className="text-sm text-zinc-600">{message}</p> : null}
+      {message ? (
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">{message}</p>
+      ) : null}
     </form>
   );
 }
