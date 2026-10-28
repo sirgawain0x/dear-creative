@@ -68,7 +68,12 @@ function mockStudioFetch(options?: {
   /** Delays every chat threads list response until the promise settles. */
   delayThreadsListUntil?: Promise<void>;
   /** Awaits `gate` before responding on the Nth chat threads list fetch (1-based). */
-  blockThreadsListOnFetch?: { fetchNumber: number; gate: Promise<void> };
+  blockThreadsListOnFetch?: {
+    fetchNumber: number;
+    gate: Promise<void>;
+    /** Fires when that fetch reaches the gate (before `gate` settles). */
+    onBlocked?: () => void;
+  };
   /** Awaits `gate` before responding on fetch N and every later threads list fetch. */
   blockThreadsListFromFetch?: { fetchNumber: number; gate: Promise<void> };
 }) {
@@ -111,6 +116,7 @@ function mockStudioFetch(options?: {
       const n = threadsListFetchCount;
       const blockOne = options?.blockThreadsListOnFetch;
       if (blockOne && n === blockOne.fetchNumber) {
+        blockOne.onBlocked?.();
         await blockOne.gate;
       }
       const blockFrom = options?.blockThreadsListFromFetch;
@@ -375,10 +381,18 @@ describe("Adam chat loading indicator", () => {
     const studioReloadBlocked = new Promise<void>((resolve) => {
       releaseStudioReload = resolve;
     });
+    let awaitedStudioReloadBlocked!: () => void;
+    const awaitedStudioReloadBlockedSeen = new Promise<void>((resolve) => {
+      awaitedStudioReloadBlocked = resolve;
+    });
     let chatPostCount = 0;
     mockStudioFetch({
       // #1 initial loadStudioData; #2 fire-and-forget loadChatThreads; #3 awaited loadStudioData
-      blockThreadsListFromFetch: { fetchNumber: 3, gate: studioReloadBlocked },
+      blockThreadsListOnFetch: {
+        fetchNumber: 3,
+        gate: studioReloadBlocked,
+        onBlocked: awaitedStudioReloadBlocked,
+      },
       chatHandler: () => {
         chatPostCount += 1;
         if (chatPostCount === 1) {
@@ -413,6 +427,8 @@ describe("Adam chat loading indicator", () => {
         "Adam is thinking",
       ),
     );
+
+    await awaitedStudioReloadBlockedSeen;
 
     fireEvent.change(input, { target: { value: "Second while reload pending" } });
     fireEvent.keyDown(input, { key: "Enter", code: "Enter" });

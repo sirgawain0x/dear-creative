@@ -1402,14 +1402,12 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
             text: `Adam created draft "${data.createdDraft.title}" in the Approval Queue!`,
           });
           await loadStudioData();
-          if (!isCurrentRequest()) return;
         } else if (data.generatedBanner) {
           setStatusBanner({
             kind: "success",
             text: `Adam generated a new banner and uploaded it to Lens Grove (${data.generatedBanner.uri})!`,
           });
         }
-        if (!isCurrentRequest()) return;
         setChatGenerationPhase("idle");
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
