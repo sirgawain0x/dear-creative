@@ -65,7 +65,12 @@ const FIXTURE_THREADS = [
 
 function mockStudioFetch(options?: {
   chatHandler?: (init: RequestInit) => Response | Promise<Response>;
+  /** Delays every chat threads list response until the promise settles. */
+  delayThreadsListUntil?: Promise<void>;
+  /** Awaits `gate` before responding on the Nth chat threads list fetch (1-based). */
+  blockThreadsListOnFetch?: { fetchNumber: number; gate: Promise<void> };
 }) {
+  let threadsListFetchCount = 0;
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = String(input);
     if (url.includes("/api/admin/config")) {
@@ -96,7 +101,19 @@ function mockStudioFetch(options?: {
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
     }
-    if (url.includes("/api/adam/chat/threads")) {
+    if (
+      url.includes("/api/adam/chat/threads") &&
+      !url.includes("/api/adam/chat/threads/thread_fixture_")
+    ) {
+      threadsListFetchCount += 1;
+      const n = threadsListFetchCount;
+      const block = options?.blockThreadsListOnFetch;
+      if (block && n === block.fetchNumber) {
+        await block.gate;
+      }
+      if (options?.delayThreadsListUntil) {
+        await options.delayThreadsListUntil;
+      }
       return new Response(JSON.stringify({ threads: FIXTURE_THREADS }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -168,6 +185,7 @@ describe("Adam chat loading indicator", () => {
         <AdamStudio />
       </AppProviders>,
     );
+    await screen.findByRole("button", { name: "Thread A" });
     const input = await screen.findByLabelText(/Message Adam/i);
     fireEvent.change(input, { target: { value: "Hello Adam" } });
     fireEvent.click(screen.getAllByTestId("adam-chat-send")[0]!);
@@ -299,5 +317,106 @@ describe("Adam chat loading indicator", () => {
     await waitFor(() => expect(signals.length).toBeGreaterThanOrEqual(2));
     expect(signals[0]?.aborted).toBe(true);
     expect(signals[1]?.aborted).toBe(false);
+  });
+
+  it("clears generation UI when the active thread changes during an in-flight chat", async () => {
+    let resolveThreadsList!: () => void;
+    const threadsListBlocked = new Promise<void>((resolve) => {
+      resolveThreadsList = resolve;
+    });
+    let resolveChat!: (value: Response) => void;
+    const chatPending = new Promise<Response>((resolve) => {
+      resolveChat = resolve;
+    });
+    mockStudioFetch({
+      delayThreadsListUntil: threadsListBlocked,
+      chatHandler: () => chatPending as Promise<Response>,
+    });
+    localStorage.setItem(STUDIO_TOKEN_STORAGE_KEY, "fixture-key");
+    render(
+      <AppProviders>
+        <AdamStudio />
+      </AppProviders>,
+    );
+    const input = await screen.findByLabelText(/Message Adam/i);
+    fireEvent.change(input, { target: { value: "Before threads load" } });
+    fireEvent.click(screen.getAllByTestId("adam-chat-send")[0]!);
+    expect(await screen.findByTestId("adam-thinking-indicator")).toBeInTheDocument();
+
+    resolveThreadsList();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Thread A" })).toBeInTheDocument(),
+    );
+
+    resolveChat(
+      new Response(
+        JSON.stringify({
+          reply: "Done after thread auto-select.",
+          threadId: "thread_fixture_a",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("adam-thinking-indicator")).not.toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("adam-chat-generation-status")).toHaveTextContent("");
+  });
+
+  it("does not reset generation phase to idle when a stale chat finishes after loadStudioData", async () => {
+    let releaseStudioReload!: () => void;
+    const studioReloadBlocked = new Promise<void>((resolve) => {
+      releaseStudioReload = resolve;
+    });
+    let chatPostCount = 0;
+    mockStudioFetch({
+      blockThreadsListOnFetch: { fetchNumber: 2, gate: studioReloadBlocked },
+      chatHandler: () => {
+        chatPostCount += 1;
+        if (chatPostCount === 1) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                reply: "Created a draft.",
+                createdDraft: { title: "Fixture draft" },
+              }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            ),
+          );
+        }
+        return new Promise<Response>(() => {
+          /* second send stays in-flight */
+        });
+      },
+    });
+    localStorage.setItem(STUDIO_TOKEN_STORAGE_KEY, "fixture-key");
+    render(
+      <AppProviders>
+        <AdamStudio />
+      </AppProviders>,
+    );
+    const input = await screen.findByLabelText(/Message Adam/i);
+    await screen.findByRole("button", { name: "Thread A" });
+    fireEvent.change(input, { target: { value: "Create draft" } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("adam-chat-generation-status")).toHaveTextContent(
+        "Adam is thinking",
+      ),
+    );
+
+    fireEvent.change(input, { target: { value: "Second while reload pending" } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    await waitFor(() => expect(chatPostCount).toBe(2));
+
+    releaseStudioReload();
+    await waitFor(() =>
+      expect(screen.getByTestId("adam-chat-generation-status")).toHaveTextContent(
+        "Adam is thinking",
+      ),
+    );
+    expect(screen.getByTestId("adam-thinking-indicator")).toBeInTheDocument();
   });
 });
