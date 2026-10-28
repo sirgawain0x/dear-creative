@@ -9,8 +9,6 @@ import {
   type RepurposePanelOutputType,
   type RepurposeStoredOutput,
 } from "@/lib/adam/repurpose/types";
-import { NewsletterRepurposeIncludes } from "@/app/adam/newsletter-repurpose-includes";
-
 type RepurposePanelProps = {
   postId: string | null;
   authFetch: (url: string, init?: RequestInit) => Promise<Response>;
@@ -150,15 +148,7 @@ export function RepurposePanel({ postId, authFetch }: RepurposePanelProps) {
         ) : null}
       </div>
 
-      {postId ? (
-        <NewsletterRepurposeIncludes
-          key={postId}
-          postId={postId}
-          authFetch={authFetch}
-        />
-      ) : null}
-
-      <ul className="mt-3 space-y-3">
+      <ul className="space-y-3">
         {repurposePanelOutputTypes.map((type) => {
           const row = rows[type];
           const status = row.output?.status;

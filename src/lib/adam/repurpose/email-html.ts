@@ -1,7 +1,6 @@
 import { parseRepurposePayload } from "./parse-payload";
 import {
   repurposeOutputLabel,
-  type RepurposeNewsletterIncludeType,
   type RepurposeStoredOutput,
 } from "./types";
 
@@ -11,6 +10,14 @@ function escapeHtml(text: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+export function isAbsoluteHttpsUrl(url: string): boolean {
+  try {
+    return new URL(url).protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function sectionShell(title: string, innerHtml: string): string {
@@ -49,10 +56,15 @@ function renderReportHtml(payload: unknown): string {
   }
   const { data } = parsed;
   const sections = data.sections
-    .map(
-      (s) =>
-        `<tr><td style="padding:12px 0;border-top:1px solid #e4e4e7;"><p style="margin:0 0 6px;font-size:15px;font-weight:600;color:#18181b;">${escapeHtml(s.heading)}</p><p style="margin:0;font-size:14px;line-height:1.5;color:#3f3f46;">${escapeHtml(s.body)}</p></td></tr>`,
-    )
+    .map((s) => {
+      const bullets =
+        s.bullets && s.bullets.length > 0
+          ? `<ul style="margin:8px 0 0;padding:0 0 0 18px;font-size:13px;color:#52525b;">${s.bullets
+              .map((b) => `<li style="margin:2px 0;">${escapeHtml(b)}</li>`)
+              .join("")}</ul>`
+          : "";
+      return `<tr><td style="padding:12px 0;border-top:1px solid #e4e4e7;"><p style="margin:0 0 6px;font-size:15px;font-weight:600;color:#18181b;">${escapeHtml(s.heading)}</p><p style="margin:0;font-size:14px;line-height:1.5;color:#3f3f46;">${escapeHtml(s.body)}</p>${bullets}</td></tr>`;
+    })
     .join("");
   const takeaways = data.keyTakeaways
     .map((t) => `<li style="margin:4px 0;">${escapeHtml(t)}</li>`)
@@ -145,15 +157,20 @@ function renderDataTableHtml(payload: unknown): string {
 function renderVideoOverviewHtml(
   output: RepurposeStoredOutput,
   postUrl: string,
-  thumbnailUrl: string | null,
+  coverImageUrl: string | null | undefined,
 ): string {
-  const thumb = thumbnailUrl ?? postUrl;
   const link = output.mediaUrl ?? postUrl;
+  const linkEscaped = escapeHtmlAttribute(link);
+  const thumbBlock =
+    coverImageUrl && isAbsoluteHttpsUrl(coverImageUrl)
+      ? `<a href="${linkEscaped}" style="text-decoration:none;">
+<img src="${escapeHtmlAttribute(coverImageUrl)}" alt="Video overview" width="560" style="display:block;max-width:100%;height:auto;border:0;border-radius:8px;" />
+</a>`
+      : "";
+  const textLink = `<p style="margin:8px 0 0;font-size:13px;"><a href="${linkEscaped}" style="color:#6d28d9;">Open video overview →</a></p>`;
   return `<p style="margin:0 0 8px;font-size:14px;color:#3f3f46;">Watch the narrated video overview on the web (email clients cannot embed video).</p>
-<a href="${escapeHtmlAttribute(link)}" style="text-decoration:none;">
-<img src="${escapeHtmlAttribute(thumb)}" alt="Video overview" width="560" style="display:block;max-width:100%;height:auto;border:0;border-radius:8px;" />
-</a>
-<p style="margin:8px 0 0;font-size:13px;"><a href="${escapeHtmlAttribute(link)}" style="color:#6d28d9;">Open video overview →</a></p>`;
+${thumbBlock}
+${textLink}`;
 }
 
 function escapeHtmlAttribute(value: string): string {
@@ -164,13 +181,16 @@ function renderInfographicHtml(output: RepurposeStoredOutput): string {
   if (!output.mediaUrl) {
     return `<p style="margin:0;font-size:14px;color:#71717a;">Infographic unavailable.</p>`;
   }
+  if (!isAbsoluteHttpsUrl(output.mediaUrl)) {
+    return `<p style="margin:0;font-size:13px;"><a href="${escapeHtmlAttribute(output.mediaUrl)}" style="color:#6d28d9;">Open infographic →</a></p>`;
+  }
   return `<a href="${escapeHtmlAttribute(output.mediaUrl)}"><img src="${escapeHtmlAttribute(output.mediaUrl)}" alt="Infographic" width="560" style="display:block;max-width:100%;height:auto;border:0;border-radius:8px;" /></a>`;
 }
 
 export function renderRepurposeOutputEmailSection(input: {
   output: RepurposeStoredOutput;
   postUrl: string;
-  thumbnailUrl?: string | null;
+  coverImage?: string | null;
 }): string {
   const label = repurposeOutputLabel(input.output.outputType);
   let inner = `<p style="margin:0;font-size:14px;color:#71717a;">Content unavailable.</p>`;
@@ -197,7 +217,7 @@ export function renderRepurposeOutputEmailSection(input: {
       inner = renderVideoOverviewHtml(
         input.output,
         input.postUrl,
-        input.thumbnailUrl ?? null,
+        input.coverImage,
       );
       break;
     case "infographic":
@@ -207,31 +227,4 @@ export function renderRepurposeOutputEmailSection(input: {
       break;
   }
   return sectionShell(label, inner);
-}
-
-export function appendRepurposeSectionsToEmailHtml(input: {
-  baseHtml: string;
-  outputs: RepurposeStoredOutput[];
-  includeTypes: RepurposeNewsletterIncludeType[];
-  postUrl: string;
-  thumbnailUrl?: string | null;
-}): string {
-  if (input.includeTypes.length === 0) {
-    return input.baseHtml;
-  }
-  const includeSet = new Set<string>(input.includeTypes);
-  const sections = input.outputs
-    .filter((o) => o.status === "ready" && includeSet.has(o.outputType))
-    .map((output) =>
-      renderRepurposeOutputEmailSection({
-        output,
-        postUrl: input.postUrl,
-        thumbnailUrl: input.thumbnailUrl,
-      }),
-    )
-    .join("");
-  if (!sections) {
-    return input.baseHtml;
-  }
-  return `${input.baseHtml}${sections}`;
 }

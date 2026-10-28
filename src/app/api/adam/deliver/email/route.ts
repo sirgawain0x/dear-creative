@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/db/client";
 import { sendNewsletterEmail } from "@/lib/adam/deliver-email";
-import { parseNewsletterIncludeTypes } from "@/lib/adam/repurpose/newsletter-includes";
 import { requireAdamAuth } from "@/lib/adam/require-auth";
 
 type DeliverBody = {
   postId?: string;
   idempotencyKey?: string;
   dryRun?: boolean;
-  repurposeIncludes?: string[];
 };
 
 export async function POST(request: Request) {
@@ -37,7 +35,6 @@ export async function POST(request: Request) {
     postId,
     idempotencyKey,
     dryRun: body.dryRun,
-    repurposeIncludes: parseNewsletterIncludeTypes(body.repurposeIncludes),
   });
 
   if (result.outcome === "blocked") {

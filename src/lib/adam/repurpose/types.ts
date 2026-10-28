@@ -42,21 +42,6 @@ export const repurposeReaderOutputTypes = [
 export type RepurposeReaderOutputType =
   (typeof repurposeReaderOutputTypes)[number];
 
-/** Repurpose formats that can be appended to newsletter HTML (email-safe). */
-export const repurposeNewsletterIncludeTypes = [
-  "slide_deck",
-  "video_overview",
-  "mind_map",
-  "report",
-  "flashcards",
-  "quiz",
-  "data_table",
-  "infographic",
-] as const satisfies readonly RepurposeOutputType[];
-
-export type RepurposeNewsletterIncludeType =
-  (typeof repurposeNewsletterIncludeTypes)[number];
-
 export const repurposeTextOutputTypes = [
   "slide_deck",
   "mind_map",
@@ -102,12 +87,6 @@ export function isRepurposePanelOutputType(
   value: string,
 ): value is RepurposePanelOutputType {
   return (repurposePanelOutputTypes as readonly string[]).includes(value);
-}
-
-export function isRepurposeNewsletterIncludeType(
-  value: string,
-): value is RepurposeNewsletterIncludeType {
-  return (repurposeNewsletterIncludeTypes as readonly string[]).includes(value);
 }
 
 export function repurposeOutputLabel(type: RepurposeOutputType): string {

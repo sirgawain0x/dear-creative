@@ -36,13 +36,6 @@ import {
   resolveFrozenChunkRecipients,
   touchDeliveryReceiptActivity,
 } from "./newsletter-chunks";
-import { appendRepurposeSectionsToEmailHtml } from "@/lib/adam/repurpose/email-html";
-import { listRepurposeOutputsForPost } from "@/lib/adam/repurpose/storage";
-import { parseNewsletterIncludeTypes } from "@/lib/adam/repurpose/newsletter-includes";
-import type { RepurposeNewsletterIncludeType } from "@/lib/adam/repurpose/types";
-import { resolvePostPublicUrl } from "@/lib/posts/post-public-url";
-import { resolvePublicPostCoverImage } from "@/lib/posts/post-cover-image";
-import { isPaywallEnabled } from "@/lib/paywall/feature-flag";
 import { buildNewsletterEmailContent } from "./newsletter-email-content";
 
 export type DeliverEmailInput = {
@@ -51,8 +44,6 @@ export type DeliverEmailInput = {
   dryRun?: boolean;
   claimOptions?: ClaimDeliveryOptions;
   providerTimeoutMs?: number;
-  /** Repurpose output types to append as email-safe HTML sections. */
-  repurposeIncludes?: RepurposeNewsletterIncludeType[];
   /** Injectable clock; a fresh reading is taken per chunk operation. */
   clock?: Clock;
 };
@@ -298,26 +289,7 @@ export async function sendNewsletterEmail(
     freeContent: paywallRow?.freeContent ?? null,
     gatedContent: paywallRow?.gatedContent ?? null,
   });
-  let html = emailContent.html;
-  const includeTypes = parseNewsletterIncludeTypes(input.repurposeIncludes ?? []);
-  const isGatedPost = paywallRow?.isGated ?? false;
-  const allowRepurposeAppend = !isPaywallEnabled() || !isGatedPost;
-  if (includeTypes.length > 0 && allowRepurposeAppend) {
-    const outputs = await listRepurposeOutputsForPost(db, input.postId);
-    const postUrl = resolvePostPublicUrl({ slug, canonicalUrl });
-    const thumbnailUrl = resolvePublicPostCoverImage({
-      slug,
-      title: gate.value.post.title,
-      bodyHtml: emailHtml,
-    });
-    html = appendRepurposeSectionsToEmailHtml({
-      baseHtml: html,
-      outputs,
-      includeTypes,
-      postUrl,
-      thumbnailUrl,
-    });
-  }
+  const html = emailContent.html;
   const text = emailContent.text;
 
   const dryRun = Boolean(input.dryRun);
