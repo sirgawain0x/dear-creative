@@ -39,36 +39,11 @@ vi.mock("./providers/app-providers", () => ({
 }));
 
 describe("onSubscribeNavClick (homepage)", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
   it("scrolls to subscribe in-page and runs afterNavigate", () => {
     const section = document.createElement("section");
     section.id = HOME_SUBSCRIBE_SECTION_ID;
-    section.getBoundingClientRect = () =>
-      ({
-        top: 200,
-        bottom: 400,
-        left: 0,
-        right: 0,
-        width: 0,
-        height: 0,
-        x: 0,
-        y: 200,
-        toJSON: () => ({}),
-      }) as DOMRect;
+    section.scrollIntoView = vi.fn();
     document.body.appendChild(section);
-    Object.defineProperty(window, "scrollY", { value: 100, configurable: true });
-    Object.defineProperty(document.documentElement, "scrollHeight", {
-      value: 2000,
-      configurable: true,
-    });
-    Object.defineProperty(window, "innerHeight", { value: 800, configurable: true });
-    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
-    vi.spyOn(window, "getComputedStyle").mockReturnValue({
-      scrollMarginTop: "64px",
-    } as CSSStyleDeclaration);
 
     const afterNavigate = vi.fn();
     const preventDefault = vi.fn();
@@ -77,7 +52,10 @@ describe("onSubscribeNavClick (homepage)", () => {
       preventDefault,
     } as unknown as React.MouseEvent<HTMLAnchorElement>);
     expect(preventDefault).toHaveBeenCalledTimes(1);
-    expect(window.scrollTo).toHaveBeenCalledWith({ top: 236, behavior: "smooth" });
+    expect(section.scrollIntoView).toHaveBeenCalledWith({
+      behavior: "smooth",
+      block: "start",
+    });
     expect(afterNavigate).toHaveBeenCalledTimes(1);
     section.remove();
   });

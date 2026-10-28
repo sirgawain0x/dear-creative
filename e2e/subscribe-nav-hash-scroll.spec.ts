@@ -2,6 +2,22 @@ import { test, expect } from "@playwright/test";
 
 const MOBILE_WIDTH = 375;
 
+const readSubscribeScrollMetrics = () => {
+  const header = document.querySelector("header");
+  const section = document.getElementById("subscribe");
+  if (!header || !section) {
+    return null;
+  }
+  const margin = Number.parseFloat(getComputedStyle(section).scrollMarginTop) || 0;
+  const headerBottom = header.getBoundingClientRect().bottom;
+  const scrollY = window.scrollY;
+  const gap = section.getBoundingClientRect().top - headerBottom;
+  const docTop = section.getBoundingClientRect().top + scrollY;
+  const idealScroll = docTop - margin;
+  const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+  return { gap, scrollY, maxScroll, margin, docTop, idealScroll, headerBottom };
+};
+
 test.describe("Subscribe nav and hash scroll", () => {
   test("mobile drawer closes after Subscribe from /posts", async ({ page }) => {
     await page.setViewportSize({ width: MOBILE_WIDTH, height: 812 });
@@ -36,22 +52,39 @@ test.describe("Subscribe nav and hash scroll", () => {
         const header = document.querySelector("header");
         const section = document.getElementById("subscribe");
         if (!header || !section) return false;
-        const gap = section.getBoundingClientRect().top - header.getBoundingClientRect().bottom;
-        return gap >= 0 && gap <= maxGap;
+        const margin = Number.parseFloat(getComputedStyle(section).scrollMarginTop) || 0;
+        const headerBottom = header.getBoundingClientRect().bottom;
+        const scrollY = window.scrollY;
+        const gap = section.getBoundingClientRect().top - headerBottom;
+        const docTop = section.getBoundingClientRect().top + scrollY;
+        const idealScroll = docTop - margin;
+        const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+        if (gap < 0) return false;
+        const scrollClamped = idealScroll > maxScroll + 0.5;
+        if (scrollClamped) {
+          const expectedGap = docTop - maxScroll - headerBottom;
+          return Math.abs(gap - expectedGap) < 2;
+        }
+        return gap <= maxGap;
       },
       maxGapPx,
       { timeout: 15_000 },
     );
 
-    const gap = await page.evaluate(() => {
-      const header = document.querySelector("header");
-      const section = document.getElementById("subscribe");
-      if (!header || !section) return null;
-      return section.getBoundingClientRect().top - header.getBoundingClientRect().bottom;
-    });
+    const metrics = await page.evaluate(readSubscribeScrollMetrics);
+    expect(metrics).not.toBeNull();
 
-    expect(gap).not.toBeNull();
-    expect(gap!).toBeGreaterThanOrEqual(0);
-    expect(gap!).toBeLessThanOrEqual(maxGapPx);
+    const { gap, idealScroll, maxScroll, docTop, headerBottom, margin, scrollY } = metrics!;
+    expect(gap).toBeGreaterThanOrEqual(0);
+
+    const scrollClamped = idealScroll > maxScroll + 0.5;
+    if (scrollClamped) {
+      const expectedGap = docTop - maxScroll - headerBottom;
+      expect(Math.abs(gap - expectedGap)).toBeLessThanOrEqual(2);
+      expect(margin).toBeGreaterThan(0);
+      expect(scrollY).toBeGreaterThanOrEqual(maxScroll - 2);
+    } else {
+      expect(gap).toBeLessThanOrEqual(maxGapPx);
+    }
   });
 });

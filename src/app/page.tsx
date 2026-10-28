@@ -70,10 +70,6 @@ export default function Home() {
       >
         <HomeAboutSection />
       </Suspense>
-      <div
-        aria-hidden
-        className="pointer-events-none h-[calc(100dvh-var(--site-sticky-header-offset))] shrink-0"
-      />
     </main>
   );
 }
