@@ -19,6 +19,7 @@ import {
   approvals,
   deliveryReceiptChunks,
   deliveryReceipts,
+  postRepurposeOutputs,
   posts,
   subscribers,
 } from "@/db/schema";
@@ -804,6 +805,97 @@ describe("sendNewsletterEmail", () => {
     const [payload] = batchSend.mock.calls[0] as [{ html: string }[]];
     expect(payload[0]!.html).toBe("<p>Free only</p><p>Paid secret</p>");
     expect(payload[0]!.html).toContain("Paid secret");
+  });
+
+  it("does not append repurpose sections for gated posts when PAYWALL_ENABLED is on", async () => {
+    process.env.RESEND_LIVE = "true";
+    setPaywallEnabledForTests(true);
+    batchSend.mockResolvedValue({
+      data: { data: [{ id: "email-id-gated-repurpose" }] },
+      error: null,
+    });
+
+    const db = await createTestDb();
+    const postId = await seedApprovedNewsletterPost(db, {
+      isGated: true,
+      freeContent: "<p>Free only</p>",
+      gatedContent: "<p>Paid secret</p>",
+      emailHtml: "<p>Free only</p>",
+    });
+
+    const repurposeSecret = "REPURPOSE_GATED_LEAK_MARKER";
+    await db.insert(postRepurposeOutputs).values({
+      id: randomUUID(),
+      postId,
+      outputType: "report",
+      status: "ready",
+      payloadJson: JSON.stringify({
+        title: "Brief",
+        summary: repurposeSecret,
+        sections: [{ heading: "H", body: repurposeSecret, bullets: [] }],
+        keyTakeaways: [repurposeSecret],
+      }),
+      mediaUrl: null,
+      mediaMimeType: null,
+      errorMessage: null,
+      claimToken: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await sendNewsletterEmail(db, {
+      postId,
+      idempotencyKey: "post:paywall-repurpose-skip",
+      repurposeIncludes: ["report"],
+    });
+
+    const [payload] = batchSend.mock.calls[0] as [{ html: string }[]];
+    expect(payload[0]!.html).not.toContain(repurposeSecret);
+    expect(payload[0]!.html).toContain("Free only");
+  });
+
+  it("appends repurpose sections for non-gated posts", async () => {
+    process.env.RESEND_LIVE = "true";
+    setPaywallEnabledForTests(true);
+    batchSend.mockResolvedValue({
+      data: { data: [{ id: "email-id-open-repurpose" }] },
+      error: null,
+    });
+
+    const db = await createTestDb();
+    const postId = await seedApprovedNewsletterPost(db, {
+      isGated: false,
+      emailHtml: "<p>Open issue</p>",
+    });
+
+    const marker = "OPEN_REPURPOSE_MARKER";
+    await db.insert(postRepurposeOutputs).values({
+      id: randomUUID(),
+      postId,
+      outputType: "report",
+      status: "ready",
+      payloadJson: JSON.stringify({
+        title: "Brief",
+        summary: marker,
+        sections: [{ heading: "H", body: "Body", bullets: [] }],
+        keyTakeaways: ["Takeaway"],
+      }),
+      mediaUrl: null,
+      mediaMimeType: null,
+      errorMessage: null,
+      claimToken: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await sendNewsletterEmail(db, {
+      postId,
+      idempotencyKey: "post:open-repurpose",
+      repurposeIncludes: ["report"],
+    });
+
+    const [payload] = batchSend.mock.calls[0] as [{ html: string }[]];
+    expect(payload[0]!.html).toContain(marker);
   });
 
   it("sends paywalled preview with Read the rest link when PAYWALL_ENABLED is on", async () => {

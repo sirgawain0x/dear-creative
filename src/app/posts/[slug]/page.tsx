@@ -12,6 +12,7 @@ import { AuthorByline } from "@/components/posts/author-byline";
 import { PostPaywallCheckout } from "@/components/posts/post-paywall-checkout";
 import { PostShareButton } from "@/components/posts/post-share-button";
 import { PostRepurposeSection } from "@/components/posts/repurpose/post-repurpose-section";
+import { shouldRenderPostRepurposeSection } from "@/lib/posts/post-repurpose-visibility";
 import { splitArticleAtParagraph } from "@/lib/posts/post-takeaway-inline";
 import { publishedPostBodyForDisplay } from "@/lib/posts/published-post-render";
 import type { PublishedPostDetail } from "@/lib/posts/published-posts";
@@ -200,7 +201,9 @@ function PostArticle({
         />
       ) : null}
 
-      <PostRepurposeSection slug={post.slug} />
+      {shouldRenderPostRepurposeSection(showPaywall) ? (
+        <PostRepurposeSection slug={post.slug} />
+      ) : null}
 
       <PredictionCard slug={post.slug} />
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { deliverNewsletterEmailFromStudio } from "@/lib/adam/repurpose/deliver-newsletter-from-studio";
 import {
   readNewsletterIncludesFromSession,
   writeNewsletterIncludesToSession,
@@ -13,20 +14,21 @@ import {
 
 type NewsletterRepurposeIncludesProps = {
   postId: string;
+  authFetch: (url: string, init?: RequestInit) => Promise<Response>;
 };
 
 export function NewsletterRepurposeIncludes({
   postId,
+  authFetch,
 }: NewsletterRepurposeIncludesProps) {
   const [selected, setSelected] = useState<RepurposeNewsletterIncludeType[]>(() =>
     readNewsletterIncludesFromSession(postId),
   );
+  const [dryRunStatus, setDryRunStatus] = useState<string | null>(null);
+  const [dryRunBusy, setDryRunBusy] = useState(false);
 
   const toggle = useCallback(
     (type: RepurposeNewsletterIncludeType) => {
-      if (!postId) {
-        return;
-      }
       setSelected((prev) => {
         const next = prev.includes(type)
           ? prev.filter((t) => t !== type)
@@ -38,6 +40,31 @@ export function NewsletterRepurposeIncludes({
     [postId],
   );
 
+  const handleDryRun = useCallback(async () => {
+    setDryRunBusy(true);
+    setDryRunStatus(null);
+    try {
+      const res = await deliverNewsletterEmailFromStudio({
+        authFetch,
+        postId,
+        dryRun: true,
+      });
+      const data = (await res.json()) as { outcome?: string; error?: string };
+      if (!res.ok) {
+        throw new Error(data.error ?? "Dry-run failed");
+      }
+      setDryRunStatus(
+        data.outcome === "sent"
+          ? "Dry-run OK — selected repurpose sections will append on live send."
+          : `Dry-run: ${data.outcome ?? "unknown"}`,
+      );
+    } catch (err) {
+      setDryRunStatus(err instanceof Error ? err.message : "Dry-run failed");
+    } finally {
+      setDryRunBusy(false);
+    }
+  }, [authFetch, postId]);
+
   return (
     <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50/80 p-3 dark:border-zinc-800 dark:bg-zinc-950/40">
       <p className="text-[11px] font-semibold text-zinc-700 dark:text-zinc-200">
@@ -45,7 +72,7 @@ export function NewsletterRepurposeIncludes({
       </p>
       <p className="mt-0.5 text-[10px] text-zinc-500">
         Email-safe HTML for ready repurpose outputs. Choices are saved in this
-        browser session only (no database change).
+        browser session and sent with newsletter delivery from here.
       </p>
       <ul className="mt-2 flex flex-wrap gap-2">
         {repurposeNewsletterIncludeTypes.map((type) => {
@@ -65,13 +92,19 @@ export function NewsletterRepurposeIncludes({
           );
         })}
       </ul>
+      <button
+        type="button"
+        disabled={dryRunBusy}
+        onClick={() => void handleDryRun()}
+        className="mt-2 rounded-md border border-violet-300 bg-white px-2.5 py-1 text-[10px] font-medium text-violet-800 hover:bg-violet-50 disabled:opacity-50 dark:border-violet-800 dark:bg-zinc-900 dark:text-violet-200"
+      >
+        {dryRunBusy ? "Running dry-run…" : "Dry-run newsletter send"}
+      </button>
+      {dryRunStatus ? (
+        <p className="mt-1.5 text-[10px] text-zinc-600 dark:text-zinc-400">
+          {dryRunStatus}
+        </p>
+      ) : null}
     </div>
   );
-}
-
-/** Read includes for API calls (deliver email). */
-export function getNewsletterRepurposeIncludesForPost(
-  postId: string,
-): RepurposeNewsletterIncludeType[] {
-  return readNewsletterIncludesFromSession(postId);
 }

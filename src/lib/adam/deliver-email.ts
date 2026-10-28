@@ -42,6 +42,7 @@ import { parseNewsletterIncludeTypes } from "@/lib/adam/repurpose/newsletter-inc
 import type { RepurposeNewsletterIncludeType } from "@/lib/adam/repurpose/types";
 import { resolvePostPublicUrl } from "@/lib/posts/post-public-url";
 import { resolvePublicPostCoverImage } from "@/lib/posts/post-cover-image";
+import { isPaywallEnabled } from "@/lib/paywall/feature-flag";
 import { buildNewsletterEmailContent } from "./newsletter-email-content";
 
 export type DeliverEmailInput = {
@@ -299,7 +300,9 @@ export async function sendNewsletterEmail(
   });
   let html = emailContent.html;
   const includeTypes = parseNewsletterIncludeTypes(input.repurposeIncludes ?? []);
-  if (includeTypes.length > 0) {
+  const isGatedPost = paywallRow?.isGated ?? false;
+  const allowRepurposeAppend = !isPaywallEnabled() || !isGatedPost;
+  if (includeTypes.length > 0 && allowRepurposeAppend) {
     const outputs = await listRepurposeOutputsForPost(db, input.postId);
     const postUrl = resolvePostPublicUrl({ slug, canonicalUrl });
     const thumbnailUrl = resolvePublicPostCoverImage({

@@ -42,6 +42,12 @@ export function readNewsletterIncludesFromSession(postId: string): RepurposeNews
   }
 }
 
+export function getNewsletterRepurposeIncludesForPost(
+  postId: string,
+): RepurposeNewsletterIncludeType[] {
+  return readNewsletterIncludesFromSession(postId);
+}
+
 export function writeNewsletterIncludesToSession(
   postId: string,
   includes: RepurposeNewsletterIncludeType[],

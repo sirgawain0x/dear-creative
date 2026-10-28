@@ -6,7 +6,6 @@ import {
   REPURPOSE_SLIDE_BACKGROUND,
   REPURPOSE_SLIDE_HEIGHT,
   REPURPOSE_SLIDE_WIDTH,
-  resolveRepurposeSlideFontPath,
   wrapSlideTitleLines,
 } from "./slide-image";
 import { resolveFfmpegBinaryPath } from "./ffmpeg";
@@ -40,7 +39,7 @@ Style: Default,DejaVu Sans,42,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 0,0:00:00.00,0:00:30.00,Default,,0,0,0,,${dialogueText}
+Dialogue: 0,0:00:00.00,9:59:59.00,Default,,0,0,0,,${dialogueText}
 `;
 }
 
@@ -98,9 +97,4 @@ export async function renderSlideTitleFramePng(input: {
     ],
     { maxBuffer: 8 * 1024 * 1024, timeout: 30_000 },
   );
-}
-
-/** @deprecated use resolveRepurposeFontsDir — kept for tests referencing font file path */
-export function resolveBundledRepurposeFontFile(): string {
-  return resolveRepurposeSlideFontPath();
 }

@@ -102,7 +102,7 @@ export async function runRepurposeVideoRenderPreflight(): Promise<RepurposeVideo
   const pngPath = join(workDir, "preflight-slide.png");
   try {
     await renderSlideTitleFramePng({
-      title: "Preflight glyphs: Aa 日本語",
+      title: "Preflight glyphs: AaBb 123",
       outputPath: pngPath,
     });
   } catch (error) {

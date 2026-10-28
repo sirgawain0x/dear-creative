@@ -151,7 +151,11 @@ export function RepurposePanel({ postId, authFetch }: RepurposePanelProps) {
       </div>
 
       {postId ? (
-        <NewsletterRepurposeIncludes key={postId} postId={postId} />
+        <NewsletterRepurposeIncludes
+          key={postId}
+          postId={postId}
+          authFetch={authFetch}
+        />
       ) : null}
 
       <ul className="mt-3 space-y-3">

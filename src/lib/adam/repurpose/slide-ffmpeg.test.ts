@@ -59,7 +59,7 @@ describe("renderSlideTitleFramePng", () => {
 
     const fixturePath = join(
       process.cwd(),
-      "src/lib/adam/repurpose/fixtures/video-drawtext-frame.png",
+      "src/lib/adam/repurpose/fixtures/video-ass-frame.png",
     );
     await copyFile(outputPath, fixturePath);
   });
