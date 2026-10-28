@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
 import { authors } from "@/db/schema";
+import { isMissingColumnError } from "@/lib/db/sqlite-errors";
 
 export type PostAuthorDetail = {
   name: string;
@@ -37,13 +38,7 @@ export async function getAuthorBySlug(
 
     return mapAuthorRow(row);
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : typeof error === "string"
-          ? error
-          : "";
-    if (!/no such column/i.test(message)) {
+    if (!isMissingColumnError(error)) {
       throw error;
     }
     const [row] = await db
