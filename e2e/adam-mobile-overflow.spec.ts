@@ -1,4 +1,12 @@
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { test, expect, type Page } from "@playwright/test";
+import {
+  ADAM_CHAT_OVERFLOW_SCREENSHOT_DIR,
+  ADAM_CHAT_OVERFLOW_THREAD_ID,
+  buildAdamChatOverflowMessages,
+  buildAdamChatOverflowThreadList,
+} from "./fixtures/adam-chat-overflow-fixture";
 import {
   buildAdamPostsFixture,
   STUDIO_TOKEN_FIXTURE,
@@ -68,6 +76,49 @@ async function mockAdamStudioApis(page: Page) {
   });
 }
 
+async function mockAdamChatOverflowThread(page: Page) {
+  await page.route("**/api/adam/chat/threads", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ threads: buildAdamChatOverflowThreadList() }),
+    });
+  });
+
+  await page.route(
+    `**/api/adam/chat/threads/${ADAM_CHAT_OVERFLOW_THREAD_ID}`,
+    async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ messages: buildAdamChatOverflowMessages() }),
+      });
+    },
+  );
+}
+
+async function openAdamChatTab(page: Page, width: number) {
+  await installStudioFixtureSession(page, width);
+  await mockAdamChatOverflowThread(page);
+  await page.goto("/adam?tab=chat", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("button", { name: "Chat with Adam" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(page.getByText("Overflow fixture")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("supercalifragilisticexpialidocious")).toBeVisible({
+    timeout: 15_000,
+  });
+}
+
 async function installStudioFixtureSession(page: Page, width: number) {
   await page.setViewportSize({ width, height: 900 });
   await page.addInitScript(
@@ -99,9 +150,9 @@ async function openApprovalsPage(page: Page, width: number) {
 async function expectNoHorizontalOverflow(page: Page) {
   const metrics = await page.evaluate(() => ({
     scrollWidth: document.documentElement.scrollWidth,
-    innerWidth: window.innerWidth,
+    clientWidth: document.documentElement.clientWidth,
   }));
-  expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.innerWidth);
+  expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth);
 }
 
 async function expectStudioMainPadding(page: Page) {
@@ -140,5 +191,26 @@ for (const width of allViewportWidths) {
     await openApprovalsPage(page, width);
     await expectNoHorizontalOverflow(page);
     await expectStudioMainPadding(page);
+  });
+}
+
+const chatOverflowWidths = [
+  { width: 375, screenshot: "adam-chat-mobile-375.png" },
+  { width: 768, screenshot: "adam-chat-tablet-768.png" },
+] as const;
+
+for (const { width, screenshot } of chatOverflowWidths) {
+  test(`Chat with Adam has no horizontal overflow at ${width}px`, async ({
+    page,
+  }) => {
+    await openAdamChatTab(page, width);
+    await expectNoHorizontalOverflow(page);
+
+    const outDir = join(process.cwd(), ADAM_CHAT_OVERFLOW_SCREENSHOT_DIR);
+    mkdirSync(outDir, { recursive: true });
+    await page.screenshot({
+      path: join(outDir, screenshot),
+      fullPage: true,
+    });
   });
 }
