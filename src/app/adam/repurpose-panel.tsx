@@ -1,14 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { RepurposeOutputCard } from "@/components/posts/repurpose/repurpose-output-views";
 import {
-  repurposeMediaOutputTypes,
+  repurposePanelMediaOutputTypes,
+  repurposePanelOutputTypes,
   repurposeOutputLabel,
-  repurposeOutputTypes,
-  repurposeTextOutputTypes,
-  type RepurposeOutputType,
+  type RepurposePanelOutputType,
   type RepurposeStoredOutput,
 } from "@/lib/adam/repurpose/types";
+import { NewsletterRepurposeIncludes } from "@/app/adam/newsletter-repurpose-includes";
 
 type RepurposePanelProps = {
   postId: string | null;
@@ -20,56 +21,12 @@ type OutputRowState = {
   isGenerating: boolean;
 };
 
-function initialRows(): Record<RepurposeOutputType, OutputRowState> {
-  const rows = {} as Record<RepurposeOutputType, OutputRowState>;
-  for (const type of repurposeOutputTypes) {
+function initialRows(): Record<RepurposePanelOutputType, OutputRowState> {
+  const rows = {} as Record<RepurposePanelOutputType, OutputRowState>;
+  for (const type of repurposePanelOutputTypes) {
     rows[type] = { output: null, isGenerating: false };
   }
   return rows;
-}
-
-function SlideDeckPreview({ payload }: { payload: unknown }) {
-  const deck = payload as {
-    title?: string;
-    slides?: Array<{ title?: string; bullets?: string[] }>;
-  };
-  if (!deck.slides?.length) {
-    return (
-      <pre className="max-h-40 overflow-auto rounded-lg bg-zinc-950/80 p-2 text-[10px] text-zinc-300">
-        {JSON.stringify(payload, null, 2)}
-      </pre>
-    );
-  }
-  return (
-    <div className="max-h-48 space-y-2 overflow-auto">
-      <p className="text-[11px] font-semibold text-zinc-700 dark:text-zinc-200">
-        {deck.title}
-      </p>
-      {deck.slides.map((slide, idx) => (
-        <div
-          key={`${slide.title ?? "slide"}-${idx}`}
-          className="rounded-lg border border-zinc-200 bg-white p-2 dark:border-zinc-800 dark:bg-zinc-950"
-        >
-          <p className="text-[11px] font-medium">
-            {idx + 1}. {slide.title}
-          </p>
-          <ul className="mt-1 list-disc pl-4 text-[10px] text-zinc-600 dark:text-zinc-400">
-            {(slide.bullets ?? []).map((b, bi) => (
-              <li key={bi}>{b}</li>
-            ))}
-          </ul>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function JsonPreview({ payload }: { payload: unknown }) {
-  return (
-    <pre className="max-h-40 overflow-auto rounded-lg bg-zinc-950/80 p-2 text-[10px] text-zinc-300">
-      {JSON.stringify(payload, null, 2)}
-    </pre>
-  );
 }
 
 export function RepurposePanel({ postId, authFetch }: RepurposePanelProps) {
@@ -90,11 +47,14 @@ export function RepurposePanel({ postId, authFetch }: RepurposePanelProps) {
       const data = (await res.json()) as { outputs?: RepurposeStoredOutput[] };
       setRows((prev) => {
         const next = { ...prev };
-        for (const type of repurposeOutputTypes) {
+        for (const type of repurposePanelOutputTypes) {
           next[type] = { ...next[type], output: null };
         }
         for (const output of data.outputs ?? []) {
-          next[output.outputType] = {
+          if (!(repurposePanelOutputTypes as readonly string[]).includes(output.outputType)) {
+            continue;
+          }
+          next[output.outputType as RepurposePanelOutputType] = {
             output,
             isGenerating: output.status === "generating",
           };
@@ -130,7 +90,7 @@ export function RepurposePanel({ postId, authFetch }: RepurposePanelProps) {
   }, [authFetch, loadOutputs, postId]);
 
   const handleGenerate = useCallback(
-    async (type: RepurposeOutputType) => {
+    async (type: RepurposePanelOutputType) => {
       if (!postId) return;
       setRows((prev) => ({
         ...prev,
@@ -190,8 +150,12 @@ export function RepurposePanel({ postId, authFetch }: RepurposePanelProps) {
         ) : null}
       </div>
 
-      <ul className="space-y-3">
-        {repurposeOutputTypes.map((type) => {
+      {postId ? (
+        <NewsletterRepurposeIncludes key={postId} postId={postId} />
+      ) : null}
+
+      <ul className="mt-3 space-y-3">
+        {repurposePanelOutputTypes.map((type) => {
           const row = rows[type];
           const status = row.output?.status;
           return (
@@ -225,16 +189,11 @@ export function RepurposePanel({ postId, authFetch }: RepurposePanelProps) {
                       : "Generate"}
                 </button>
               </div>
-              {row.output?.status === "ready" && row.output.mediaUrl ? (
+              {row.output?.status === "ready" &&
+              (repurposePanelMediaOutputTypes as readonly string[]).includes(type) &&
+              row.output.mediaUrl ? (
                 <div className="mt-2 space-y-1">
-                  {(repurposeMediaOutputTypes as readonly string[]).includes(type) &&
-                  row.output.mediaMimeType?.startsWith("audio/") ? (
-                    <audio controls preload="none" src={row.output.mediaUrl} className="w-full">
-                      <track kind="captions" />
-                    </audio>
-                  ) : null}
-                  {(repurposeMediaOutputTypes as readonly string[]).includes(type) &&
-                  row.output.mediaMimeType?.startsWith("video/") ? (
+                  {row.output.mediaMimeType?.startsWith("video/") ? (
                     <video
                       controls
                       preload="metadata"
@@ -244,7 +203,7 @@ export function RepurposePanel({ postId, authFetch }: RepurposePanelProps) {
                       <track kind="captions" />
                     </video>
                   ) : null}
-                  {type === "infographic" && row.output.mediaUrl ? (
+                  {type === "infographic" ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={row.output.mediaUrl}
@@ -263,12 +222,8 @@ export function RepurposePanel({ postId, authFetch }: RepurposePanelProps) {
                 </div>
               ) : null}
               {row.output?.status === "ready" && row.output.payload ? (
-                <div className="mt-2">
-                  {type === "slide_deck" ? (
-                    <SlideDeckPreview payload={row.output.payload} />
-                  ) : (repurposeTextOutputTypes as readonly string[]).includes(type) ? (
-                    <JsonPreview payload={row.output.payload} />
-                  ) : null}
+                <div className="mt-2 [&_section]:border-0 [&_section]:p-0 [&_section]:shadow-none">
+                  <RepurposeOutputCard output={row.output} />
                 </div>
               ) : null}
               {row.output?.status === "failed" && row.output.errorMessage ? (

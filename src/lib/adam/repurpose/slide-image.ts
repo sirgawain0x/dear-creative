@@ -38,7 +38,7 @@ export function resetRepurposeSlideFontCacheForTests(): void {
   embeddedFontCssPromise = null;
 }
 
-function wrapSlideTitleLines(title: string, maxCharsPerLine = 28): string[] {
+export function wrapSlideTitleLines(title: string, maxCharsPerLine = 28): string[] {
   const words = title.trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) {
     return ["Slide"];

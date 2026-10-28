@@ -36,6 +36,12 @@ import {
   resolveFrozenChunkRecipients,
   touchDeliveryReceiptActivity,
 } from "./newsletter-chunks";
+import { appendRepurposeSectionsToEmailHtml } from "@/lib/adam/repurpose/email-html";
+import { listRepurposeOutputsForPost } from "@/lib/adam/repurpose/storage";
+import { parseNewsletterIncludeTypes } from "@/lib/adam/repurpose/newsletter-includes";
+import type { RepurposeNewsletterIncludeType } from "@/lib/adam/repurpose/types";
+import { resolvePostPublicUrl } from "@/lib/posts/post-public-url";
+import { resolvePublicPostCoverImage } from "@/lib/posts/post-cover-image";
 import { buildNewsletterEmailContent } from "./newsletter-email-content";
 
 export type DeliverEmailInput = {
@@ -44,6 +50,8 @@ export type DeliverEmailInput = {
   dryRun?: boolean;
   claimOptions?: ClaimDeliveryOptions;
   providerTimeoutMs?: number;
+  /** Repurpose output types to append as email-safe HTML sections. */
+  repurposeIncludes?: RepurposeNewsletterIncludeType[];
   /** Injectable clock; a fresh reading is taken per chunk operation. */
   clock?: Clock;
 };
@@ -279,15 +287,34 @@ export async function sendNewsletterEmail(
     .where(eq(posts.id, input.postId))
     .limit(1);
 
+  const slug = paywallRow?.slug ?? gate.value.post.slug;
+  const canonicalUrl = paywallRow?.canonicalUrl ?? null;
   const emailContent = buildNewsletterEmailContent({
     emailHtml,
-    slug: paywallRow?.slug ?? gate.value.post.slug,
-    canonicalUrl: paywallRow?.canonicalUrl ?? null,
+    slug,
+    canonicalUrl,
     isGated: paywallRow?.isGated ?? false,
     freeContent: paywallRow?.freeContent ?? null,
     gatedContent: paywallRow?.gatedContent ?? null,
   });
-  const html = emailContent.html;
+  let html = emailContent.html;
+  const includeTypes = parseNewsletterIncludeTypes(input.repurposeIncludes ?? []);
+  if (includeTypes.length > 0) {
+    const outputs = await listRepurposeOutputsForPost(db, input.postId);
+    const postUrl = resolvePostPublicUrl({ slug, canonicalUrl });
+    const thumbnailUrl = resolvePublicPostCoverImage({
+      slug,
+      title: gate.value.post.title,
+      bodyHtml: emailHtml,
+    });
+    html = appendRepurposeSectionsToEmailHtml({
+      baseHtml: html,
+      outputs,
+      includeTypes,
+      postUrl,
+      thumbnailUrl,
+    });
+  }
   const text = emailContent.text;
 
   const dryRun = Boolean(input.dryRun);

@@ -11,6 +11,7 @@ import { PostKeyTakeaways } from "@/components/posts/post-key-takeaways";
 import { AuthorByline } from "@/components/posts/author-byline";
 import { PostPaywallCheckout } from "@/components/posts/post-paywall-checkout";
 import { PostShareButton } from "@/components/posts/post-share-button";
+import { PostRepurposeSection } from "@/components/posts/repurpose/post-repurpose-section";
 import { splitArticleAtParagraph } from "@/lib/posts/post-takeaway-inline";
 import { publishedPostBodyForDisplay } from "@/lib/posts/published-post-render";
 import type { PublishedPostDetail } from "@/lib/posts/published-posts";
@@ -198,6 +199,8 @@ function PostArticle({
           payToAddress={payToAddress}
         />
       ) : null}
+
+      <PostRepurposeSection slug={post.slug} />
 
       <PredictionCard slug={post.slug} />
 

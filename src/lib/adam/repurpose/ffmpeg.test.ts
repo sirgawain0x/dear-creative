@@ -41,7 +41,7 @@ describe("buildNarratedSlidesMp4", () => {
     const ffmpeg = vi.fn(async (args: string[]) => {
       calls.push(args);
     });
-    const renderSlidePng = vi.fn(async () => undefined);
+    const prepareSlideAss = vi.fn(async () => undefined);
 
     await buildNarratedSlidesMp4({
       workDir,
@@ -59,16 +59,15 @@ describe("buildNarratedSlidesMp4", () => {
       ],
       outputPath: join(workDir, "out.mp4"),
       ffmpeg,
-      renderSlidePng,
+      prepareSlideAss,
     });
 
-    expect(renderSlidePng).toHaveBeenCalledTimes(2);
+    expect(prepareSlideAss).toHaveBeenCalledTimes(2);
     expect(ffmpeg).toHaveBeenCalledTimes(3);
-    expect(calls[0]?.join(" ")).toContain("-loop 1");
-    expect(calls[0]?.join(" ")).toContain("slide-0.png");
+    expect(calls[0]?.join(" ")).toContain("-f lavfi");
+    expect(calls[0]?.join(" ")).toContain("ass=");
     expect(calls[0]?.join(" ")).toContain("-shortest");
     expect(calls[0]?.join(" ")).toContain("-tune stillimage");
-    expect(calls[0]?.join(" ")).not.toContain("drawtext");
     expect(calls.at(-1)?.join(" ")).toContain("out.mp4");
   });
 });
