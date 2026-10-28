@@ -15,7 +15,9 @@ import { LINKEDIN_CALLBACK_REASONS } from "@/lib/linkedin/reason-codes";
 
 const replaceMock = vi.fn();
 let mockSearchParams = new URLSearchParams();
-const getAccessTokenMock = vi.fn(async () => "privy-admin-token");
+const getAccessTokenMock = vi.fn(
+  async (): Promise<string | null> => "privy-admin-token",
+);
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: replaceMock }),
@@ -100,6 +102,50 @@ describe("AdminLinkedInConnect", () => {
     expect(
       screen.getByRole("button", { name: /reconnect/i }),
     ).toBeInTheDocument();
+  });
+
+  it("shows status check error when status API returns 500", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.endsWith("/api/admin/linkedin/status")) {
+        return { ok: false, status: 500, json: async () => ({}) };
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AdminLinkedInConnect
+        isAdmin={true}
+        isSignedIn={true}
+        getAccessToken={getAccessTokenMock}
+      />,
+    );
+
+    expect(
+      await screen.findByTestId("admin-linkedin-status-error"),
+    ).toHaveTextContent(/couldn't check linkedin status/i);
+    expect(screen.queryByText(/^not connected\.$/i)).not.toBeInTheDocument();
+  });
+
+  it("shows status check error when access token is missing", async () => {
+    getAccessTokenMock.mockResolvedValue(null);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AdminLinkedInConnect
+        isAdmin={true}
+        isSignedIn={true}
+        getAccessToken={getAccessTokenMock}
+      />,
+    );
+
+    expect(
+      await screen.findByTestId("admin-linkedin-status-error"),
+    ).toHaveTextContent(/couldn't check linkedin status/i);
+    expect(screen.queryByText(/^not connected\.$/i)).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("refetches status after linkedin=connected query param", async () => {
