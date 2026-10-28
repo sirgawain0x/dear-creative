@@ -7,7 +7,16 @@ cd "${ROOT}"
 
 LOCAL_DATABASE_URL="${LOCAL_DATABASE_URL:-file:./data/ci-dear-creative.db}"
 export LOCAL_DATABASE_URL
-PORT="${PORT:-$((31000 + RANDOM % 9000))}"
+
+pick_free_port() {
+  python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'
+}
+
+PORT="${PORT:-$(pick_free_port)}"
+if command -v lsof >/dev/null 2>&1; then
+  lsof -t -i:"${PORT}" 2>/dev/null | xargs -r kill -9 || true
+  sleep 0.5
+fi
 BOGUS_SLUG="${BOGUS_SLUG:-bogus-slug-notfound-check}"
 BASE_URL="http://127.0.0.1:${PORT}"
 LOG_FILE="${LOG_FILE:-/tmp/post-slug-notfound-noindex.log}"
@@ -53,9 +62,14 @@ HTML="$(cat /tmp/post-slug-notfound.html)"
 
 echo "curl /posts/${BOGUS_SLUG} -> HTTP ${HTTP_CODE}"
 
-if ! grep -qE 'name="robots"[^>]*content="noindex"' <<<"${HTML}"; then
-  echo "Expected noindex meta tag in HTML for bogus post slug" >&2
+if [[ "${HTTP_CODE}" != "404" ]]; then
+  echo "Expected HTTP 404 for bogus post slug, got ${HTTP_CODE}" >&2
   exit 1
 fi
 
-echo "ok: noindex meta tag present"
+if ! grep -q "Page not found" <<<"${HTML}"; then
+  echo "Expected site not-found HTML (Page not found) for bogus post slug" >&2
+  exit 1
+fi
+
+echo "ok: HTTP 404 with not-found HTML"

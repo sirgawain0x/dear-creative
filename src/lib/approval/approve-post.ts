@@ -4,6 +4,8 @@ import type { DearCreativeDb } from "@/db/client";
 import { corePostColumns, ensurePostsSchema } from "@/db/ensure-schema";
 import { approvals, auditEvents, posts } from "@/db/schema";
 import { writeAuditEvent } from "@/lib/audit/write-audit-event";
+import { assertCowriterPublishAllowed } from "@/lib/cowriters/publish-gate";
+import { expirePublishedPostExistenceCache } from "@/lib/posts/expire-published-post-cache";
 import { contentHashForPost } from "./snapshot-from-post";
 
 export type ApprovePostResult =
@@ -50,6 +52,8 @@ export async function approvePost(
     return "content_changed";
   }
 
+  await assertCowriterPublishAllowed(db, postId);
+
   const now = new Date();
   await db
     .update(approvals)
@@ -70,6 +74,8 @@ export async function approvePost(
       updatedAt: now,
     })
     .where(eq(posts.id, postId));
+
+  expirePublishedPostExistenceCache(post.slug);
 
   await writeAuditEvent(db, {
     actor: approvedBy,

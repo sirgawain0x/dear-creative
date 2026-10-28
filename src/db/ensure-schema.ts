@@ -52,6 +52,7 @@ const IDEMPOTENT_TABLE_STATEMENTS = [
     name text NOT NULL,
     slug text NOT NULL,
     bio text,
+    tagline text,
     avatar_url text,
     payout_address text NOT NULL,
     me_token_address text,
@@ -164,6 +165,10 @@ const ADDITIVE_POST_COLUMNS: Array<{ name: string; ddl: string }> = [
   {
     name: "audio_voice",
     ddl: "ALTER TABLE posts ADD audio_voice text",
+  },
+  {
+    name: "split_address_override",
+    ddl: "ALTER TABLE posts ADD split_address_override text",
   },
 ];
 

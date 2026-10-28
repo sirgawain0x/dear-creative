@@ -5,12 +5,13 @@ import { optimizedImageRemotePatterns } from "./src/lib/images/optimized-remote-
 
 const nextConfig: NextConfig = {
   pageExtensions: ["js", "jsx", "md", "mdx", "ts", "tsx"],
+  allowedDevOrigins: ["127.0.0.1"],
   cacheComponents: true,
   partialPrefetching: true,
   images: {
     remotePatterns: optimizedImageRemotePatterns,
   },
-  serverExternalPackages: ["ffmpeg-static"],
+  serverExternalPackages: ["ffmpeg-static", "@libsql/client"],
   outputFileTracingIncludes: {
     "/api/adam/posts/*/repurpose/*": [
       "./node_modules/ffmpeg-static/**/*",

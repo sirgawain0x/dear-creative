@@ -16,6 +16,12 @@ export default defineConfig({
     url: "http://127.0.0.1:3000",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+    env: {
+      ...process.env,
+      READER_WALLET_ENABLED: "true",
+      READER_WALLET_E2E_AUTH: "true",
+      READER_WALLET_FIXTURE: "true",
+    },
   },
   projects: [
     {

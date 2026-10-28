@@ -26,6 +26,28 @@ describe("AuthorByline", () => {
     expect(html).not.toContain('data-testid="author-patron-badge"');
   });
 
+  it("renders tagline in full without line-clamp when provided", () => {
+    const longTagline =
+      "Music producer and builder helping creators own their work and their audience.";
+    const html = renderToStaticMarkup(
+      React.createElement(AuthorByline, {
+        author: {
+          name: "G2",
+          slug: "g2",
+          bio: "Long bio that would truncate in the byline if tagline were absent.",
+          tagline: longTagline,
+          avatarUrl: null,
+          meTokenAddress: null,
+          meTokenSymbol: null,
+        },
+      }),
+    );
+
+    expect(html).toContain(longTagline);
+    expect(html).toContain('data-testid="author-tagline"');
+    expect(html).not.toContain("line-clamp-1");
+  });
+
   it("shows a display-only patron badge when me_token columns are set", () => {
     const html = renderToStaticMarkup(
       React.createElement(AuthorByline, {

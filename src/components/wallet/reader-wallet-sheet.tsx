@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId } from "react";
+import { createPortal } from "react-dom";
 import { ReaderWalletPanel } from "./reader-wallet-panel";
 
 type ReaderWalletSheetProps = {
@@ -24,12 +25,15 @@ export function ReaderWalletSheet({ open, onOpenChange }: ReaderWalletSheetProps
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, onOpenChange]);
 
-  if (!open) {
+  if (!open || typeof document === "undefined") {
     return null;
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end">
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] flex justify-end"
+      data-testid="reader-wallet-sheet-overlay"
+    >
       <button
         type="button"
         aria-label="Close wallet panel"
@@ -59,6 +63,7 @@ export function ReaderWalletSheet({ open, onOpenChange }: ReaderWalletSheetProps
           <ReaderWalletPanel />
         </div>
       </aside>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -1,11 +1,38 @@
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { DearCreativeDb } from "@/db/client";
 import * as schema from "@/db/schema";
 import {
   getAuthorProfileById,
   listPublishedArticlesForAuthor,
 } from "./author-profile";
+
+function drizzleMissingTaglineError(): Error {
+  const cause = new Error("SQLITE_ERROR: no such column: tagline");
+  const outer = new Error("Failed query: select tagline from authors limit ?");
+  outer.cause = cause;
+  return outer;
+}
+
+function mockAuthorProfileDb(fallbackRow: Record<string, unknown>): DearCreativeDb {
+  let attempts = 0;
+  return {
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => {
+            attempts += 1;
+            if (attempts === 1) {
+              throw drizzleMissingTaglineError();
+            }
+            return [fallbackRow];
+          },
+        }),
+      }),
+    }),
+  } as unknown as DearCreativeDb;
+}
 
 describe("author profile posts", () => {
   let db: ReturnType<typeof drizzle<typeof schema>>;
@@ -20,6 +47,7 @@ describe("author profile posts", () => {
         name text NOT NULL,
         slug text NOT NULL,
         bio text,
+        tagline text,
         avatar_url text,
         payout_address text NOT NULL,
         me_token_address text,
@@ -51,6 +79,7 @@ describe("author profile posts", () => {
         source_guid text,
         source text,
         sponsor_id text,
+        split_address_override text,
         created_at integer NOT NULL DEFAULT (unixepoch() * 1000),
         updated_at integer NOT NULL DEFAULT (unixepoch() * 1000)
       )
@@ -132,6 +161,20 @@ describe("author profile posts", () => {
     expect(articles.map((a) => a.slug).sort()).toEqual(["collab", "solo"]);
     const collab = articles.find((a) => a.slug === "collab");
     expect(collab?.role).toBe("cowriter");
+  });
+
+  it("falls back when tagline is missing but libsql error is on error.cause", async () => {
+    const db = mockAuthorProfileDb({
+      id: "legacy",
+      name: "Legacy Author",
+      slug: "legacy",
+      bio: null,
+      avatarUrl: null,
+    });
+
+    const profile = await getAuthorProfileById(db, "legacy");
+    expect(profile?.name).toBe("Legacy Author");
+    expect(profile?.tagline).toBeNull();
   });
 
   it("loads profile without avatar column", async () => {

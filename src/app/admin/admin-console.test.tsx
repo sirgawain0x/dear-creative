@@ -6,6 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { STUDIO_TOKEN_STORAGE_KEY } from "@/components/providers/app-providers";
 import { ADMIN_OWNER_TOOL_LINKS, AdminConsole } from "./admin-console";
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 vi.mock("./admin-payouts-card", () => ({
   AdminPayoutsCard: () => <div data-testid="admin-payouts-card">Payouts</div>,
 }));
@@ -86,14 +91,62 @@ describe("AdminConsole owner tools", () => {
     );
   });
 
-  it("renders four tool links when signed in", async () => {
+  it("renders Owner Studio & Tools when session is admin", async () => {
     render(<AdminConsole />);
 
+    await waitFor(() => {
+      expect(screen.getByText("Owner Studio & Tools")).toBeInTheDocument();
+    });
+
     for (const tool of ADMIN_OWNER_TOOL_LINKS) {
-      expect(screen.getByRole("link", { name: new RegExp(tool.title.replace("→", "").trim(), "i") })).toHaveAttribute(
-        "href",
-        tool.href,
+      expect(
+        screen.getByRole("link", {
+          name: new RegExp(tool.title.replace("→", "").trim(), "i"),
+        }),
+      ).toHaveAttribute("href", tool.href);
+    }
+  });
+
+  it("hides Owner Studio & Tools for signed-in non-admin", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/api/admin/config")) {
+          return new Response(JSON.stringify({ walletEnabled: false }), {
+            status: 200,
+          });
+        }
+        if (url.includes("/api/admin/me")) {
+          return new Response(
+            JSON.stringify({
+              userId: "did:privy:test-user",
+              isAdmin: false,
+              mode: "privy",
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response("{}", { status: 404 });
+      }),
+    );
+
+    render(<AdminConsole />);
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "/api/admin/me",
+        expect.any(Object),
       );
+    });
+
+    expect(screen.queryByText("Owner Studio & Tools")).not.toBeInTheDocument();
+    for (const tool of ADMIN_OWNER_TOOL_LINKS) {
+      expect(
+        screen.queryByRole("link", {
+          name: new RegExp(tool.title.replace("→", "").trim(), "i"),
+        }),
+      ).not.toBeInTheDocument();
     }
   });
 

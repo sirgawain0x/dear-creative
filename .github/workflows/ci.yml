@@ -24,6 +24,8 @@ jobs:
       - name: Build with local database
         env:
           LOCAL_DATABASE_URL: file:./data/ci-dear-creative.db
+          READER_WALLET_ENABLED: "true"
+          READER_WALLET_FIXTURE: "true"
         run: |
           npm run db:migrate:local
           npx next build
@@ -31,13 +33,27 @@ jobs:
         env:
           CI: true
           LOCAL_DATABASE_URL: file:./data/ci-dear-creative.db
+          READER_WALLET_ENABLED: "true"
+          READER_WALLET_E2E_AUTH: "true"
+          READER_WALLET_FIXTURE: "true"
         run: |
-          npx playwright install --with-deps chromium
+          for attempt in 1 2 3; do
+            if npx playwright install --with-deps chromium; then
+              break
+            fi
+            echo "Playwright browser install attempt ${attempt} failed; retrying in 15s..."
+            sleep 15
+          done
           npm run test:e2e
       - name: Post slug not-found includes noindex meta
         env:
           LOCAL_DATABASE_URL: file:./data/ci-dear-creative.db
         run: ./scripts/post-slug-notfound-noindex.sh
+      - name: Page routes return HTTP 404 for missing records
+        env:
+          LOCAL_DATABASE_URL: file:./data/ci-dear-creative.db
+          PAGE_HTTP_404_TEST: "1"
+        run: npx vitest run src/test/page-route-http-404.test.ts
       - name: Build without database env or local DB file
         run: |
           rm -f data/dear-creative.db data/ci-dear-creative.db

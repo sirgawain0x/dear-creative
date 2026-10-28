@@ -82,6 +82,8 @@ describe("GET /api/posts/[slug]/full", () => {
 
   it("returns full post content when x402 payment header verifies", async () => {
     setPaymentsEnabledForTests(true);
+    vi.stubEnv("LOCAL_DATABASE_URL", "");
+    vi.stubEnv("TURSO_DATABASE_URL", "");
     vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://news.example.com");
     vi.stubEnv("X402_PAY_TO_ADDRESS", "0x0000000000000000000000000000000000000001");
     vi.stubEnv("X402_MAX_AMOUNT_REQUIRED", "stub-amount");

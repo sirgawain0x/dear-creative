@@ -210,7 +210,10 @@ export function AdminConsole() {
       </div>
 
       {isSignedIn ? (
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div
+          className="flex w-full flex-col gap-6"
+          data-testid="admin-console-panels-stack"
+        >
           <AdminWalletPanel
             walletEnabled={walletEnabled}
             walletSendEnabled={walletSendEnabled}
@@ -224,7 +227,7 @@ export function AdminConsole() {
       ) : null}
 
       {/* Owner Navigation Links (Gated) */}
-      {isSignedIn ? (
+      {session?.isAdmin ? (
         <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs dark:border-zinc-800 dark:bg-zinc-900/60">
           <h3 className="text-sm font-semibold">Owner Studio &amp; Tools</h3>
           <p className="mt-1 text-xs text-zinc-500">
@@ -254,6 +257,7 @@ export function AdminConsole() {
       {session?.isAdmin ? (
         <AdminLinkedInConnect
           isAdmin={session.isAdmin}
+          isSignedIn={isSignedIn}
           getAccessToken={getAccessToken}
         />
       ) : null}

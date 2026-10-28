@@ -10,6 +10,7 @@ export const AUTHOR_PROFILE_PREVIEW: AuthorProfileRecord = {
   name: "Jordan Ellis",
   slug: "jordan-ellis",
   bio: "Essays on creative tools, publishing, and the craft of building in public.",
+  tagline: "Building in public on creative tools and independent publishing.",
   avatarUrl: null,
 };
 

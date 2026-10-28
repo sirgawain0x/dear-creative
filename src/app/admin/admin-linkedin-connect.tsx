@@ -1,11 +1,16 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
-import { linkedInCallbackReasonMessage } from "@/lib/linkedin/callback-reason-message";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import {
+  readLinkedInCallbackBanner,
+  type LinkedInCallbackBanner,
+} from "@/lib/linkedin/read-linkedin-callback-banner";
+import { stripLinkedInCallbackSearchParams } from "@/lib/linkedin/strip-linkedin-callback-search-params";
 
 type AdminLinkedInConnectProps = {
   isAdmin: boolean;
+  isSignedIn: boolean;
   getAccessToken: () => Promise<string | null>;
 };
 
@@ -15,23 +20,20 @@ type LinkedInStatusResponse = {
   expiresAt?: string;
 };
 
-export function AdminLinkedInConnect({
+function AdminLinkedInConnectInner({
   isAdmin,
+  isSignedIn,
   getAccessToken,
 }: AdminLinkedInConnectProps) {
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [callbackBanner, setCallbackBanner] =
+    useState<LinkedInCallbackBanner | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [isLoadingStatus, setIsLoadingStatus] = useState(true);
   const [status, setStatus] = useState<LinkedInStatusResponse | null>(null);
-
-  const linkedinParam = searchParams?.get("linkedin") ?? null;
-  const callbackError =
-    linkedinParam === "error"
-      ? (linkedInCallbackReasonMessage(searchParams?.get("reason")) ??
-        "LinkedIn connection failed. Try connecting again.")
-      : null;
-  const error = actionError ?? callbackError;
+  const handledCallbackKeyRef = useRef<string | null>(null);
 
   const refreshStatus = useCallback(async () => {
     setIsLoadingStatus(true);
@@ -67,43 +69,77 @@ export function AdminLinkedInConnect({
       if (cancelled) {
         return;
       }
-      if (linkedinParam === "connected") {
-        await refreshStatus();
-      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [isAdmin, linkedinParam, refreshStatus]);
+  }, [isAdmin, refreshStatus]);
+
+  useEffect(() => {
+    const linkedin = searchParams.get("linkedin")?.trim();
+    if (!linkedin) {
+      return;
+    }
+
+    const callbackKey = `${linkedin}:${searchParams.get("reason")?.trim() ?? ""}`;
+    if (handledCallbackKeyRef.current === callbackKey) {
+      return;
+    }
+    handledCallbackKeyRef.current = callbackKey;
+
+    const banner = readLinkedInCallbackBanner(searchParams);
+    if (banner) {
+      // Mirror URL params into state, then strip them from the address bar.
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- banner must survive router.replace clearing searchParams
+      setCallbackBanner(banner);
+    }
+
+    const cleanPath = stripLinkedInCallbackSearchParams(
+      new URL(window.location.href),
+    );
+    router.replace(cleanPath, { scroll: false });
+
+    if (linkedin === "connected") {
+      void refreshStatus();
+    }
+  }, [router, searchParams, refreshStatus]);
 
   const startLinkedInConnect = useCallback(async () => {
-    setActionError(null);
+    setError(null);
+    setCallbackBanner(null);
+    if (!isSignedIn) {
+      setError("Sign in with Privy before connecting LinkedIn.");
+      return;
+    }
     setIsStarting(true);
     try {
-      const token = await getAccessToken();
-      if (!token) {
-        setActionError("Sign in with Privy before connecting LinkedIn.");
+      const response = await fetch("/api/admin/linkedin/auth", {
+        credentials: "include",
+      });
+      if (response.status === 401) {
+        setError("Sign in with Privy before connecting LinkedIn.");
         return;
       }
-      const response = await fetch("/api/admin/linkedin/auth", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      if (response.status === 403) {
+        setError("Only Privy admins can connect LinkedIn.");
+        return;
+      }
       if (!response.ok) {
-        setActionError("Could not start LinkedIn authorization.");
+        setError("Could not start LinkedIn authorization.");
         return;
       }
       const body = (await response.json()) as { url?: string };
       if (!body.url) {
-        setActionError("LinkedIn authorization URL was missing from the server.");
+        setError("LinkedIn authorization URL was missing from the server.");
         return;
       }
       window.location.assign(body.url);
     } catch {
-      setActionError("Failed to reach the LinkedIn authorization endpoint.");
+      setError("Failed to reach the LinkedIn authorization endpoint.");
     } finally {
       setIsStarting(false);
     }
-  }, [getAccessToken]);
+  }, [isSignedIn]);
 
   if (!isAdmin) {
     return null;
@@ -125,6 +161,19 @@ export function AdminLinkedInConnect({
         Connect your personal LinkedIn member account for Adam posting. Uses OAuth
         with Privy-admin verification on callback.
       </p>
+      {callbackBanner ? (
+        <div
+          data-testid="admin-linkedin-callback-banner"
+          role="alert"
+          className={
+            callbackBanner.kind === "success"
+              ? "mt-4 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200"
+              : "mt-4 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200"
+          }
+        >
+          {callbackBanner.message}
+        </div>
+      ) : null}
       {isLoadingStatus ? (
         <p className="mt-4 text-xs text-zinc-500">Checking LinkedIn status…</p>
       ) : isConnected ? (
@@ -146,5 +195,13 @@ export function AdminLinkedInConnect({
       </button>
       {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
     </div>
+  );
+}
+
+export function AdminLinkedInConnect(props: AdminLinkedInConnectProps) {
+  return (
+    <Suspense fallback={null}>
+      <AdminLinkedInConnectInner {...props} />
+    </Suspense>
   );
 }

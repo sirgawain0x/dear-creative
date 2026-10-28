@@ -141,6 +141,34 @@
       "when": 1792525000000,
       "tag": "0020_reader_post_unlock_purchases",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1792602394384,
+      "tag": "0021_cowriters",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1792605000000,
+      "tag": "0022_beehiiv_import",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1792610000000,
+      "tag": "0023_post_preview_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1792616000000,
+      "tag": "0024_author_tagline",
+      "breakpoints": true
     }
   ]
 }

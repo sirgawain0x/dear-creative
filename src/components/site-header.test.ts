@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  getSubscribeNavHref,
   getVisibleNavLinks,
   isNavLinkActive,
   SITE_NAV_LINKS,
+  SUBSCRIBE_NAV_HREF,
 } from "./site-header";
 
 describe("SiteHeader navigation config", () => {
@@ -11,11 +13,22 @@ describe("SiteHeader navigation config", () => {
     expect(hrefs).toEqual([
       "/",
       "/posts",
-      "/subscribe",
+      SUBSCRIBE_NAV_HREF,
       "/adam",
       "/approvals",
       "/admin",
     ]);
+  });
+
+  it("points Subscribe at the homepage signup anchor from other routes", () => {
+    expect(getSubscribeNavHref("/posts")).toBe("/#subscribe");
+    expect(getSubscribeNavHref("/")).toBe("#subscribe");
+  });
+
+  it("marks /subscribe page active for the Subscribe nav item", () => {
+    const subscribeLink = SITE_NAV_LINKS.find((l) => l.homeSubscribeAnchor)!;
+    expect(isNavLinkActive("/subscribe", subscribeLink)).toBe(true);
+    expect(isNavLinkActive("/", subscribeLink)).toBe(false);
   });
 
   it("labels the admin link as Sign In", () => {
@@ -34,7 +47,7 @@ describe("SiteHeader navigation config", () => {
     expect(unauthenticatedHrefs).toEqual([
       "/",
       "/posts",
-      "/subscribe",
+      SUBSCRIBE_NAV_HREF,
       "/admin",
     ]);
     expect(unauthenticatedHrefs).not.toContain("/adam");
@@ -47,7 +60,7 @@ describe("SiteHeader navigation config", () => {
     expect(authenticatedHrefs).toEqual([
       "/",
       "/posts",
-      "/subscribe",
+      SUBSCRIBE_NAV_HREF,
       "/adam",
       "/approvals",
       "/admin",

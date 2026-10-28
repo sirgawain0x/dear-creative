@@ -12,7 +12,7 @@ export const postStatusEnum = ["draft", "published"] as const;
 export type PostStatus = (typeof postStatusEnum)[number];
 
 /** Imported Paragraph archive rows; null means Adam newsletter content. */
-export const postSourceEnum = ["paragraph"] as const;
+export const postSourceEnum = ["paragraph", "beehiiv"] as const;
 export type PostSource = (typeof postSourceEnum)[number];
 
 export const subscriberStatusEnum = [
@@ -24,6 +24,7 @@ export const subscriberStatusEnum = [
 
 export const subscriberSourceEnum = [
   "paragraph_import",
+  "beehiiv_import",
   "signup",
   "resend_webhook",
 ] as const;
@@ -92,6 +93,7 @@ export const authors = sqliteTable(
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     bio: text("bio"),
+    tagline: text("tagline"),
     avatarUrl: text("avatar_url"),
     payoutAddress: text("payout_address").notNull(),
     meTokenAddress: text("me_token_address"),
@@ -131,6 +133,8 @@ export const posts = sqliteTable(
     sourceGuid: text("source_guid"),
     source: text("source", { enum: postSourceEnum }),
     sponsorId: text("sponsor_id").references(() => sponsors.id),
+    /** Optional per-post 0xSplits override (co-writer groups). */
+    splitAddressOverride: text("split_address_override"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
@@ -713,5 +717,130 @@ export const earnAuditLog = sqliteTable(
 );
 
 export type EarnAuditLogRecord = typeof earnAuditLog.$inferSelect;
+
+export const postWriterRoleEnum = ["author", "cowriter"] as const;
+export type PostWriterRole = (typeof postWriterRoleEnum)[number];
+
+export const postWriterStatusEnum = [
+  "pending",
+  "accepted",
+  "removed",
+] as const;
+export type PostWriterStatus = (typeof postWriterStatusEnum)[number];
+
+export const writerInviteStatusEnum = [
+  "pending",
+  "accepted",
+  "expired",
+  "revoked",
+] as const;
+export type WriterInviteStatus = (typeof writerInviteStatusEnum)[number];
+
+export const writerGroupSplitStatusEnum = [
+  "pending",
+  "deployed",
+  "failed",
+] as const;
+export type WriterGroupSplitStatus =
+  (typeof writerGroupSplitStatusEnum)[number];
+
+export const writerInvites = sqliteTable(
+  "writer_invites",
+  {
+    id: text("id").primaryKey(),
+    postId: text("post_id")
+      .notNull()
+      .references(() => posts.id),
+    invitedBy: text("invited_by").notNull(),
+    email: text("email"),
+    wallet: text("wallet"),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    acceptedWriterId: text("accepted_writer_id").references(() => authors.id),
+    status: text("status", { enum: writerInviteStatusEnum })
+      .notNull()
+      .default("pending"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("writer_invites_post_id_idx").on(table.postId),
+    index("writer_invites_status_idx").on(table.status),
+  ],
+);
+
+export const postWriters = sqliteTable(
+  "post_writers",
+  {
+    id: text("id").primaryKey(),
+    postId: text("post_id")
+      .notNull()
+      .references(() => posts.id),
+    writerId: text("writer_id").references(() => authors.id),
+    inviteId: text("invite_id").references(() => writerInvites.id),
+    role: text("role", { enum: postWriterRoleEnum }).notNull(),
+    shareBps: integer("share_bps").notNull(),
+    status: text("status", { enum: postWriterStatusEnum })
+      .notNull()
+      .default("pending"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("post_writers_post_writer_unique").on(
+      table.postId,
+      table.writerId,
+    ),
+    uniqueIndex("post_writers_post_invite_unique").on(
+      table.postId,
+      table.inviteId,
+    ),
+    index("post_writers_post_id_idx").on(table.postId),
+    index("post_writers_writer_id_idx").on(table.writerId),
+  ],
+);
+
+export const writerGroupSplits = sqliteTable(
+  "writer_group_splits",
+  {
+    groupKey: text("group_key").primaryKey(),
+    splitAddress: text("split_address"),
+    status: text("status", { enum: writerGroupSplitStatusEnum })
+      .notNull()
+      .default("pending"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [index("writer_group_splits_status_idx").on(table.status)],
+);
+
+export const postPreviewLinks = sqliteTable(
+  "post_preview_links",
+  {
+    id: text("id").primaryKey(),
+    postId: text("post_id")
+      .notNull()
+      .references(() => posts.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
+    createdBy: text("created_by").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("post_preview_links_token_hash_unique").on(table.tokenHash),
+    index("post_preview_links_post_id_idx").on(table.postId),
+  ],
+);
+
+export type PostWriterRecord = typeof postWriters.$inferSelect;
+export type WriterInviteRecord = typeof writerInvites.$inferSelect;
+export type WriterGroupSplitRecord = typeof writerGroupSplits.$inferSelect;
+export type PostPreviewLinkRecord = typeof postPreviewLinks.$inferSelect;
 
 

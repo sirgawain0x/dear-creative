@@ -2,32 +2,71 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useId, useState } from "react";
+import { useId, useState, type MouseEvent } from "react";
+import { HOME_SUBSCRIBE_SECTION_ID } from "@/components/home/home-subscribe-cta";
 import { useAuthSession } from "./providers/app-providers";
-import { ReaderWalletSheet } from "./wallet/reader-wallet-sheet";
+import { ReaderAccountDropdown } from "./wallet/reader-account-dropdown";
+import type { ReaderWalletPreviewData } from "./wallet/reader-wallet-panel";
+
+export const SUBSCRIBE_NAV_HREF = "/#subscribe";
 
 export type SiteNavLink = {
   href: string;
   label: string;
   matchPrefix?: boolean;
   requiresAuth?: boolean;
+  /** Nav item scrolls to the homepage subscribe card (`/#subscribe`). */
+  homeSubscribeAnchor?: boolean;
 };
 
 export const SITE_NAV_LINKS: readonly SiteNavLink[] = [
   { href: "/", label: "Home", matchPrefix: false },
   { href: "/posts", label: "Posts", matchPrefix: true },
-  { href: "/subscribe", label: "Subscribe", matchPrefix: true },
+  {
+    href: SUBSCRIBE_NAV_HREF,
+    label: "Subscribe",
+    homeSubscribeAnchor: true,
+  },
   { href: "/adam", label: "Studio", matchPrefix: true, requiresAuth: true },
   { href: "/approvals", label: "Approvals", matchPrefix: true, requiresAuth: true },
   { href: "/admin", label: "Sign In", matchPrefix: true },
 ] as const;
 
+export function getSubscribeNavHref(pathname: string | null): string {
+  return pathname === "/" ? "#subscribe" : SUBSCRIBE_NAV_HREF;
+}
+
 export function isNavLinkActive(pathname: string | null, link: SiteNavLink): boolean {
   if (!pathname) return false;
+  if (link.homeSubscribeAnchor) {
+    return pathname === "/subscribe" || pathname.startsWith("/subscribe/");
+  }
   if (!link.matchPrefix || link.href === "/") {
     return pathname === link.href;
   }
   return pathname === link.href || pathname.startsWith(`${link.href}/`);
+}
+
+function scrollToHomeSubscribeCard(): void {
+  document.getElementById(HOME_SUBSCRIBE_SECTION_ID)?.scrollIntoView({
+    behavior: "smooth",
+    block: "start",
+  });
+  window.history.replaceState(null, "", "#subscribe");
+}
+
+function onSubscribeNavClick(
+  pathname: string | null,
+  afterNavigate?: () => void,
+): ((event: MouseEvent<HTMLAnchorElement>) => void) | undefined {
+  if (pathname !== "/") {
+    return undefined;
+  }
+  return (event) => {
+    event.preventDefault();
+    scrollToHomeSubscribeCard();
+    afterNavigate?.();
+  };
 }
 
 export function getVisibleNavLinks(isSignedIn: boolean): readonly SiteNavLink[] {
@@ -41,39 +80,55 @@ export function getVisibleNavLinks(isSignedIn: boolean): readonly SiteNavLink[] 
 
 export type SiteHeaderProps = {
   readerWalletEnabled?: boolean;
+  /** Dev fixture pages — simulates signed-in reader wallet in the real header chrome. */
+  fixtureAuthenticated?: boolean;
+  fixturePreviewData?: ReaderWalletPreviewData;
+  fixtureShowAdmin?: boolean;
 };
 
-export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
+export function SiteHeader({
+  readerWalletEnabled = false,
+  fixtureAuthenticated = false,
+  fixturePreviewData,
+  fixtureShowAdmin = false,
+}: SiteHeaderProps) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [walletSheetOpen, setWalletSheetOpen] = useState(false);
   const mobileMenuId = useId();
   const {
     isSignedIn,
-    authenticated,
     signOut,
     login,
     privyConfigured,
     privyTimedOut,
   } = useAuthSession();
-  const showReaderWallet = readerWalletEnabled && authenticated;
+  const showReaderWalletButton = readerWalletEnabled || fixtureAuthenticated;
+  const readerDropdownFixture = fixtureAuthenticated
+    ? {
+        fixtureAuthenticated: true as const,
+        fixturePreviewData,
+        fixtureShowAdmin,
+      }
+    : {};
 
   const visibleLinks = getVisibleNavLinks(isSignedIn);
+  const hideNavSignInForReaderWallet =
+    showReaderWalletButton && !isSignedIn && !fixtureAuthenticated;
 
   return (
     <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white/90 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90">
-      <div className="mx-auto flex w-full max-w-[1800px] items-center justify-between px-4 sm:px-6 lg:px-8 py-3.5">
-        <div className="flex items-center gap-3">
+      <div className="mx-auto flex w-full max-w-[1800px] items-center justify-between gap-2 px-4 sm:px-6 lg:px-8 py-3.5">
+        <div className="flex min-w-0 shrink items-center gap-2 sm:gap-3">
           <Link
             href="/"
-            className="flex items-center gap-2.5 text-lg font-semibold tracking-tight text-zinc-900 hover:opacity-80 dark:text-zinc-50"
+            className="flex min-w-0 shrink items-center gap-2.5 text-lg font-semibold tracking-tight text-zinc-900 hover:opacity-80 dark:text-zinc-50"
           >
             <img
               src="/images/dear-creative-logo.png"
               alt="Dear Creative Logo"
-              className="h-8 w-8 rounded-full border border-zinc-200/80 object-cover shadow-2xs dark:border-zinc-800"
+              className="h-8 w-8 shrink-0 rounded-full border border-zinc-200/80 object-cover shadow-2xs dark:border-zinc-800"
             />
-            <span>Dear Creative</span>
+            <span className="whitespace-nowrap">Dear Creative</span>
           </Link>
           <span className="hidden rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-medium text-zinc-600 sm:inline-block dark:bg-zinc-900 dark:text-zinc-400">
             Creative Platform
@@ -87,30 +142,21 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
             const isAuthAction = link.href === "/admin";
             const label = isAuthAction && isSignedIn ? "Sign Out" : link.label;
 
+            if (isAuthAction && hideNavSignInForReaderWallet) {
+              return null;
+            }
+
             if (isAuthAction && isSignedIn) {
               return (
-                <div key={link.href} className="flex items-center gap-1">
-                  <Link
-                    href="/admin"
-                    aria-current={active ? "page" : undefined}
-                    className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                      active
-                        ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                        : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-100"
-                    }`}
-                    title="Admin Console"
-                  >
-                    Admin
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => void signOut()}
-                    className="rounded-full border border-zinc-200 px-3 py-1 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 hover:text-red-600 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-red-400"
-                    title="Sign Out"
-                  >
-                    Sign Out
-                  </button>
-                </div>
+                <button
+                  key={`${link.href}-sign-out`}
+                  type="button"
+                  onClick={() => void signOut()}
+                  className="rounded-full border border-zinc-200 px-3 py-1 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 hover:text-red-600 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-red-400"
+                  title="Sign Out"
+                >
+                  Sign Out
+                </button>
               );
             }
 
@@ -128,10 +174,15 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
               );
             }
 
+            const href = link.homeSubscribeAnchor
+              ? getSubscribeNavHref(pathname)
+              : link.href;
+
             return (
               <Link
                 key={link.href}
-                href={link.href}
+                href={href}
+                onClick={link.homeSubscribeAnchor ? onSubscribeNavClick(pathname) : undefined}
                 aria-current={active ? "page" : undefined}
                 className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
                   active
@@ -145,15 +196,12 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
               </Link>
             );
           })}
-          {showReaderWallet ? (
-            <button
-              type="button"
-              data-testid="reader-wallet-header-button"
-              onClick={() => setWalletSheetOpen(true)}
-              className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-800 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
-            >
-              Wallet
-            </button>
+          {showReaderWalletButton ? (
+            <ReaderAccountDropdown
+              surface="desktop"
+              className="ml-0.5"
+              {...readerDropdownFixture}
+            />
           ) : null}
           <a
             href={process.env.NEXT_PUBLIC_X_URL || "https://x.com/CreativeCrtv"}
@@ -167,17 +215,21 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
           </a>
         </nav>
 
-        {/* Mobile menu button */}
-        <button
-          type="button"
-          aria-expanded={mobileMenuOpen}
-          aria-controls={mobileMenuId}
-          aria-label="Toggle navigation menu"
-          onClick={() => setMobileMenuOpen((prev) => !prev)}
-          className="inline-flex items-center justify-center rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 lg:hidden dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900"
-        >
-          {mobileMenuOpen ? "Close ✕" : "Menu ☰"}
-        </button>
+        <div className="flex items-center gap-2 lg:hidden">
+          {showReaderWalletButton ? (
+            <ReaderAccountDropdown surface="mobile" {...readerDropdownFixture} />
+          ) : null}
+          <button
+            type="button"
+            aria-expanded={mobileMenuOpen}
+            aria-controls={mobileMenuId}
+            aria-label="Toggle navigation menu"
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            className="inline-flex items-center justify-center rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900"
+          >
+            {mobileMenuOpen ? "Close ✕" : "Menu ☰"}
+          </button>
+        </div>
       </div>
 
       {/* Mobile navigation drawer */}
@@ -193,21 +245,13 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
               const isAuthAction = link.href === "/admin";
               const label = isAuthAction && isSignedIn ? "Sign Out" : link.label;
 
+              if (isAuthAction && hideNavSignInForReaderWallet) {
+                return null;
+              }
+
               if (isAuthAction && isSignedIn) {
                 return (
-                  <li key={link.href} className="flex flex-col gap-1 pt-1">
-                    <Link
-                      href="/admin"
-                      aria-current={active ? "page" : undefined}
-                      onClick={() => setMobileMenuOpen(false)}
-                      className={`block rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                        active
-                          ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                          : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900"
-                      }`}
-                    >
-                      Admin Console
-                    </Link>
+                  <li key={`${link.href}-sign-out`}>
                     <button
                       type="button"
                       onClick={() => {
@@ -240,12 +284,22 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
                 );
               }
 
+              const href = link.homeSubscribeAnchor
+                ? getSubscribeNavHref(pathname)
+                : link.href;
+
               return (
                 <li key={link.href}>
                   <Link
-                    href={link.href}
+                    href={href}
                     aria-current={active ? "page" : undefined}
-                    onClick={() => setMobileMenuOpen(false)}
+                    onClick={
+                      link.homeSubscribeAnchor
+                        ? onSubscribeNavClick(pathname, () =>
+                            setMobileMenuOpen(false),
+                          )
+                        : () => setMobileMenuOpen(false)
+                    }
                     className={`block rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                       active
                         ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
@@ -257,21 +311,6 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
                 </li>
               );
             })}
-            {showReaderWallet ? (
-              <li>
-                <button
-                  type="button"
-                  data-testid="reader-wallet-header-button-mobile"
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    setWalletSheetOpen(true);
-                  }}
-                  className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-900"
-                >
-                  Wallet
-                </button>
-              </li>
-            ) : null}
             <li className="pt-2 border-t border-zinc-100 dark:border-zinc-800">
               <a
                 href={process.env.NEXT_PUBLIC_X_URL || "https://x.com/CreativeCrtv"}
@@ -290,10 +329,6 @@ export function SiteHeader({ readerWalletEnabled = false }: SiteHeaderProps) {
           </ul>
         </nav>
       ) : null}
-      <ReaderWalletSheet
-        open={walletSheetOpen}
-        onOpenChange={setWalletSheetOpen}
-      />
     </header>
   );
 }

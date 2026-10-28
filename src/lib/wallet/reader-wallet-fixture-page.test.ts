@@ -6,9 +6,17 @@ describe("isReaderWalletFixturePageEnabled", () => {
     vi.unstubAllEnvs();
   });
 
-  it("is false in production NODE_ENV", () => {
+  it("is true in production NODE_ENV when READER_WALLET_FIXTURE=true (CI playwright)", () => {
     vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VERCEL_ENV", "preview");
     vi.stubEnv("READER_WALLET_FIXTURE", "true");
+    expect(isReaderWalletFixturePageEnabled()).toBe(true);
+  });
+
+  it("is false in production NODE_ENV without fixture flag", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("READER_WALLET_FIXTURE", "");
     expect(isReaderWalletFixturePageEnabled()).toBe(false);
   });
 

@@ -73,6 +73,24 @@ const RECONCILE_0020 = {
   hash: "23b478d97996876599ad685b9d55d04267d30fe3da4c26646772b70388b50ad4",
 } as const;
 
+const RECONCILE_0021 = {
+  tag: "0021_cowriters",
+  when: 1792602394384,
+  hash: "83a8d452b6e3a89111c9ad2e2118063a49c035971255a7b7db99a5e5ce76df86",
+} as const;
+
+const RECONCILE_0022 = {
+  tag: "0022_beehiiv_import",
+  when: 1792605000000,
+  hash: "3aca3aec5016c01bbc544c852688de9516a1b3d50757d47893da71b5bdbb54e2",
+} as const;
+
+const RECONCILE_0023 = {
+  tag: "0023_post_preview_links",
+  when: 1792610000000,
+  hash: "12a92b926ad104067ad6330ff24e5572907dd16dee61149acd2d367713b980c5",
+} as const;
+
 describe("drizzle journal reconciliation hashes (0009–0014)", () => {
   it("matches drizzle-orm readMigrationFiles hash algorithm", () => {
     const migrations = readMigrationFiles({ migrationsFolder: "./drizzle" });
@@ -188,5 +206,59 @@ describe("drizzle journal reconciliation hashes (0018 linkedin credentials)", ()
     );
     expect(linkedinEntry?.idx).toBe(17);
     expect(linkedinEntry?.when).toBeGreaterThan(RECONCILE_0017.when);
+  });
+});
+
+describe("drizzle journal reconciliation hashes (0021 cowriters)", () => {
+  it("matches drizzle-orm readMigrationFiles hash algorithm", () => {
+    const migrations = readMigrationFiles({ migrationsFolder: "./drizzle" });
+    const fromLib = migrations.find((m) => m.folderMillis === RECONCILE_0021.when);
+    expect(fromLib?.hash).toBe(RECONCILE_0021.hash);
+    expect(hashMigrationSqlFile(RECONCILE_0021.tag)).toBe(RECONCILE_0021.hash);
+  });
+
+  it("registers 0021 at journal idx 20 after 0020", () => {
+    const journal = JSON.parse(
+      readFileSync(join(process.cwd(), "drizzle/meta/_journal.json"), "utf8"),
+    ) as { entries: Array<{ idx: number; tag: string; when: number }> };
+    const entry = journal.entries.find((row) => row.tag === RECONCILE_0021.tag);
+    expect(entry?.idx).toBe(20);
+    expect(entry?.when).toBeGreaterThan(RECONCILE_0020.when);
+  });
+});
+
+describe("drizzle journal reconciliation hashes (0022 beehiiv import)", () => {
+  it("matches drizzle-orm readMigrationFiles hash algorithm", () => {
+    const migrations = readMigrationFiles({ migrationsFolder: "./drizzle" });
+    const fromLib = migrations.find((m) => m.folderMillis === RECONCILE_0022.when);
+    expect(fromLib?.hash).toBe(RECONCILE_0022.hash);
+    expect(hashMigrationSqlFile(RECONCILE_0022.tag)).toBe(RECONCILE_0022.hash);
+  });
+
+  it("registers 0022 at journal idx 21 after 0021", () => {
+    const journal = JSON.parse(
+      readFileSync(join(process.cwd(), "drizzle/meta/_journal.json"), "utf8"),
+    ) as { entries: Array<{ idx: number; tag: string; when: number }> };
+    const entry = journal.entries.find((row) => row.tag === RECONCILE_0022.tag);
+    expect(entry?.idx).toBe(21);
+    expect(entry?.when).toBeGreaterThan(RECONCILE_0021.when);
+  });
+});
+
+describe("drizzle journal reconciliation hashes (0023 post preview links)", () => {
+  it("matches drizzle-orm readMigrationFiles hash algorithm", () => {
+    const migrations = readMigrationFiles({ migrationsFolder: "./drizzle" });
+    const fromLib = migrations.find((m) => m.folderMillis === RECONCILE_0023.when);
+    expect(fromLib?.hash).toBe(RECONCILE_0023.hash);
+    expect(hashMigrationSqlFile(RECONCILE_0023.tag)).toBe(RECONCILE_0023.hash);
+  });
+
+  it("registers 0023 at journal idx 22 after 0022", () => {
+    const journal = JSON.parse(
+      readFileSync(join(process.cwd(), "drizzle/meta/_journal.json"), "utf8"),
+    ) as { entries: Array<{ idx: number; tag: string; when: number }> };
+    const entry = journal.entries.find((row) => row.tag === RECONCILE_0023.tag);
+    expect(entry?.idx).toBe(22);
+    expect(entry?.when).toBeGreaterThan(RECONCILE_0022.when);
   });
 });

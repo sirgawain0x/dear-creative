@@ -17,7 +17,13 @@ import { writeAuditEvent } from "@/lib/audit/write-audit-event";
 import { htmlToMarkdown } from "@/lib/html/html-to-markdown";
 import { ensureArticleHtml } from "@/lib/html/markdown-to-html";
 import { maybeSchedulePublishedPostNarrationRegeneration } from "@/lib/audio/schedule-narration-regeneration";
+import {
+  assertCowriterPublishAllowed,
+  CowriterPublishBlockedError,
+} from "@/lib/cowriters/publish-gate";
 import { loadFullPostContent } from "@/lib/paywall/full-post-content";
+
+export { CowriterPublishBlockedError };
 
 export type AdminPostRecord = {
   id: string;
@@ -321,6 +327,11 @@ export async function updateAdminPost(
   }
 
   const nextStatus: PostStatus = input.status ?? existing.status;
+
+  if (nextStatus === "published" && existing.status !== "published") {
+    await assertCowriterPublishAllowed(db, existing.id);
+  }
+
   const nextTeaserText =
     input.teaserText !== undefined
       ? input.teaserText?.trim() || null

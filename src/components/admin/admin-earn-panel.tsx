@@ -58,6 +58,17 @@ type AdminEarnPanelProps = {
 
 const DEFAULT_VAULT_ORDER = [EARN_VAULT_AAVE_ID, EARN_VAULT_MORPHO_ID];
 
+function parseEarnApiErrorBody(text: string): { error?: string } | null {
+  if (!text.trim()) {
+    return null;
+  }
+  try {
+    return JSON.parse(text) as { error?: string };
+  } catch {
+    return null;
+  }
+}
+
 function providerLabel(provider: PrivyEarnVaultDetails["provider"]): string {
   switch (provider) {
     case "aave":
@@ -168,15 +179,30 @@ export function AdminEarnPanel({
       }
 
       const vaultsRes = await fetch("/api/admin/earn/vaults", { headers });
-      if (vaultsRes.status === 404) {
+      const vaultsBodyText = await vaultsRes.text();
+      const vaultsErrorBody = parseEarnApiErrorBody(vaultsBodyText);
+
+      if (vaultsRes.status === 401) {
+        setError("Sign in with Privy");
+        return;
+      }
+      if (vaultsRes.status === 403) {
+        setError("Admin access required.");
+        return;
+      }
+      if (vaultsRes.status === 404 && !vaultsErrorBody) {
         setError("Earn feature is disabled.");
         return;
       }
       if (!vaultsRes.ok) {
-        setError("Could not load vault details.");
+        const code =
+          typeof vaultsErrorBody?.error === "string"
+            ? vaultsErrorBody.error
+            : null;
+        setError(code ?? "Could not load vault details.");
         return;
       }
-      const vaultsJson = (await vaultsRes.json()) as {
+      const vaultsJson = JSON.parse(vaultsBodyText) as {
         vaults: PrivyEarnVaultDetails[];
       };
       setVaults(vaultsJson.vaults);
@@ -353,7 +379,8 @@ export function AdminEarnPanel({
             <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
               <p className="font-semibold">Admin wallet not configured</p>
               <p className="mt-1 text-xs opacity-90">
-                Set <code>ADMIN_PRIVY_WALLET_ID</code> to the Privy wallet id
+                Set server env <code>ADMIN_PRIVY_WALLET_ID</code> (see{" "}
+                <code>lib/earn/admin-wallet-id.ts</code>) to the Privy wallet id
                 used for Earn position reads.
               </p>
             </div>
@@ -411,7 +438,9 @@ function MetricCard({ label, value }: { label: string; value: string }) {
       <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
         {label}
       </p>
-      <p className="mt-1 text-lg font-bold tabular-nums break-words">{value}</p>
+      <p className="mt-1 max-w-full overflow-x-auto text-lg font-bold tabular-nums whitespace-nowrap">
+        {value}
+      </p>
     </div>
   );
 }

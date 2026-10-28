@@ -13,10 +13,8 @@ vi.mock("next/headers", () => ({
   cookies: vi.fn(async () => mockCookieStore),
 }));
 
-vi.mock("@/lib/privy/session-from-cookies", () => ({
-  createCookieReaderFromHeader: vi.fn(() => () => undefined),
-  getPrivyUserIdFromCookies: vi.fn(),
-  isPrivyAdminUserId: vi.fn(),
+vi.mock("@/lib/privy/require-privy-admin-session", () => ({
+  resolvePrivyAdminUserForLinkedIn: vi.fn(),
 }));
 
 vi.mock("@/lib/linkedin/complete-oauth", () => ({
@@ -27,19 +25,22 @@ vi.mock("@/lib/linkedin/config", () => ({
   isLinkedInOAuthConfigured: vi.fn(() => true),
 }));
 
-import { completeLinkedInOAuth } from "@/lib/linkedin/complete-oauth";
 import {
-  getPrivyUserIdFromCookies,
-  isPrivyAdminUserId,
-} from "@/lib/privy/session-from-cookies";
+  LINKEDIN_OAUTH_STATE_COOKIE,
+  LINKEDIN_OAUTH_STATE_COOKIE_PATH,
+} from "@/lib/linkedin/auth-response";
+import { completeLinkedInOAuth } from "@/lib/linkedin/complete-oauth";
+import { resolvePrivyAdminUserForLinkedIn } from "@/lib/privy/require-privy-admin-session";
 
 describe("GET /api/admin/linkedin/callback", () => {
   beforeEach(() => {
     mockCookieStore.get.mockImplementation((name: string) =>
       name === "linkedin_oauth_state" ? { value: STATE } : undefined,
     );
-    vi.mocked(getPrivyUserIdFromCookies).mockResolvedValue(ADMIN_DID);
-    vi.mocked(isPrivyAdminUserId).mockReturnValue(true);
+    vi.mocked(resolvePrivyAdminUserForLinkedIn).mockResolvedValue({
+      userId: ADMIN_DID,
+      isAdmin: true,
+    });
   });
 
   afterEach(() => {
@@ -62,6 +63,13 @@ describe("GET /api/admin/linkedin/callback", () => {
     expect(location).toContain("/admin");
     expect(location).toContain("linkedin=connected");
     expect(location).not.toContain("user_cancelled");
+    expect(mockCookieStore.delete).toHaveBeenCalledWith({
+      name: LINKEDIN_OAUTH_STATE_COOKIE,
+      path: LINKEDIN_OAUTH_STATE_COOKIE_PATH,
+    });
+    expect(LINKEDIN_OAUTH_STATE_COOKIE_PATH).toBe(
+      "/api/admin/linkedin/callback",
+    );
     expect(completeLinkedInOAuth).toHaveBeenCalledWith(
       expect.objectContaining({
         privyUserId: ADMIN_DID,
@@ -70,7 +78,7 @@ describe("GET /api/admin/linkedin/callback", () => {
     );
   });
 
-  it("redirects with invalid_state reason", async () => {
+  it("rejects OAuth state mismatch via completeLinkedInOAuth", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.mocked(completeLinkedInOAuth).mockResolvedValue({
       ok: false,
@@ -83,6 +91,12 @@ describe("GET /api/admin/linkedin/callback", () => {
     );
     const location = res.headers.get("location") ?? "";
     expect(location).toContain("reason=invalid_state");
+    expect(completeLinkedInOAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: "bad",
+        cookieState: STATE,
+      }),
+    );
     expect(errorSpy).toHaveBeenCalledWith(
       "[admin-linkedin] oauth_callback_failed",
       { reason: "invalid_state" },

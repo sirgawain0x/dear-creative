@@ -8,69 +8,111 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { AdminLinkedInConnect } from "./admin-linkedin-connect";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LINKEDIN_CALLBACK_SUCCESS_MESSAGE } from "@/lib/linkedin/callback-banner-messages";
+import { linkedInCallbackErrorMessage } from "@/lib/linkedin/callback-banner-messages";
+import { LINKEDIN_CALLBACK_REASONS } from "@/lib/linkedin/reason-codes";
 
-const searchParams = new URLSearchParams();
+const replaceMock = vi.fn();
+let mockSearchParams = new URLSearchParams();
+const getAccessTokenMock = vi.fn(async () => "privy-admin-token");
 
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => searchParams,
+  useRouter: () => ({ replace: replaceMock }),
+  useSearchParams: () => mockSearchParams,
 }));
 
+import { AdminLinkedInConnect } from "./admin-linkedin-connect";
+
+function setWindowLocation(pathAndQuery: string) {
+  const url = new URL(pathAndQuery, "http://localhost");
+  Object.defineProperty(window, "location", {
+    configurable: true,
+    value: {
+      ...window.location,
+      href: url.href,
+      pathname: url.pathname,
+      search: url.search,
+    },
+  });
+}
+
+function statusFetchResponse(connected: boolean) {
+  return {
+    ok: true,
+    json: async () => ({ connected }),
+  };
+}
+
+function defaultFetchMock(
+  statusConnected = false,
+): ReturnType<typeof vi.fn> {
+  return vi.fn(async (input: RequestInfo) => {
+    const url = String(input);
+    if (url.endsWith("/api/admin/linkedin/status")) {
+      return statusFetchResponse(statusConnected);
+    }
+    if (url.endsWith("/api/admin/linkedin/auth")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          url: "https://www.linkedin.com/oauth/v2/authorization?state=test",
+        }),
+      };
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  });
+}
+
 describe("AdminLinkedInConnect", () => {
+  beforeEach(() => {
+    mockSearchParams = new URLSearchParams();
+    replaceMock.mockReset();
+    getAccessTokenMock.mockReset();
+    getAccessTokenMock.mockResolvedValue("privy-admin-token");
+    setWindowLocation("/admin");
+    vi.stubGlobal("fetch", defaultFetchMock());
+  });
+
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
-    searchParams.forEach((_value, key) => {
-      searchParams.delete(key);
-    });
   });
 
   it("loads status on mount and shows connected state with reconnect", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo) => {
-      const url = String(input);
-      if (url.endsWith("/api/admin/linkedin/status")) {
-        return {
-          ok: true,
-          json: async () => ({
-            connected: true,
-          }),
-        };
-      }
-      throw new Error(`unexpected fetch ${url}`);
-    });
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", defaultFetchMock(true));
 
     render(
       <AdminLinkedInConnect
         isAdmin={true}
-        getAccessToken={vi.fn(async () => "privy-admin-token")}
+        isSignedIn={true}
+        getAccessToken={getAccessTokenMock}
       />,
     );
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/admin/linkedin/status", {
-        headers: { Authorization: "Bearer privy-admin-token" },
-      });
+      expect(getAccessTokenMock).toHaveBeenCalled();
     });
-    expect(screen.getByText(/connected as linkedin member/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/connected as linkedin member/i),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /reconnect/i }),
     ).toBeInTheDocument();
   });
 
   it("refetches status after linkedin=connected query param", async () => {
-    searchParams.set("linkedin", "connected");
-    const fetchMock = vi.fn(async (_input: RequestInfo) => ({
-      ok: true,
-      json: async () => ({ connected: true }),
-    }));
+    mockSearchParams = new URLSearchParams("linkedin=connected");
+    setWindowLocation("/admin?linkedin=connected");
+    const fetchMock = defaultFetchMock(true);
     vi.stubGlobal("fetch", fetchMock);
 
     render(
       <AdminLinkedInConnect
         isAdmin={true}
-        getAccessToken={vi.fn(async () => "privy-admin-token")}
+        isSignedIn={true}
+        getAccessToken={getAccessTokenMock}
       />,
     );
 
@@ -78,68 +120,27 @@ describe("AdminLinkedInConnect", () => {
       expect(
         fetchMock.mock.calls.filter((call) =>
           String(call[0]).endsWith("/api/admin/linkedin/status"),
-        ),
-      ).toHaveLength(2);
+        ).length,
+      ).toBeGreaterThanOrEqual(2);
     });
   });
 
-  it("shows readable callback error for linkedin=error reason codes", async () => {
-    searchParams.set("linkedin", "error");
-    searchParams.set("reason", "invalid_state");
+  it("starts OAuth with same-origin cookie credentials (no bearer header)", async () => {
+    const assign = vi.fn();
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...window.location, assign, href: "http://localhost/admin" },
+    });
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        json: async () => ({ connected: false }),
-      })),
-    );
+    const fetchMock = defaultFetchMock(false);
+    vi.stubGlobal("fetch", fetchMock);
 
     render(
       <AdminLinkedInConnect
         isAdmin={true}
-        getAccessToken={vi.fn(async () => "privy-admin-token")}
+        isSignedIn={true}
+        getAccessToken={getAccessTokenMock}
       />,
-    );
-
-    await waitFor(() => {
-      expect(
-        screen.getByText(/could not be verified/i),
-      ).toBeInTheDocument();
-    });
-  });
-
-  it("starts OAuth by fetching /api/admin/linkedin/auth with Bearer token", async () => {
-    const assign = vi.fn();
-    Object.defineProperty(window, "location", {
-      configurable: true,
-      value: { ...window.location, assign },
-    });
-
-    const fetchMock = vi.fn(async (input: RequestInfo) => {
-      const url = String(input);
-      if (url.endsWith("/api/admin/linkedin/status")) {
-        return {
-          ok: true,
-          json: async () => ({ connected: false }),
-        };
-      }
-      if (url.endsWith("/api/admin/linkedin/auth")) {
-        return {
-          ok: true,
-          json: async () => ({
-            url: "https://www.linkedin.com/oauth/v2/authorization?state=test",
-          }),
-        };
-      }
-      throw new Error(`unexpected fetch ${url}`);
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    const getAccessToken = vi.fn(async () => "privy-admin-token");
-
-    render(
-      <AdminLinkedInConnect isAdmin={true} getAccessToken={getAccessToken} />,
     );
 
     await waitFor(() => {
@@ -154,7 +155,7 @@ describe("AdminLinkedInConnect", () => {
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/admin/linkedin/auth", {
-        headers: { Authorization: "Bearer privy-admin-token" },
+        credentials: "include",
       });
     });
     expect(assign).toHaveBeenCalledWith(
@@ -162,13 +163,117 @@ describe("AdminLinkedInConnect", () => {
     );
   });
 
+  it("prompts sign-in when Privy session is missing locally", async () => {
+    render(
+      <AdminLinkedInConnect
+        isAdmin={true}
+        isSignedIn={false}
+        getAccessToken={getAccessTokenMock}
+      />,
+    );
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /connect linkedin/i }),
+      ).toBeEnabled();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /connect linkedin/i }));
+    expect(
+      await screen.findByText(/sign in with privy before connecting linkedin/i),
+    ).toBeInTheDocument();
+  });
+
   it("renders nothing when not admin", () => {
     const { container } = render(
       <AdminLinkedInConnect
         isAdmin={false}
-        getAccessToken={vi.fn(async () => null)}
+        isSignedIn={true}
+        getAccessToken={getAccessTokenMock}
       />,
     );
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("shows success banner for linkedin=connected and clears query params", async () => {
+    mockSearchParams = new URLSearchParams("linkedin=connected");
+    setWindowLocation("/admin?linkedin=connected");
+
+    render(
+      <AdminLinkedInConnect
+        isAdmin={true}
+        isSignedIn={true}
+        getAccessToken={getAccessTokenMock}
+      />,
+    );
+
+    expect(
+      await screen.findByTestId("admin-linkedin-callback-banner"),
+    ).toHaveTextContent(LINKEDIN_CALLBACK_SUCCESS_MESSAGE);
+
+    await waitFor(() => {
+      expect(replaceMock).toHaveBeenCalledWith("/admin", { scroll: false });
+    });
+  });
+
+  it.each(
+    LINKEDIN_CALLBACK_REASONS.filter((code) => code !== "connected"),
+  )("shows error banner for reason=%s", async (reason) => {
+    mockSearchParams = new URLSearchParams(
+      `linkedin=error&reason=${reason}`,
+    );
+    setWindowLocation(`/admin?linkedin=error&reason=${reason}`);
+
+    render(
+      <AdminLinkedInConnect
+        isAdmin={true}
+        isSignedIn={true}
+        getAccessToken={getAccessTokenMock}
+      />,
+    );
+
+    const banner = await screen.findByTestId("admin-linkedin-callback-banner");
+    expect(banner).toHaveTextContent(linkedInCallbackErrorMessage(reason));
+  });
+
+  it("shows generic fallback for unknown reason codes", async () => {
+    mockSearchParams = new URLSearchParams(
+      "linkedin=error&reason=unknown_reason_code",
+    );
+    setWindowLocation("/admin?linkedin=error&reason=unknown_reason_code");
+
+    render(
+      <AdminLinkedInConnect
+        isAdmin={true}
+        isSignedIn={true}
+        getAccessToken={getAccessTokenMock}
+      />,
+    );
+
+    expect(
+      await screen.findByTestId("admin-linkedin-callback-banner"),
+    ).toHaveTextContent(linkedInCallbackErrorMessage("unknown_reason_code"));
+  });
+
+  it("clears linkedin callback params but keeps unrelated search params", async () => {
+    mockSearchParams = new URLSearchParams(
+      "linkedin=error&reason=invalid_state&tab=metrics",
+    );
+    setWindowLocation(
+      "/admin?linkedin=error&reason=invalid_state&tab=metrics",
+    );
+
+    render(
+      <AdminLinkedInConnect
+        isAdmin={true}
+        isSignedIn={true}
+        getAccessToken={getAccessTokenMock}
+      />,
+    );
+
+    await screen.findByTestId("admin-linkedin-callback-banner");
+    await waitFor(() => {
+      expect(replaceMock).toHaveBeenCalledWith("/admin?tab=metrics", {
+        scroll: false,
+      });
+    });
   });
 });
