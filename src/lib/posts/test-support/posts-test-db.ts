@@ -32,6 +32,8 @@ export async function insertPost(
     isGated?: boolean;
     authorId?: string | null;
     canonicalUrl?: string | null;
+    source?: "paragraph" | "beehiiv" | null;
+    sourceGuid?: string | null;
   },
 ) {
   await db.insert(posts).values({
@@ -47,5 +49,7 @@ export async function insertPost(
     isGated: input.isGated ?? false,
     authorId: input.authorId ?? null,
     canonicalUrl: input.canonicalUrl ?? null,
+    source: input.source ?? null,
+    sourceGuid: input.sourceGuid ?? null,
   });
 }

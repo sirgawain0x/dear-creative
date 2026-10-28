@@ -67,14 +67,14 @@ export async function HomeSpotlight() {
             Latest dispatches
           </h2>
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Three most recent published issues from the archive.
+            Newest published issues in date order — nothing pinned.
           </p>
         </div>
         <Link
           href="/posts"
-          className="text-sm font-semibold text-zinc-700 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
+          className="inline-flex items-center rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold text-zinc-800 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
         >
-          View all posts →
+          See all posts →
         </Link>
       </div>
 

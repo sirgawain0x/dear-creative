@@ -23,20 +23,18 @@ describe("getCachedHomeSpotlightPosts", () => {
     vi.useRealTimers();
   });
 
-  it("returns three newest visible posts in descending publish order", async () => {
+  it("returns up to HOME_SPOTLIGHT_LIMIT newest visible posts in descending publish order", async () => {
     const db = await createPostsTestDb();
     getDb.mockReturnValue(db);
     const asOf = new Date("2026-10-20T00:00:00.000Z");
     vi.useFakeTimers({ now: asOf });
 
-    for (let i = 0; i < 5; i += 1) {
+    for (let i = 0; i < 15; i += 1) {
       await insertPost(db, {
         slug: `spotlight-post-${i}`,
         title: `Post ${i}`,
         status: "published",
-        publishedAt: new Date(
-          `2026-10-${String(i + 1).padStart(2, "0")}T12:00:00.000Z`,
-        ),
+        publishedAt: new Date(Date.UTC(2025, 0, 1 + i, 12, 0, 0)),
       });
     }
 
@@ -59,11 +57,10 @@ describe("getCachedHomeSpotlightPosts", () => {
     const cached = await getCachedHomeSpotlightPosts();
 
     expect(cached).toHaveLength(HOME_SPOTLIGHT_LIMIT);
-    expect(cached.map((p) => p.slug)).toEqual([
-      "spotlight-post-4",
-      "spotlight-post-3",
-      "spotlight-post-2",
-    ]);
+    const expectedSlugs = Array.from({ length: HOME_SPOTLIGHT_LIMIT }, (_, j) =>
+      String(`spotlight-post-${14 - j}`),
+    );
+    expect(cached.map((p) => p.slug)).toEqual(expectedSlugs);
     for (const item of cached) {
       expect(item).not.toHaveProperty("bodyHtml");
     }
