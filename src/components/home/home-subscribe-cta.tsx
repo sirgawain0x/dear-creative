@@ -11,7 +11,7 @@ export function HomeSubscribeCta() {
     <section
       id={HOME_SUBSCRIBE_SECTION_ID}
       aria-labelledby="home-subscribe-heading"
-      className="rounded-2xl border border-zinc-200/90 bg-white p-6 text-center shadow-xs dark:border-zinc-800 dark:bg-zinc-900/60 md:p-8"
+      className="scroll-mt-[var(--site-sticky-header-offset)] rounded-2xl border border-zinc-200/90 bg-white p-6 text-center shadow-xs dark:border-zinc-800 dark:bg-zinc-900/60 md:p-8"
     >
       <h2
         id="home-subscribe-heading"

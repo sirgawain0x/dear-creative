@@ -23,11 +23,6 @@
 
 html {
   scroll-behavior: smooth;
-  scroll-padding-top: var(--site-sticky-header-offset);
-}
-
-#subscribe {
-  scroll-margin-top: var(--site-sticky-header-offset);
 }
 
 body {

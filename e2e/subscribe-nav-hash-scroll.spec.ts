@@ -19,7 +19,7 @@ test.describe("Subscribe nav and hash scroll", () => {
       "aria-expanded",
       "false",
     );
-    await page.waitForURL(/\/?(#subscribe)?$/, { timeout: 15_000 });
+    await page.waitForURL(/\/#subscribe$/, { timeout: 15_000 });
   });
 
   test("#subscribe is not hidden under the sticky header at 375px", async ({ page }) => {
@@ -29,15 +29,17 @@ test.describe("Subscribe nav and hash scroll", () => {
     const subscribe = page.locator("#subscribe");
     await expect(subscribe).toBeVisible({ timeout: 15_000 });
 
+    const maxGapPx = 24;
+
     await page.waitForFunction(
-      () => {
+      (maxGap) => {
         const header = document.querySelector("header");
         const section = document.getElementById("subscribe");
         if (!header || !section) return false;
         const gap = section.getBoundingClientRect().top - header.getBoundingClientRect().bottom;
-        return gap >= -1;
+        return gap >= 0 && gap <= maxGap;
       },
-      undefined,
+      maxGapPx,
       { timeout: 15_000 },
     );
 
@@ -49,6 +51,7 @@ test.describe("Subscribe nav and hash scroll", () => {
     });
 
     expect(gap).not.toBeNull();
-    expect(gap!).toBeGreaterThanOrEqual(-1);
+    expect(gap!).toBeGreaterThanOrEqual(0);
+    expect(gap!).toBeLessThanOrEqual(maxGapPx);
   });
 });

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useId, useState, type MouseEvent } from "react";
-import { HOME_SUBSCRIBE_SECTION_ID } from "@/components/home/home-subscribe-cta";
+import { scrollHomeSubscribeIntoView } from "@/components/home/scroll-home-subscribe-into-view";
 import { useAuthSession } from "./providers/app-providers";
 import { ReaderAccountDropdown } from "./wallet/reader-account-dropdown";
 import type { ReaderWalletPreviewData } from "./wallet/reader-wallet-panel";
@@ -48,10 +48,7 @@ export function isNavLinkActive(pathname: string | null, link: SiteNavLink): boo
 }
 
 function scrollToHomeSubscribeCard(): void {
-  document.getElementById(HOME_SUBSCRIBE_SECTION_ID)?.scrollIntoView({
-    behavior: "smooth",
-    block: "start",
-  });
+  scrollHomeSubscribeIntoView("smooth");
   window.history.replaceState(null, "", "#subscribe");
 }
 
