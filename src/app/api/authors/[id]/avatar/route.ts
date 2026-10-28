@@ -17,7 +17,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   const { id } = await context.params;
   const db = getDb();
-  const auth = await requireAuthorProfileEditAccess(request);
+  const auth = await requireAuthorProfileEditAccess(request, id);
   if (!auth.ok) {
     return auth.response;
   }
