@@ -3,6 +3,8 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* Sticky site header (logo row + py-3.5 + border) — keep in sync with #subscribe scroll-margin */
+  --site-sticky-header-offset: 4rem;
 }
 
 @theme inline {
@@ -21,6 +23,11 @@
 
 html {
   scroll-behavior: smooth;
+  scroll-padding-top: var(--site-sticky-header-offset);
+}
+
+#subscribe {
+  scroll-margin-top: var(--site-sticky-header-offset);
 }
 
 body {

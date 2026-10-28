@@ -55,12 +55,14 @@ function scrollToHomeSubscribeCard(): void {
   window.history.replaceState(null, "", "#subscribe");
 }
 
-function onSubscribeNavClick(
+export function onSubscribeNavClick(
   pathname: string | null,
   afterNavigate?: () => void,
-): ((event: MouseEvent<HTMLAnchorElement>) => void) | undefined {
+): (event: MouseEvent<HTMLAnchorElement>) => void {
   if (pathname !== "/") {
-    return undefined;
+    return () => {
+      afterNavigate?.();
+    };
   }
   return (event) => {
     event.preventDefault();
@@ -182,7 +184,11 @@ export function SiteHeader({
               <Link
                 key={link.href}
                 href={href}
-                onClick={link.homeSubscribeAnchor ? onSubscribeNavClick(pathname) : undefined}
+                onClick={
+                  link.homeSubscribeAnchor
+                    ? onSubscribeNavClick(pathname)
+                    : undefined
+                }
                 aria-current={active ? "page" : undefined}
                 className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
                   active
