@@ -7,7 +7,16 @@ cd "${ROOT}"
 
 LOCAL_DATABASE_URL="${LOCAL_DATABASE_URL:-file:./data/ci-dear-creative.db}"
 export LOCAL_DATABASE_URL
-PORT="${PORT:-$((31000 + RANDOM % 9000))}"
+
+pick_free_port() {
+  python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'
+}
+
+PORT="${PORT:-$(pick_free_port)}"
+if command -v lsof >/dev/null 2>&1; then
+  lsof -t -i:"${PORT}" 2>/dev/null | xargs -r kill -9 || true
+  sleep 0.5
+fi
 BOGUS_SLUG="${BOGUS_SLUG:-bogus-slug-notfound-check}"
 BASE_URL="http://127.0.0.1:${PORT}"
 LOG_FILE="${LOG_FILE:-/tmp/post-slug-notfound-noindex.log}"

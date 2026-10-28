@@ -4,6 +4,7 @@ import { test, expect, type Page } from "@playwright/test";
 import {
   ADAM_CHAT_OVERFLOW_SCREENSHOT_DIR,
   ADAM_CHAT_OVERFLOW_THREAD_ID,
+  ADAM_CHAT_SHORT_REPLY,
   buildAdamChatOverflowMessages,
   buildAdamChatOverflowThreadList,
 } from "./fixtures/adam-chat-overflow-fixture";
@@ -155,6 +156,35 @@ async function expectNoHorizontalOverflow(page: Page) {
   expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth);
 }
 
+async function expectShortChatBubbleSizesToContent(page: Page, shortText: string) {
+  const sizing = await page.evaluate((text) => {
+    const thread = document.querySelector(
+      '[class*="overflow-x-hidden"][class*="overflow-y-auto"][class*="min-h-[320px]"]',
+    );
+    const threadWidth = thread?.clientWidth ?? 0;
+    const maxBubbleWidth = threadWidth * 0.85;
+
+    const prose = [...document.querySelectorAll(".prose")].find((node) =>
+      node.textContent?.includes(text),
+    );
+    const bubble = prose?.closest("div.rounded-2xl");
+    const shortWidth = bubble?.getBoundingClientRect().width ?? 0;
+
+    const codeProse = [...document.querySelectorAll(".prose")].find((node) =>
+      node.textContent?.includes("fixture wide code block"),
+    );
+    const codeBubble = codeProse?.closest("div.rounded-2xl");
+    const codeBubbleWidth = codeBubble?.getBoundingClientRect().width ?? 0;
+
+    return { threadWidth, maxBubbleWidth, shortWidth, codeBubbleWidth };
+  }, shortText);
+
+  expect(sizing.threadWidth).toBeGreaterThan(0);
+  expect(sizing.shortWidth).toBeGreaterThan(0);
+  expect(sizing.shortWidth).toBeLessThan(sizing.maxBubbleWidth - 4);
+  expect(sizing.codeBubbleWidth).toBeGreaterThan(sizing.shortWidth + 20);
+}
+
 async function expectStudioMainPadding(page: Page) {
   const paddingLeft = await page.evaluate(() => {
     const main = document.querySelector("main");
@@ -214,3 +244,18 @@ for (const { width, screenshot } of chatOverflowWidths) {
     });
   });
 }
+
+test("Chat with Adam short reply bubble sizes to content at 375px", async ({
+  page,
+}) => {
+  await openAdamChatTab(page, 375);
+  await expect(page.getByText(ADAM_CHAT_SHORT_REPLY)).toBeVisible();
+  await expectShortChatBubbleSizesToContent(page, ADAM_CHAT_SHORT_REPLY);
+
+  const outDir = join(process.cwd(), ADAM_CHAT_OVERFLOW_SCREENSHOT_DIR);
+  mkdirSync(outDir, { recursive: true });
+  await page.screenshot({
+    path: join(outDir, "adam-chat-mobile-375-short-and-long.png"),
+    fullPage: true,
+  });
+});

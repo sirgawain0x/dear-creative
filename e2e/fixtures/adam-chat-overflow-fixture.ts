@@ -14,6 +14,8 @@ export function buildAdamChatOverflowThreadList() {
   ];
 }
 
+export const ADAM_CHAT_SHORT_REPLY = "Sure — noted.";
+
 const longUrl =
   "https://dearcreative.example/editorial/studio/chat-with-adam/threads/" +
   "fixture-overflow-test?ref=mobile-layout&token=" +
@@ -34,6 +36,10 @@ export function buildAdamChatOverflowMessages() {
     {
       role: "user" as const,
       content: longUrl,
+    },
+    {
+      role: "assistant" as const,
+      content: ADAM_CHAT_SHORT_REPLY,
     },
     {
       role: "assistant" as const,

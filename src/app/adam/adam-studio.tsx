@@ -2630,7 +2630,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                   }`}
                 >
                   <div
-                    className={`min-w-0 max-w-[min(85%,100%)] w-full rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                    className={`min-w-0 w-fit max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                       msg.role === "user"
                         ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
                         : "border border-zinc-200 bg-zinc-50 text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
