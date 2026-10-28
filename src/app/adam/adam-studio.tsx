@@ -54,6 +54,7 @@ import { NARRATION_VOICES, voiceLabel } from "@/lib/audio/narration-voices";
 import { playAdamGoogleTts } from "@/app/adam/adam-message-tts";
 import { stopDispatchAudioResources } from "@/lib/audio/stop-active-audio";
 import { RepurposePanel } from "@/app/adam/repurpose-panel";
+import { EditorPreviewLinksPanel } from "@/components/admin/EditorPreviewLinksPanel";
 import { EditorWritersPanel } from "@/components/admin/EditorWritersPanel";
 
 export type StudioTab = "chat" | "ideas" | "posts" | "approvals" | "schedule";
@@ -449,6 +450,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
   const [isSavingPost, setIsSavingPost] = useState(false);
   const [isPolishingPost, setIsPolishingPost] = useState(false);
   const [cowritersEnabled, setCowritersEnabled] = useState(false);
+  const [previewLinksEnabled, setPreviewLinksEnabled] = useState(false);
 
   // Schedule state
   const [schedule, setSchedule] = useState<AdamScheduleRecord | null>(null);
@@ -549,6 +551,15 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
     },
     [authenticated, getAccessToken, privyConfigured, studioToken],
   );
+
+  useEffect(() => {
+    void authFetch("/api/adam/preview-links/status")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { enabled?: boolean } | null) => {
+        setPreviewLinksEnabled(Boolean(data?.enabled));
+      })
+      .catch(() => setPreviewLinksEnabled(false));
+  }, [authFetch]);
 
   const loadStudioData = useCallback(async () => {
     try {
@@ -2462,8 +2473,8 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
 
       {/* TAB 1: CHAT + MULTIMODAL UPLOADS + VOICE */}
       {activeTab === "chat" ? (
-        <section className="mt-6 grid gap-6 lg:grid-cols-12">
-          <div className="flex flex-col rounded-2xl border border-zinc-200 bg-white p-5 shadow-xs lg:col-span-8 xl:col-span-9 dark:border-zinc-800 dark:bg-zinc-900/60">
+        <section className="mt-6 grid min-w-0 gap-6 lg:grid-cols-12">
+          <div className="flex min-w-0 max-w-full flex-col rounded-2xl border border-zinc-200 bg-white p-5 shadow-xs lg:col-span-8 xl:col-span-9 dark:border-zinc-800 dark:bg-zinc-900/60">
             {/* Thread Header Bar */}
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 pb-3 dark:border-zinc-800/80">
               <div className="flex max-w-full items-center gap-1.5 overflow-x-auto py-0.5">
@@ -2610,16 +2621,16 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
             </div>
 
             {/* Conversation Thread */}
-            <div className="max-h-[460px] min-h-[320px] flex-1 space-y-4 overflow-y-auto pr-2">
+            <div className="max-h-[460px] min-h-[320px] min-w-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto pr-2">
               {messages.map((msg, idx) => (
                 <div
                   key={idx}
-                  className={`flex flex-col ${
+                  className={`flex min-w-0 w-full max-w-full flex-col ${
                     msg.role === "user" ? "items-end" : "items-start"
                   }`}
                 >
                   <div
-                    className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                    className={`min-w-0 w-fit max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                       msg.role === "user"
                         ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
                         : "border border-zinc-200 bg-zinc-50 text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
@@ -2686,7 +2697,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                       ) : null}
                     </div>
                     <div
-                      className="prose prose-sm dark:prose-invert max-w-none space-y-2"
+                      className="prose prose-sm dark:prose-invert min-w-0 max-w-full space-y-2 [overflow-wrap:anywhere] [&_img]:h-auto [&_img]:max-w-full [&_pre]:max-w-full [&_pre]:overflow-x-auto"
                       dangerouslySetInnerHTML={{
                         __html:
                           renderMarkdownToSafeHtml(msg.content) || msg.content,
@@ -2972,7 +2983,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
           </div>
 
           {/* Voice & Multimodal Settings Sidebar */}
-          <aside className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-xs lg:col-span-4 xl:col-span-3 dark:border-zinc-800 dark:bg-zinc-900/60">
+          <aside className="min-w-0 max-w-full space-y-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-xs lg:col-span-4 xl:col-span-3 dark:border-zinc-800 dark:bg-zinc-900/60">
             <div>
               <h2 className="text-base font-semibold">Voice &amp; Audio</h2>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
@@ -3743,6 +3754,14 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                 authFetch={authFetch}
                 enabled={cowritersEnabled}
                 isPublishedTarget={editPostStatus === "published"}
+              />
+              <EditorPreviewLinksPanel
+                key={`preview-${selectedEditPostId ?? "no-post"}`}
+                postId={selectedEditPostId}
+                authFetch={authFetch}
+                enabled={
+                  previewLinksEnabled && editPostStatus !== "published"
+                }
               />
 
               {/* Post Banner & Thumbnail (Lens Grove) */}

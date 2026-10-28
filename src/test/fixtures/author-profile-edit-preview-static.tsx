@@ -29,6 +29,18 @@ export function AuthorProfileEditPreviewStatic() {
           />
         </label>
 
+        <label className="block">
+          <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            Tagline
+          </span>
+          <input
+            type="text"
+            readOnly
+            value={author.tagline ?? ""}
+            className="mt-2 w-full max-w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          />
+        </label>
+
         <div>
           <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
             Profile image

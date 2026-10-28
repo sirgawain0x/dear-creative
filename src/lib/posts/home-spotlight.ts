@@ -1,6 +1,7 @@
 import type { PublishedPostListItem } from "./published-posts";
 
-export const HOME_SPOTLIGHT_LIMIT = 3;
+/** Newest published posts on the homepage (not pinned; date order only). */
+export const HOME_SPOTLIGHT_LIMIT = 12;
 
 export const HOME_SPOTLIGHT_EMPTY_MESSAGE =
   "No dispatches published yet. New issues will appear here when they go live.";

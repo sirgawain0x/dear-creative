@@ -8,7 +8,7 @@ import { migrate } from "drizzle-orm/libsql/migrator";
 import { eq } from "drizzle-orm";
 import { describe, expect, it, afterEach } from "vitest";
 import * as schema from "@/db/schema";
-import { authors, posts } from "@/db/schema";
+import { posts } from "@/db/schema";
 
 const BACKFILL_JOURNAL_WHEN = 1792522000000;
 const LINKEDIN_JOURNAL_WHEN = 1792523000000;
@@ -16,6 +16,8 @@ const EARN_AUDIT_JOURNAL_WHEN = 1792524500000;
 const READER_UNLOCK_JOURNAL_WHEN = 1792525000000;
 const COWRITERS_JOURNAL_WHEN = 1792602394384;
 const BEEHIIV_IMPORT_JOURNAL_WHEN = 1792605000000;
+const PREVIEW_LINKS_JOURNAL_WHEN = 1792610000000;
+const AUTHOR_TAGLINE_JOURNAL_WHEN = 1792616000000;
 
 function createMigrationsFolderThrough0016(): string {
   const dir = mkdtempSync(join(tmpdir(), "dear-drizzle-through-0016-"));
@@ -26,9 +28,12 @@ function createMigrationsFolderThrough0016(): string {
   rmSync(join(dir, "0020_reader_post_unlock_purchases.sql"));
   rmSync(join(dir, "0021_cowriters.sql"));
   rmSync(join(dir, "0022_beehiiv_import.sql"));
+  rmSync(join(dir, "0023_post_preview_links.sql"));
+  rmSync(join(dir, "0024_author_tagline.sql"));
   rmSync(join(dir, "meta/0017_snapshot.json"));
   rmSync(join(dir, "meta/0021_snapshot.json"), { force: true });
   rmSync(join(dir, "meta/0022_snapshot.json"), { force: true });
+  rmSync(join(dir, "meta/0023_snapshot.json"), { force: true });
   const journalPath = join(dir, "meta/_journal.json");
   const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
     entries: Array<{ when: number }>;
@@ -40,31 +45,45 @@ function createMigrationsFolderThrough0016(): string {
       entry.when !== EARN_AUDIT_JOURNAL_WHEN &&
       entry.when !== READER_UNLOCK_JOURNAL_WHEN &&
       entry.when !== COWRITERS_JOURNAL_WHEN &&
-      entry.when !== BEEHIIV_IMPORT_JOURNAL_WHEN,
+      entry.when !== BEEHIIV_IMPORT_JOURNAL_WHEN &&
+      entry.when !== PREVIEW_LINKS_JOURNAL_WHEN &&
+      entry.when !== AUTHOR_TAGLINE_JOURNAL_WHEN,
   );
   writeFileSync(journalPath, `${JSON.stringify(journal, null, 2)}\n`);
   return dir;
 }
 
 async function seedBackfillFixtures(db: ReturnType<typeof drizzle>) {
-  await db.insert(authors).values([
+  const now = Date.now();
+  await db.$client.batch([
     {
-      id: "g2",
-      name: "G2",
-      slug: "g2",
-      payoutAddress: "0xAE48B6dB64772b9CC24e33A79c809896776a20f6",
+      sql: `INSERT INTO authors (id, name, slug, payout_address, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)`,
+      args: [
+        "g2",
+        "G2",
+        "g2",
+        "0xAE48B6dB64772b9CC24e33A79c809896776a20f6",
+        now,
+        now,
+      ],
     },
     {
-      id: "other-author",
-      name: "Other",
-      slug: "other-author",
-      payoutAddress: "0x1111111111111111111111111111111111111111",
+      sql: `INSERT INTO authors (id, name, slug, payout_address, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)`,
+      args: [
+        "other-author",
+        "Other",
+        "other-author",
+        "0x1111111111111111111111111111111111111111",
+        now,
+        now,
+      ],
     },
   ]);
 
   const nullAuthorPostId = randomUUID();
   const assignedPostId = randomUUID();
-  const now = Date.now();
   await db.$client.execute({
     sql: `INSERT INTO posts (id, slug, title, status, published_at, author_id, created_at, updated_at)
           VALUES (?, ?, ?, 'published', ?, NULL, ?, ?)`,

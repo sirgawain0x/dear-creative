@@ -53,7 +53,14 @@ export function AuthorByline({
               </span>
             ) : null}
           </div>
-          {author.bio ? (
+          {author.tagline ? (
+            <p
+              className="text-xs text-zinc-500 dark:text-zinc-400"
+              data-testid="author-tagline"
+            >
+              {author.tagline}
+            </p>
+          ) : author.bio ? (
             <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-1">
               {author.bio}
             </p>
