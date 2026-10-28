@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
 import { PreviewNotPublishedBanner } from "@/components/posts/preview-not-published-banner";
 import { getDb } from "@/db/client";
 import { isPreviewLinksEnabled } from "@/lib/preview-links/feature-flag";
+import { isPublishedPostStatus } from "@/lib/preview-links/post-eligibility";
 import { resolvePreviewLinkByToken } from "@/lib/preview-links/links";
 import { previewPostBodyHtml } from "@/lib/preview-links/preview-post-body";
 import { calculateReadingTime } from "@/lib/posts/reading-time";
@@ -37,8 +38,11 @@ export default async function PostPreviewPage({ params }: PageProps) {
   }
 
   const post = await getAdminPostByIdOrSlug(getDb(), resolved.postId);
-  if (!post || post.status === "published") {
+  if (!post) {
     notFound();
+  }
+  if (isPublishedPostStatus(post.status)) {
+    redirect(`/posts/${encodeURIComponent(post.slug)}`);
   }
 
   const bodyHtml = previewPostBodyHtml(post);

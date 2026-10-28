@@ -7,6 +7,7 @@ import {
   listActivePostPreviewLinks,
 } from "@/lib/preview-links/links";
 import { requirePostPreviewLinkManageAccess } from "@/lib/preview-links/manage-access";
+import { canCreatePostPreviewLink } from "@/lib/preview-links/post-eligibility";
 import { getPublicSiteOrigin } from "@/lib/posts/recent-feed";
 import { getAdminPostByIdOrSlug } from "@/lib/posts/manage-posts";
 
@@ -68,6 +69,13 @@ export async function POST(request: Request, context: RouteContext) {
   );
   if (forbidden) {
     return forbidden;
+  }
+
+  if (!canCreatePostPreviewLink(post.status)) {
+    return NextResponse.json(
+      { error: "Preview links are only available for unpublished posts" },
+      { status: 409 },
+    );
   }
 
   const created = await createPostPreviewLink(getDb(), {

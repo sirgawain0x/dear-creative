@@ -3759,7 +3759,9 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                 key={`preview-${selectedEditPostId ?? "no-post"}`}
                 postId={selectedEditPostId}
                 authFetch={authFetch}
-                enabled={previewLinksEnabled}
+                enabled={
+                  previewLinksEnabled && editPostStatus !== "published"
+                }
               />
 
               {/* Post Banner & Thumbnail (Lens Grove) */}

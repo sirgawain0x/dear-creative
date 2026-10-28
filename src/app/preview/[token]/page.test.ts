@@ -6,6 +6,11 @@ const notFoundMock = vi.hoisted(() =>
     throw new Error("NOT_FOUND");
   }),
 );
+const redirectMock = vi.hoisted(() =>
+  vi.fn((url: string) => {
+    throw new Error(`REDIRECT:${url}`);
+  }),
+);
 const resolvePreviewLinkByTokenMock = vi.hoisted(() =>
   vi.fn().mockResolvedValue({ ok: false, reason: "invalid" }),
 );
@@ -13,6 +18,7 @@ const getAdminPostByIdOrSlugMock = vi.hoisted(() => vi.fn());
 
 vi.mock("next/navigation", () => ({
   notFound: notFoundMock,
+  redirect: redirectMock,
 }));
 
 vi.mock("next/server", () => ({
@@ -35,6 +41,7 @@ describe("/preview/[token] page gate", () => {
   afterEach(() => {
     setPreviewLinksEnabledForTests(undefined);
     notFoundMock.mockClear();
+    redirectMock.mockClear();
     resolvePreviewLinkByTokenMock.mockReset();
     getAdminPostByIdOrSlugMock.mockReset();
   });
@@ -54,7 +61,7 @@ describe("/preview/[token] page gate", () => {
     expect(metadata.robots).toEqual({ index: false, follow: false });
   });
 
-  it("calls notFound for a published post target", async () => {
+  it("redirects to the public post when the target is published", async () => {
     setPreviewLinksEnabledForTests(true);
     resolvePreviewLinkByTokenMock.mockResolvedValue({
       ok: true,
@@ -76,7 +83,8 @@ describe("/preview/[token] page gate", () => {
     const { default: Page } = await import("./page");
     await expect(
       Page({ params: Promise.resolve({ token: "valid-token" }) }),
-    ).rejects.toThrow("NOT_FOUND");
-    expect(notFoundMock).toHaveBeenCalled();
+    ).rejects.toThrow("REDIRECT:/posts/already-live");
+    expect(redirectMock).toHaveBeenCalledWith("/posts/already-live");
+    expect(notFoundMock).not.toHaveBeenCalled();
   });
 });
