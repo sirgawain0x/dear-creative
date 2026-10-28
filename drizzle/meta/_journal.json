@@ -162,6 +162,13 @@
       "when": 1792610000000,
       "tag": "0023_post_preview_links",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1792616000000,
+      "tag": "0024_author_tagline",
+      "breakpoints": true
     }
   ]
 }

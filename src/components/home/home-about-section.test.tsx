@@ -20,6 +20,9 @@ vi.mock("@/db/client", () => ({
   getDb: () => ({}),
 }));
 
+const G2_TAGLINE =
+  "Music producer and builder helping creators own their work and their audience.";
+
 describe("HomeAboutSection", () => {
   afterEach(() => {
     cleanup();
@@ -27,11 +30,12 @@ describe("HomeAboutSection", () => {
     getAuthorBySlug.mockReset();
   });
 
-  it("renders when g2 has a non-empty bio", async () => {
+  it("renders tagline without truncation when g2 has bio and tagline", async () => {
     getAuthorBySlug.mockResolvedValue({
       name: "G2",
       slug: "g2",
       bio: "Onchain builder and editor.",
+      tagline: G2_TAGLINE,
       avatarUrl: null,
       meTokenAddress: null,
       meTokenSymbol: null,
@@ -40,10 +44,13 @@ describe("HomeAboutSection", () => {
     const view = await HomeAboutSection();
     expect(view).not.toBeNull();
     render(view!);
-    expect(screen.getByRole("heading", { name: /About this publication/i })).toBeTruthy();
-    expect(screen.getAllByText(/Onchain builder and editor/i).length).toBeGreaterThan(
-      0,
-    );
+    expect(
+      screen.getByRole("heading", { name: /About this publication/i }),
+    ).toBeTruthy();
+    const tagline = screen.getByTestId("author-tagline");
+    expect(tagline.textContent).toBe(G2_TAGLINE);
+    expect(tagline.className).not.toMatch(/line-clamp/);
+    expect(screen.getByText(/Onchain builder and editor/i)).toBeTruthy();
   });
 
   it("returns null when g2 is missing", async () => {
@@ -53,11 +60,12 @@ describe("HomeAboutSection", () => {
     expect(view).toBeNull();
   });
 
-  it("returns null when bio is empty or whitespace", async () => {
+  it("returns null when bio and tagline are empty", async () => {
     getAuthorBySlug.mockResolvedValue({
       name: "G2",
       slug: "g2",
       bio: "   ",
+      tagline: null,
       avatarUrl: null,
       meTokenAddress: null,
       meTokenSymbol: null,
@@ -65,5 +73,22 @@ describe("HomeAboutSection", () => {
     const { HomeAboutSection } = await import("./home-about-section");
     const view = await HomeAboutSection();
     expect(view).toBeNull();
+  });
+
+  it("renders when only tagline is present", async () => {
+    getAuthorBySlug.mockResolvedValue({
+      name: "G2",
+      slug: "g2",
+      bio: null,
+      tagline: G2_TAGLINE,
+      avatarUrl: null,
+      meTokenAddress: null,
+      meTokenSymbol: null,
+    });
+    const { HomeAboutSection } = await import("./home-about-section");
+    const view = await HomeAboutSection();
+    expect(view).not.toBeNull();
+    render(view!);
+    expect(screen.getByTestId("author-tagline").textContent).toBe(G2_TAGLINE);
   });
 });

@@ -26,15 +26,20 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Author not found" }, { status: 404 });
   }
 
-  let body: { name?: string; avatarUrl?: string | null };
+  let body: { name?: string; tagline?: string | null; avatarUrl?: string | null };
   try {
-    body = (await request.json()) as { name?: string; avatarUrl?: string | null };
+    body = (await request.json()) as {
+      name?: string;
+      tagline?: string | null;
+      avatarUrl?: string | null;
+    };
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
   const result = await updateAuthorDisplayProfile(db, id, {
     name: body.name,
+    tagline: body.tagline,
     avatarUrl: body.avatarUrl,
   });
   if (!result.ok) {

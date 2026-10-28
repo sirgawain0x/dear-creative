@@ -93,6 +93,7 @@ export const authors = sqliteTable(
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     bio: text("bio"),
+    tagline: text("tagline"),
     avatarUrl: text("avatar_url"),
     payoutAddress: text("payout_address").notNull(),
     meTokenAddress: text("me_token_address"),

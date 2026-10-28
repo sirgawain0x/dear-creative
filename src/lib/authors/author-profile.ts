@@ -1,6 +1,10 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
 import { authors, posts } from "@/db/schema";
+import {
+  validateAuthorDisplayName,
+  validateAuthorTagline,
+} from "@/lib/authors/author-display-profile-limits";
 import { formatPublishedDateEt } from "@/lib/posts/format-published-date";
 
 export type AuthorProfileRecord = {
@@ -8,6 +12,7 @@ export type AuthorProfileRecord = {
   name: string;
   slug: string;
   bio: string | null;
+  tagline: string | null;
   avatarUrl: string | null;
 };
 
@@ -62,6 +67,7 @@ export async function getAuthorProfileById(
         name: authors.name,
         slug: authors.slug,
         bio: authors.bio,
+        tagline: authors.tagline,
         avatarUrl: authors.avatarUrl,
       })
       .from(authors)
@@ -72,20 +78,41 @@ export async function getAuthorProfileById(
     if (!isMissingColumnError(error)) {
       throw error;
     }
-    const [row] = await db
-      .select({
-        id: authors.id,
-        name: authors.name,
-        slug: authors.slug,
-        bio: authors.bio,
-      })
-      .from(authors)
-      .where(eq(authors.id, authorId))
-      .limit(1);
-    if (!row) {
-      return null;
+    try {
+      const [row] = await db
+        .select({
+          id: authors.id,
+          name: authors.name,
+          slug: authors.slug,
+          bio: authors.bio,
+          avatarUrl: authors.avatarUrl,
+        })
+        .from(authors)
+        .where(eq(authors.id, authorId))
+        .limit(1);
+      if (!row) {
+        return null;
+      }
+      return { ...row, tagline: null };
+    } catch (innerError) {
+      if (!isMissingColumnError(innerError)) {
+        throw innerError;
+      }
+      const [row] = await db
+        .select({
+          id: authors.id,
+          name: authors.name,
+          slug: authors.slug,
+          bio: authors.bio,
+        })
+        .from(authors)
+        .where(eq(authors.id, authorId))
+        .limit(1);
+      if (!row) {
+        return null;
+      }
+      return { ...row, tagline: null, avatarUrl: null };
     }
-    return { ...row, avatarUrl: null };
   }
 }
 
@@ -170,22 +197,37 @@ export async function listPublishedArticlesForAuthor(
 export async function updateAuthorDisplayProfile(
   db: DearCreativeDb,
   authorId: string,
-  input: { name?: string; avatarUrl?: string | null },
+  input: {
+    name?: string;
+    tagline?: string | null;
+    avatarUrl?: string | null;
+  },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const name = input.name?.trim();
-  if (name !== undefined && name.length === 0) {
-    return { ok: false, error: "Display name cannot be empty" };
-  }
-  if (name !== undefined && name.length > 120) {
-    return { ok: false, error: "Display name is too long" };
-  }
-
-  const patch: { name?: string; avatarUrl?: string | null; updatedAt: Date } = {
+  const patch: {
+    name?: string;
+    tagline?: string | null;
+    avatarUrl?: string | null;
+    updatedAt: Date;
+  } = {
     updatedAt: new Date(),
   };
-  if (name !== undefined) {
-    patch.name = name;
+
+  if (input.name !== undefined) {
+    const nameResult = validateAuthorDisplayName(input.name);
+    if (!nameResult.ok) {
+      return nameResult;
+    }
+    patch.name = nameResult.value;
   }
+
+  if (input.tagline !== undefined) {
+    const taglineResult = validateAuthorTagline(input.tagline);
+    if (!taglineResult.ok) {
+      return taglineResult;
+    }
+    patch.tagline = taglineResult.value;
+  }
+
   if (input.avatarUrl !== undefined) {
     patch.avatarUrl = input.avatarUrl;
   }
@@ -194,13 +236,21 @@ export async function updateAuthorDisplayProfile(
     await db.update(authors).set(patch).where(eq(authors.id, authorId));
     return { ok: true };
   } catch (error) {
-    if (isMissingColumnError(error) && input.avatarUrl !== undefined) {
-      const withoutAvatar = { ...patch };
-      delete withoutAvatar.avatarUrl;
-      await db.update(authors).set(withoutAvatar).where(eq(authors.id, authorId));
-      return { ok: true };
+    if (!isMissingColumnError(error)) {
+      throw error;
     }
-    throw error;
+    const withoutMissing = { ...patch };
+    if (input.avatarUrl !== undefined) {
+      delete withoutMissing.avatarUrl;
+    }
+    if (input.tagline !== undefined) {
+      delete withoutMissing.tagline;
+    }
+    await db
+      .update(authors)
+      .set(withoutMissing)
+      .where(eq(authors.id, authorId));
+    return { ok: true };
   }
 }
 
