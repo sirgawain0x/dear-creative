@@ -230,7 +230,7 @@ async function main() {
       ? "Seeded 3 papyrus prod-cover posts + draft + future."
       : noTeaserShot
         ? "Seeded no-teaser spotlight shot (1 eligible + draft + future)."
-        : "Seeded 4 eligible published + draft + future (spotlight shows newest 3).",
+        : "Seeded 4 eligible published + draft + future (spotlight shows newest up to 12).",
   );
 }
 

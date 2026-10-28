@@ -147,6 +147,52 @@ describe("published posts queries", () => {
     expect(page2.items.map((p) => p.slug)).toEqual(["post-2", "post-1"]);
   });
 
+  it("reaches older Beehiiv-shaped posts via archive pagination when 24+ newer posts exist", async () => {
+    const db = await createPostsTestDb();
+    const asOf = new Date("2026-06-01T00:00:00.000Z");
+
+    for (let i = 0; i < 25; i += 1) {
+      await insertPost(db, {
+        slug: `newer-dispatch-${i}`,
+        title: `Newer ${i}`,
+        status: "published",
+        publishedAt: new Date(Date.UTC(2025, 0, 1 + i, 12, 0, 0)),
+        source: "paragraph",
+      });
+    }
+
+    await insertPost(db, {
+      slug: "beehiiv-aug-2024",
+      title: "Beehiiv Aug 2024",
+      status: "published",
+      publishedAt: new Date("2024-08-31T12:00:00.000Z"),
+      authorId: null,
+      source: "beehiiv",
+      sourceGuid: "beehiiv:aug-2024",
+      canonicalUrl: "https://dearcrtv.beehiiv.com/p/beehiiv-aug-2024",
+    });
+    await insertPost(db, {
+      slug: "beehiiv-july-2024",
+      title: "Beehiiv July 2024",
+      status: "published",
+      publishedAt: new Date("2024-07-01T12:00:00.000Z"),
+      authorId: null,
+      source: "beehiiv",
+      sourceGuid: "beehiiv:july-2024",
+      canonicalUrl: "https://dearcrtv.beehiiv.com/p/beehiiv-july-2024",
+    });
+
+    const page1 = await listPublishedPosts(db, { page: 1, asOf });
+    expect(page1.pageSize).toBe(20);
+    expect(page1.totalCount).toBe(27);
+    expect(page1.items.some((p) => p.slug.startsWith("beehiiv"))).toBe(false);
+
+    const page2 = await listPublishedPosts(db, { page: 2, asOf });
+    const slugs = page2.items.map((p) => p.slug);
+    expect(slugs).toContain("beehiiv-aug-2024");
+    expect(slugs).toContain("beehiiv-july-2024");
+  });
+
   it("returns null for draft slug (404 path)", async () => {
     const db = await createPostsTestDb();
     await insertPost(db, {
