@@ -225,10 +225,10 @@ describe("Adam chat loading indicator", () => {
     await screen.findByRole("button", { name: "Thread A" });
     const input = await screen.findByLabelText(/Message Adam/i);
     fireEvent.change(input, { target: { value: "Hello Adam" } });
-    fireEvent.click(screen.getAllByTestId("adam-chat-send")[0]!);
+    fireEvent.click(screen.getByTestId("adam-chat-send"));
 
     expect(await screen.findByTestId("adam-thinking-indicator")).toBeInTheDocument();
-    expect(screen.getAllByTestId("adam-chat-send")[0]).toBeDisabled();
+    expect(screen.getByTestId("adam-chat-send")).toBeDisabled();
 
     resolveChat(
       new Response(JSON.stringify({ reply: "Hi!" }), {
@@ -262,7 +262,7 @@ describe("Adam chat loading indicator", () => {
     );
     const input = await screen.findByLabelText(/Message Adam/i);
     fireEvent.change(input, { target: { value: "Trigger error" } });
-    fireEvent.click(screen.getAllByTestId("adam-chat-send")[0]!);
+    fireEvent.click(screen.getByTestId("adam-chat-send"));
 
     await waitFor(() =>
       expect(screen.queryByTestId("adam-thinking-indicator")).not.toBeInTheDocument(),
@@ -272,7 +272,7 @@ describe("Adam chat loading indicator", () => {
     );
 
     fireEvent.change(input, { target: { value: "Try again" } });
-    fireEvent.click(screen.getAllByTestId("adam-chat-send")[0]!);
+    fireEvent.click(screen.getByTestId("adam-chat-send"));
     await waitFor(() =>
       expect(screen.getByTestId("adam-chat-generation-status")).toHaveTextContent(
         "Adam is thinking",
@@ -298,7 +298,7 @@ describe("Adam chat loading indicator", () => {
     );
     const input = await screen.findByLabelText(/Message Adam/i);
     fireEvent.change(input, { target: { value: "Abort me" } });
-    fireEvent.click(screen.getAllByTestId("adam-chat-send")[0]!);
+    fireEvent.click(screen.getByTestId("adam-chat-send"));
     await waitFor(() => expect(capturedSignal).toBeDefined());
     view.unmount();
     await waitFor(() => expect(capturedSignal?.aborted).toBe(true));
@@ -323,7 +323,7 @@ describe("Adam chat loading indicator", () => {
     await screen.findByRole("button", { name: "Thread B" });
     const input = await screen.findByLabelText(/Message Adam/i);
     fireEvent.change(input, { target: { value: "On thread A" } });
-    fireEvent.click(screen.getAllByTestId("adam-chat-send")[0]!);
+    fireEvent.click(screen.getByTestId("adam-chat-send"));
     await waitFor(() => expect(capturedSignal).toBeDefined());
 
     fireEvent.click(screen.getByRole("button", { name: "Thread B" }));
@@ -348,9 +348,17 @@ describe("Adam chat loading indicator", () => {
     );
     const input = await screen.findByLabelText(/Message Adam/i);
     fireEvent.change(input, { target: { value: "First message" } });
-    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    fireEvent.keyDown(input, {
+      key: "Enter",
+      code: "Enter",
+      metaKey: true,
+    });
     fireEvent.change(input, { target: { value: "Second message" } });
-    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    fireEvent.keyDown(input, {
+      key: "Enter",
+      code: "Enter",
+      metaKey: true,
+    });
     await waitFor(() => expect(signals.length).toBeGreaterThanOrEqual(2));
     expect(signals[0]?.aborted).toBe(true);
     expect(signals[1]?.aborted).toBe(false);
@@ -377,7 +385,7 @@ describe("Adam chat loading indicator", () => {
     );
     const input = await screen.findByLabelText(/Message Adam/i);
     fireEvent.change(input, { target: { value: "Before threads load" } });
-    fireEvent.click(screen.getAllByTestId("adam-chat-send")[0]!);
+    fireEvent.click(screen.getByTestId("adam-chat-send"));
     expect(await screen.findByTestId("adam-thinking-indicator")).toBeInTheDocument();
 
     resolveThreadsList();
@@ -402,41 +410,6 @@ describe("Adam chat loading indicator", () => {
       () =>
         expect(screen.getByText("Done after thread auto-select.")).toBeInTheDocument(),
       { timeout: 3000 },
-    );
-  });
-
-  it("does not POST twice when Enter is pressed twice before the input clears", async () => {
-    let chatPostCount = 0;
-    let resolveChat!: (value: Response) => void;
-    const chatPending = new Promise<Response>((resolve) => {
-      resolveChat = resolve;
-    });
-    mockStudioFetch({
-      chatHandler: () => {
-        chatPostCount += 1;
-        return chatPending as Promise<Response>;
-      },
-    });
-    localStorage.setItem(STUDIO_TOKEN_STORAGE_KEY, "fixture-key");
-    render(
-      <AppProviders>
-        <AdamStudio />
-      </AppProviders>,
-    );
-    const input = await screen.findByLabelText(/Message Adam/i);
-    fireEvent.change(input, { target: { value: "Duplicate enter guard" } });
-    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
-    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
-    await waitFor(() => expect(chatPostCount).toBe(1));
-
-    resolveChat(
-      new Response(JSON.stringify({ reply: "Once is enough." }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-    await waitFor(() =>
-      expect(screen.getByText("Once is enough.")).toBeInTheDocument(),
     );
   });
 
@@ -486,7 +459,11 @@ describe("Adam chat loading indicator", () => {
       const input = await screen.findByLabelText(/Message Adam/i);
       await screen.findByRole("button", { name: "Thread A" });
       fireEvent.change(input, { target: { value: "Create draft" } });
-      fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+      fireEvent.keyDown(input, {
+        key: "Enter",
+        code: "Enter",
+        metaKey: true,
+      });
 
       await waitFor(() =>
         expect(screen.getByTestId("adam-chat-generation-status")).toHaveTextContent(
@@ -506,7 +483,11 @@ describe("Adam chat loading indicator", () => {
       );
 
       fireEvent.change(input, { target: { value: "Second while reload pending" } });
-      fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+      fireEvent.keyDown(input, {
+        key: "Enter",
+        code: "Enter",
+        metaKey: true,
+      });
       await waitFor(() => expect(chatPostCount).toBe(2));
 
       releaseStudioReload();

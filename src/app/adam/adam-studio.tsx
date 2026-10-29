@@ -91,6 +91,8 @@ type ChatThreadSummary = {
   createdAt: number;
 };
 
+const ADAM_CHAT_TEXTAREA_MAX_HEIGHT_PX = 160;
+
 type BrowserSpeechRecognitionInstance = {
   lang: string;
   interimResults: boolean;
@@ -391,6 +393,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
   const chatRequestEpochRef = useRef(0);
   /** Prevents duplicate sends from repeated Enter before React clears the input. */
   const chatInFlightDispatchKeyRef = useRef<string | null>(null);
+  const chatTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
   const [editingThreadTitle, setEditingThreadTitle] = useState("");
 
@@ -1126,6 +1129,20 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
 
   useEffect(() => () => cancelChatInFlight(), [cancelChatInFlight]);
 
+  const syncChatTextareaHeight = useCallback(() => {
+    const el = chatTextareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const nextHeight = Math.min(el.scrollHeight, ADAM_CHAT_TEXTAREA_MAX_HEIGHT_PX);
+    el.style.height = `${nextHeight}px`;
+    el.style.overflowY =
+      el.scrollHeight > ADAM_CHAT_TEXTAREA_MAX_HEIGHT_PX ? "auto" : "hidden";
+  }, []);
+
+  useEffect(() => {
+    syncChatTextareaHeight();
+  }, [chatInput, syncChatTextareaHeight]);
+
   // --- Chat Threads Management ---
   const loadChatThreads = useCallback(async () => {
     try {
@@ -1467,7 +1484,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
       if (e.nativeEvent.isComposing || e.keyCode === 229 || e.repeat) {
         return;
       }
-      if (e.key === "Enter" && !e.shiftKey) {
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         void sendChatMessage();
       }
@@ -2957,17 +2974,54 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
               <label htmlFor="adam-chat-input" className="sr-only">
                 Message Adam (Markdown supported)
               </label>
-              <textarea
-                id="adam-chat-input"
-                rows={3}
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={handleChatKeyDown}
-                readOnly={isSendingChat}
-                aria-busy={isSendingChat}
-                placeholder="Talk to Adam in plain text or Markdown, paste notes, or upload images/files… (Press Enter to send, Shift+Enter for new line)"
-                className="w-full rounded-xl border border-zinc-300 bg-zinc-50 p-3 text-sm focus:border-zinc-900 focus:outline-hidden read-only:cursor-not-allowed read-only:opacity-60 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-300"
-              />
+              <div className="flex items-end gap-2">
+                <textarea
+                  ref={chatTextareaRef}
+                  id="adam-chat-input"
+                  rows={1}
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={handleChatKeyDown}
+                  readOnly={isSendingChat}
+                  aria-busy={isSendingChat}
+                  placeholder="Talk to Adam in plain text or Markdown… (Enter for new line, ⌘/Ctrl+Enter to send)"
+                  className="min-h-11 max-h-40 flex-1 resize-none overflow-y-auto rounded-xl border border-zinc-300 bg-zinc-50 p-3 text-sm focus:border-zinc-900 focus:outline-hidden read-only:cursor-not-allowed read-only:opacity-60 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-300"
+                  style={{ maxHeight: ADAM_CHAT_TEXTAREA_MAX_HEIGHT_PX }}
+                />
+                <button
+                  type="button"
+                  data-testid="adam-chat-send"
+                  disabled={
+                    isSendingChat ||
+                    (!chatInput.trim() && chatAttachments.length === 0)
+                  }
+                  onClick={() => void sendChatMessage()}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-zinc-900 px-4 py-2.5 text-xs font-semibold text-white shadow-2xs hover:bg-zinc-800 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  title="Send message (⌘/Ctrl+Enter)"
+                  aria-label="Send message"
+                >
+                  {isSendingChat ? (
+                    <span>Sending…</span>
+                  ) : (
+                    <>
+                      <span>Send</span>
+                      <svg
+                        className="h-3.5 w-3.5"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <line x1="22" y1="2" x2="11" y2="13" />
+                        <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                      </svg>
+                    </>
+                  )}
+                </button>
+              </div>
 
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2">
@@ -3090,39 +3144,6 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                       <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                     </svg>
                     <span>Draft Issue</span>
-                  </button>
-
-                  {/* Send Button */}
-                  <button
-                    type="button"
-                    data-testid="adam-chat-send"
-                    disabled={
-                      isSendingChat ||
-                      (!chatInput.trim() && chatAttachments.length === 0)
-                    }
-                    onClick={() => void sendChatMessage()}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-zinc-900 px-4 py-2 text-xs font-semibold text-white shadow-2xs hover:bg-zinc-800 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                    title="Send message (Enter)"
-                  >
-                    {isSendingChat ? (
-                      <span>Sending…</span>
-                    ) : (
-                      <>
-                        <span>Send</span>
-                        <svg
-                          className="h-3.5 w-3.5"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <line x1="22" y1="2" x2="11" y2="13" />
-                          <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                        </svg>
-                      </>
-                    )}
                   </button>
                 </div>
               </div>
