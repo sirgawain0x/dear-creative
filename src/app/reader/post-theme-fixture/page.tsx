@@ -1,5 +1,12 @@
+import { notFound } from "next/navigation";
+import { isReaderWalletFixturePageEnabled } from "@/lib/wallet/reader-wallet-fixture-page";
+
 /** Static post layout fixture for theme / typography screenshots (no DB). */
 export default function PostThemeFixturePage() {
+  if (!isReaderWalletFixturePageEnabled()) {
+    notFound();
+  }
+
   return (
     <article className="mx-auto max-w-3xl px-6 py-16" data-testid="post-theme-fixture">
       <header className="mb-8 border-b border-zinc-200 pb-8 dark:border-zinc-800">
