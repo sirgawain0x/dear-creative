@@ -389,6 +389,8 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
   const activeThreadIdRef = useRef<string | null>(null);
   const chatAbortControllerRef = useRef<AbortController | null>(null);
   const chatRequestEpochRef = useRef(0);
+  /** Prevents duplicate sends from repeated Enter before React clears the input. */
+  const chatInFlightDispatchKeyRef = useRef<string | null>(null);
   const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
   const [editingThreadTitle, setEditingThreadTitle] = useState("");
 
@@ -697,7 +699,11 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
           createdAt: new Date(t.createdAt).getTime(),
         }));
         setChatThreads(mapped);
-        if (mapped.length > 0 && !activeThreadIdRef.current) {
+        if (
+          mapped.length > 0 &&
+          !activeThreadIdRef.current &&
+          chatAbortControllerRef.current === null
+        ) {
           activeThreadIdRef.current = mapped[0]!.id;
           setActiveThreadId(mapped[0]!.id);
           try {
@@ -719,7 +725,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                   attachments: m.attachments,
                 }),
               );
-              if (tMapped.length > 0) {
+              if (tMapped.length > 0 && chatAbortControllerRef.current === null) {
                 setMessages(tMapped);
               }
             }
@@ -1273,6 +1279,14 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
             : "");
       if (!promptText && chatAttachments.length === 0) return;
 
+      const dispatchKey = JSON.stringify({
+        promptText,
+        attachmentCount: chatAttachments.length,
+        forceCreateDraft: Boolean(options.forceCreateDraft),
+        forceGenerateBanner: Boolean(options.forceGenerateBanner),
+      });
+      if (chatInFlightDispatchKeyRef.current === dispatchKey) return;
+
       const userMessage: StudioChatMessage = {
         role: "user",
         content:
@@ -1295,12 +1309,14 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
       const threadAtRequest = activeThreadIdRef.current;
       const abortController = new AbortController();
       chatAbortControllerRef.current = abortController;
+      chatInFlightDispatchKeyRef.current = dispatchKey;
       const isCurrentRequest = () => chatRequestEpochRef.current === requestEpoch;
       const clearGenerationUi = () => {
         setChatGenerationPhase("idle");
         setPendingAssistantContent("");
       };
       const threadChangedDuringRequest = () =>
+        threadAtRequest !== null &&
         activeThreadIdRef.current !== threadAtRequest;
 
       setChatGenerationPhase("waiting");
@@ -1429,6 +1445,9 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
         if (chatAbortControllerRef.current === abortController) {
           chatAbortControllerRef.current = null;
         }
+        if (chatInFlightDispatchKeyRef.current === dispatchKey) {
+          chatInFlightDispatchKeyRef.current = null;
+        }
       }
     },
     [
@@ -1445,7 +1464,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
 
   const handleChatKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.nativeEvent.isComposing || e.keyCode === 229) {
+      if (e.nativeEvent.isComposing || e.keyCode === 229 || e.repeat) {
         return;
       }
       if (e.key === "Enter" && !e.shiftKey) {

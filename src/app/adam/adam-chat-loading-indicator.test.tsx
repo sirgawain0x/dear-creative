@@ -353,7 +353,7 @@ describe("Adam chat loading indicator", () => {
     expect(signals[1]?.aborted).toBe(false);
   });
 
-  it("clears generation UI when the active thread changes during an in-flight chat", async () => {
+  it("keeps the first assistant reply when thread list auto-select races with a new chat send", async () => {
     let resolveThreadsList!: () => void;
     const threadsListBlocked = new Promise<void>((resolve) => {
       resolveThreadsList = resolve;
@@ -395,7 +395,46 @@ describe("Adam chat loading indicator", () => {
     await waitFor(() =>
       expect(screen.queryByTestId("adam-thinking-indicator")).not.toBeInTheDocument(),
     );
-    expect(screen.getByTestId("adam-chat-generation-status")).toHaveTextContent("");
+    await waitFor(
+      () =>
+        expect(screen.getByText("Done after thread auto-select.")).toBeInTheDocument(),
+      { timeout: 3000 },
+    );
+  });
+
+  it("does not POST twice when Enter is pressed twice before the input clears", async () => {
+    let chatPostCount = 0;
+    let resolveChat!: (value: Response) => void;
+    const chatPending = new Promise<Response>((resolve) => {
+      resolveChat = resolve;
+    });
+    mockStudioFetch({
+      chatHandler: () => {
+        chatPostCount += 1;
+        return chatPending as Promise<Response>;
+      },
+    });
+    localStorage.setItem(STUDIO_TOKEN_STORAGE_KEY, "fixture-key");
+    render(
+      <AppProviders>
+        <AdamStudio />
+      </AppProviders>,
+    );
+    const input = await screen.findByLabelText(/Message Adam/i);
+    fireEvent.change(input, { target: { value: "Duplicate enter guard" } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    await waitFor(() => expect(chatPostCount).toBe(1));
+
+    resolveChat(
+      new Response(JSON.stringify({ reply: "Once is enough." }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByText("Once is enough.")).toBeInTheDocument(),
+    );
   });
 
   it("does not reset generation phase to idle when a stale chat finishes after loadStudioData", async () => {
