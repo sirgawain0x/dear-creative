@@ -14,8 +14,10 @@ export function HomeSubscribeHashScroll() {
     if (window.location.hash !== "#subscribe") {
       return;
     }
-    const target = document.getElementById(HOME_SUBSCRIBE_SECTION_ID);
-    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+    document.getElementById(HOME_SUBSCRIBE_SECTION_ID)?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
   }, [pathname]);
 
   return null;
