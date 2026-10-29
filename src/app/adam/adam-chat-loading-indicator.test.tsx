@@ -76,8 +76,15 @@ function mockStudioFetch(options?: {
   };
   /** Awaits `gate` before responding on fetch N and every later threads list fetch. */
   blockThreadsListFromFetch?: { fetchNumber: number; gate: Promise<void> };
+  /** Awaits `gate` on the Nth `/api/adam/ideas` fetch (each `loadStudioData` issues one). */
+  blockLoadStudioDataFromIdeasFetch?: {
+    fetchNumber: number;
+    gate: Promise<void>;
+    onBlocked?: () => void;
+  };
 }) {
   let threadsListFetchCount = 0;
+  let ideasFetchCount = 0;
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = String(input);
     if (url.includes("/api/admin/config")) {
@@ -134,6 +141,18 @@ function mockStudioFetch(options?: {
     if (url.includes("/api/adam/chat") && init?.method === "POST") {
       if (options?.chatHandler) return options.chatHandler(init);
       return new Response(JSON.stringify({ reply: "Fixture reply from Adam." }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.includes("/api/adam/ideas")) {
+      ideasFetchCount += 1;
+      const blockIdeas = options?.blockLoadStudioDataFromIdeasFetch;
+      if (blockIdeas && ideasFetchCount === blockIdeas.fetchNumber) {
+        blockIdeas.onBlocked?.();
+        await blockIdeas.gate;
+      }
+      return new Response(JSON.stringify({ ideas: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -387,9 +406,9 @@ describe("Adam chat loading indicator", () => {
     });
     let chatPostCount = 0;
     mockStudioFetch({
-      // #1 initial loadStudioData; #2 fire-and-forget loadChatThreads; #3 awaited loadStudioData
-      blockThreadsListOnFetch: {
-        fetchNumber: 3,
+      // ideas #1 = mount loadStudioData; ideas #2 = post-draft await loadStudioData
+      blockLoadStudioDataFromIdeasFetch: {
+        fetchNumber: 2,
         gate: studioReloadBlocked,
         onBlocked: awaitedStudioReloadBlocked,
       },
@@ -435,11 +454,11 @@ describe("Adam chat loading indicator", () => {
     await waitFor(() => expect(chatPostCount).toBe(2));
 
     releaseStudioReload();
-    await waitFor(() =>
+    await waitFor(() => {
       expect(screen.getByTestId("adam-chat-generation-status")).toHaveTextContent(
         "Adam is thinking",
-      ),
-    );
-    expect(screen.getByTestId("adam-thinking-indicator")).toBeInTheDocument();
+      );
+      expect(screen.getByTestId("adam-thinking-indicator")).toBeInTheDocument();
+    });
   });
 });

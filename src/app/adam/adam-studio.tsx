@@ -1389,7 +1389,6 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
           { role: "assistant", content: replyText },
         ];
         setMessages(nextMessages);
-        setChatGenerationPhase("done");
         setPendingAssistantContent("");
 
         if (autoSpeakReplies) {
@@ -1401,13 +1400,19 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
             kind: "success",
             text: `Adam created draft "${data.createdDraft.title}" in the Approval Queue!`,
           });
+          setChatGenerationPhase("waiting");
           await loadStudioData();
-        } else if (data.generatedBanner) {
-          setStatusBanner({
-            kind: "success",
-            text: `Adam generated a new banner and uploaded it to Lens Grove (${data.generatedBanner.uri})!`,
-          });
+          if (!isCurrentRequest()) return;
+        } else {
+          setChatGenerationPhase("done");
+          if (data.generatedBanner) {
+            setStatusBanner({
+              kind: "success",
+              text: `Adam generated a new banner and uploaded it to Lens Grove (${data.generatedBanner.uri})!`,
+            });
+          }
         }
+        if (!isCurrentRequest()) return;
         setChatGenerationPhase("idle");
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
