@@ -403,18 +403,16 @@ describe("Adam chat loading indicator", () => {
     const studioReloadBlocked = new Promise<void>((resolve) => {
       releaseStudioReload = resolve;
     });
-    let awaitedStudioReloadBlocked!: () => void;
-    const awaitedStudioReloadBlockedSeen = new Promise<void>((resolve) => {
-      awaitedStudioReloadBlocked = resolve;
-    });
+    let postDraftLoadStudioDataBlocked = false;
     let chatPostCount = 0;
     mockStudioFetch({
-      // threads #1 = mount loadStudioData; #2 = post-draft void loadChatThreads;
-      // #3 = post-draft await loadStudioData (must block this one, not #2)
-      blockThreadsListOnFetch: {
-        fetchNumber: 3,
+      // ideas #1 = mount loadStudioData; #2 = post-draft await loadStudioData only
+      blockLoadStudioDataFromIdeasFetch: {
+        fetchNumber: 2,
         gate: studioReloadBlocked,
-        onBlocked: awaitedStudioReloadBlocked,
+        onBlocked: () => {
+          postDraftLoadStudioDataBlocked = true;
+        },
       },
       chatHandler: () => {
         chatPostCount += 1;
@@ -440,35 +438,48 @@ describe("Adam chat loading indicator", () => {
         <AdamStudio />
       </AppProviders>,
     );
-    const input = await screen.findByLabelText(/Message Adam/i);
-    await screen.findByRole("button", { name: "Thread A" });
-    fireEvent.change(input, { target: { value: "Create draft" } });
-    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    try {
+      const input = await screen.findByLabelText(/Message Adam/i);
+      await screen.findByRole("button", { name: "Thread A" });
+      fireEvent.change(input, { target: { value: "Create draft" } });
+      fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
 
-    await waitFor(() =>
-      expect(screen.getByTestId("adam-chat-generation-status")).toHaveTextContent(
-        "Adam is thinking",
-      ),
-    );
-
-    await awaitedStudioReloadBlockedSeen;
-
-    fireEvent.change(input, { target: { value: "Second while reload pending" } });
-    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
-    await waitFor(() => expect(chatPostCount).toBe(2));
-
-    releaseStudioReload();
-    // Let the stale request finish `await loadStudioData()`; without
-    // `isCurrentRequest` guards this window clears the second send's UI.
-    await act(async () => {
-      for (let i = 0; i < 8; i++) {
-        await new Promise((r) => setTimeout(r, 25));
+      await waitFor(() =>
         expect(screen.getByTestId("adam-chat-generation-status")).toHaveTextContent(
           "Adam is thinking",
-        );
-        expect(screen.getByTestId("adam-thinking-indicator")).toBeInTheDocument();
-      }
-    });
-    cleanup();
+        ),
+      );
+
+      await waitFor(
+        () => expect(postDraftLoadStudioDataBlocked).toBe(true),
+        {
+          timeout: 5_000,
+          onTimeout: (error) =>
+            new Error(
+              `${error.message}\nExpected post-draft loadStudioData (ideas fetch #2) to reach the gate.`,
+            ),
+        },
+      );
+
+      fireEvent.change(input, { target: { value: "Second while reload pending" } });
+      fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+      await waitFor(() => expect(chatPostCount).toBe(2));
+
+      releaseStudioReload();
+      // Let the stale request finish `await loadStudioData()`; without
+      // `isCurrentRequest` guards this window clears the second send's UI.
+      await act(async () => {
+        for (let i = 0; i < 8; i++) {
+          await new Promise((r) => setTimeout(r, 25));
+          expect(screen.getByTestId("adam-chat-generation-status")).toHaveTextContent(
+            "Adam is thinking",
+          );
+          expect(screen.getByTestId("adam-thinking-indicator")).toBeInTheDocument();
+        }
+      });
+    } finally {
+      releaseStudioReload();
+      cleanup();
+    }
   });
 });
