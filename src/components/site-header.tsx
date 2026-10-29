@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { useId, useState, type MouseEvent } from "react";
 import { HOME_SUBSCRIBE_SECTION_ID } from "@/components/home/home-subscribe-cta";
 import { useAuthSession } from "./providers/app-providers";
+import { CreativePlatformAppsDrawer } from "./creative-platform/creative-platform-apps-drawer";
+import { ThemeToggle } from "./theme/theme-toggle";
 import { ReaderAccountDropdown } from "./wallet/reader-account-dropdown";
 import type { ReaderWalletPreviewData } from "./wallet/reader-wallet-panel";
 
@@ -220,17 +222,23 @@ export function SiteHeader({
           </a>
         </nav>
 
-        <div className="flex items-center gap-2 lg:hidden">
+        <div className="flex items-center gap-2">
           {showReaderWalletButton ? (
-            <ReaderAccountDropdown surface="mobile" {...readerDropdownFixture} />
+            <ReaderAccountDropdown
+              surface="mobile"
+              className="lg:hidden"
+              {...readerDropdownFixture}
+            />
           ) : null}
+          <CreativePlatformAppsDrawer />
+          <ThemeToggle />
           <button
             type="button"
             aria-expanded={mobileMenuOpen}
             aria-controls={mobileMenuId}
             aria-label="Toggle navigation menu"
             onClick={() => setMobileMenuOpen((prev) => !prev)}
-            className="inline-flex items-center justify-center rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900"
+            className="inline-flex items-center justify-center rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 lg:hidden dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900"
           >
             {mobileMenuOpen ? "Close ✕" : "Menu ☰"}
           </button>
