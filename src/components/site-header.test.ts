@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import type React from "react";
+import { describe, expect, it, vi } from "vitest";
 import {
   getSubscribeNavHref,
   getVisibleNavLinks,
   isNavLinkActive,
+  onSubscribeNavClick,
   SITE_NAV_LINKS,
   SUBSCRIBE_NAV_HREF,
 } from "./site-header";
@@ -65,6 +67,17 @@ describe("SiteHeader navigation config", () => {
       "/approvals",
       "/admin",
     ]);
+  });
+
+  it("runs afterNavigate off the homepage without preventing default navigation", () => {
+    const afterNavigate = vi.fn();
+    const preventDefault = vi.fn();
+    const handler = onSubscribeNavClick("/posts", afterNavigate);
+    handler({
+      preventDefault,
+    } as unknown as React.MouseEvent<HTMLAnchorElement>);
+    expect(afterNavigate).toHaveBeenCalledTimes(1);
+    expect(preventDefault).not.toHaveBeenCalled();
   });
 
   it("matches exact root path and prefix subpaths accurately", () => {
