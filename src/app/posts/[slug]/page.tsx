@@ -6,6 +6,7 @@ import { DispatchAudioPlayer } from "@/components/audio/dispatch-audio-player";
 import { OwnerEditPostButton } from "@/components/auth/owner-edit-controls";
 import { MicroTippingWidget } from "@/components/monetization/micro-tipping-widget";
 import { PredictionCard } from "@/components/predictions/prediction-card";
+import { PostBodyWithPredictions } from "@/components/posts/post-body-with-predictions";
 import { PostFeedbackWidget } from "@/components/posts/post-feedback-widget";
 import { PostKeyTakeaways } from "@/components/posts/post-key-takeaways";
 import { AuthorByline } from "@/components/posts/author-byline";
@@ -40,7 +41,7 @@ type PageProps = {
   params: Promise<{ slug: string }>;
 };
 
-function PostArticle({
+async function PostArticle({
   post,
   payToAddress,
   showPaywall,
@@ -160,20 +161,14 @@ function PostArticle({
       {bodyHtml ? (
         restHtml ? (
           <>
-            <div
-              className="prose prose-zinc dark:prose-invert max-w-none"
-              dangerouslySetInnerHTML={{ __html: introHtml }}
-            />
+            <PostBodyWithPredictions bodyHtml={introHtml} />
 
             <PostKeyTakeaways
               takeaway={post.excerpt}
               title={post.title}
             />
 
-            <div
-              className="prose prose-zinc dark:prose-invert max-w-none"
-              dangerouslySetInnerHTML={{ __html: restHtml }}
-            />
+            <PostBodyWithPredictions bodyHtml={restHtml} />
           </>
         ) : (
           <>
@@ -181,10 +176,7 @@ function PostArticle({
               takeaway={post.excerpt}
               title={post.title}
             />
-            <div
-              className="prose prose-zinc dark:prose-invert max-w-none"
-              dangerouslySetInnerHTML={{ __html: bodyHtml }}
-            />
+            <PostBodyWithPredictions bodyHtml={bodyHtml} />
           </>
         )
       ) : null}
@@ -227,14 +219,12 @@ export async function generateMetadata({ params }: PageProps) {
 async function PostPageBody({ slug }: { slug: string }) {
   const view = await resolveGatedReaderPostView(slug);
   const payToAddress = await resolvePostTipPayToAddress(getDb(), slug);
-  return (
-    <PostArticle
-      post={view.post}
-      payToAddress={payToAddress}
-      showPaywall={view.showPaywall}
-      paywallCheckout={view.paywallCheckout}
-    />
-  );
+  return await PostArticle({
+    post: view.post,
+    payToAddress,
+    showPaywall: view.showPaywall,
+    paywallCheckout: view.paywallCheckout,
+  });
 }
 
 export default async function PostPage(props: PageProps) {
