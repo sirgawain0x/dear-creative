@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { Suspense } from "react";
 import { ActiveSubscriberLine } from "@/components/home/active-subscriber-line";
 import { HomeAboutSection } from "@/components/home/home-about-section";
+import { HomeHeroSubscribeCta } from "@/components/home/home-hero-subscribe-cta";
 import { HomeSpotlight } from "@/components/home/home-spotlight";
 import { HomeSubscribeHashScroll } from "@/components/home/home-subscribe-hash-scroll";
 import { HomeSubscribeCta } from "@/components/home/home-subscribe-cta";
@@ -34,20 +34,7 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <Link
-          href="/posts"
-          className="inline-flex items-center gap-2 rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white shadow-xs transition hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
-        >
-          Explore Dispatches →
-        </Link>
-        <Link
-          href="/subscribe"
-          className="inline-flex items-center gap-2 rounded-full border border-zinc-300 bg-white px-5 py-2.5 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
-        >
-          Subscribe Free
-        </Link>
-      </div>
+      <HomeHeroSubscribeCta />
 
       <Suspense
         fallback={

@@ -28,7 +28,6 @@ export function HomeHeroSubscriberLineSample({
         </div>
       </div>
       <div className="cta-row">
-        <span className="cta-primary">Explore Dispatches →</span>
         <span className="cta-secondary">Subscribe Free</span>
       </div>
     </main>
