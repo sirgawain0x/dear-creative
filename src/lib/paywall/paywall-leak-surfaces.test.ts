@@ -7,6 +7,7 @@ import {
   createPostsTestDb,
   insertPost,
 } from "@/lib/posts/test-support/posts-test-db";
+import { shouldRenderPostRepurposeSection } from "@/lib/posts/post-repurpose-visibility";
 import { setPaywallEnabledForTests } from "./feature-flag";
 import {
   applyReaderBodyToPost,
@@ -70,6 +71,7 @@ describe("paywall leak surfaces", () => {
     const post = applyReaderBodyToPost(gatedRow(), false);
     expect(post.bodyHtml).toContain("Free preview");
     expect(JSON.stringify(post)).not.toContain(GATED_SECRET);
+    expect(shouldRenderPostRepurposeSection(true)).toBe(false);
   });
 
   it("keeps flag-off behavior unchanged (full bodyHtml)", () => {

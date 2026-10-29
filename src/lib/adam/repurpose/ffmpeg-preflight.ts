@@ -4,10 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { RepurposeInfrastructureError } from "./repurpose-infrastructure-error";
-import {
-  renderSlideTitlePng,
-  resetRepurposeSlideFontCacheForTests,
-} from "./slide-image";
+import { resetRepurposeSlideFontCacheForTests } from "./slide-image";
+import { renderSlideTitleFramePng } from "./slide-ffmpeg";
 import { resolveFfmpegBinaryPath } from "./ffmpeg";
 
 const execFile = promisify(execFileCb);
@@ -27,7 +25,7 @@ export type RepurposeVideoPreflightResult = {
 };
 
 const REQUIRED_ENCODERS = ["libx264", "aac"] as const;
-const REQUIRED_FILTERS = ["concat"] as const;
+const REQUIRED_FILTERS = ["concat", "ass"] as const;
 
 async function execFfmpegCapture(args: string[]): Promise<string> {
   const binary = resolveFfmpegBinaryPath();
@@ -103,7 +101,10 @@ export async function runRepurposeVideoRenderPreflight(): Promise<RepurposeVideo
   const workDir = await mkdtemp(join(tmpdir(), "dear-repurpose-preflight-"));
   const pngPath = join(workDir, "preflight-slide.png");
   try {
-    await renderSlideTitlePng({ title: "Preflight", outputPath: pngPath });
+    await renderSlideTitleFramePng({
+      title: "Preflight glyphs: AaBb 123",
+      outputPath: pngPath,
+    });
   } catch (error) {
     throw new RepurposeInfrastructureError(
       503,

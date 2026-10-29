@@ -12,6 +12,36 @@ export const repurposeOutputTypes = [
 
 export type RepurposeOutputType = (typeof repurposeOutputTypes)[number];
 
+/** Writer-facing Repurpose panel (posts already have recorded TTS narration). */
+export const repurposePanelOutputTypes = [
+  "slide_deck",
+  "video_overview",
+  "mind_map",
+  "report",
+  "flashcards",
+  "quiz",
+  "data_table",
+  "infographic",
+] as const satisfies readonly RepurposeOutputType[];
+
+export type RepurposePanelOutputType =
+  (typeof repurposePanelOutputTypes)[number];
+
+/** Text/structured outputs readers see on the post page and in email. */
+export const repurposeReaderOutputTypes = [
+  "slide_deck",
+  "video_overview",
+  "mind_map",
+  "report",
+  "flashcards",
+  "quiz",
+  "data_table",
+  "infographic",
+] as const satisfies readonly RepurposeOutputType[];
+
+export type RepurposeReaderOutputType =
+  (typeof repurposeReaderOutputTypes)[number];
+
 export const repurposeTextOutputTypes = [
   "slide_deck",
   "mind_map",
@@ -21,11 +51,18 @@ export const repurposeTextOutputTypes = [
   "data_table",
 ] as const satisfies readonly RepurposeOutputType[];
 
+export type RepurposeTextOutputType = (typeof repurposeTextOutputTypes)[number];
+
 export const repurposeMediaOutputTypes = [
   "audio_overview",
   "video_overview",
   "infographic",
 ] as const satisfies readonly RepurposeOutputType[];
+
+export const repurposePanelMediaOutputTypes = [
+  "video_overview",
+  "infographic",
+] as const satisfies readonly RepurposePanelOutputType[];
 
 export type RepurposeOutputStatus = "generating" | "ready" | "failed";
 
@@ -44,6 +81,12 @@ export type RepurposeStoredOutput = {
 
 export function isRepurposeOutputType(value: string): value is RepurposeOutputType {
   return (repurposeOutputTypes as readonly string[]).includes(value);
+}
+
+export function isRepurposePanelOutputType(
+  value: string,
+): value is RepurposePanelOutputType {
+  return (repurposePanelOutputTypes as readonly string[]).includes(value);
 }
 
 export function repurposeOutputLabel(type: RepurposeOutputType): string {

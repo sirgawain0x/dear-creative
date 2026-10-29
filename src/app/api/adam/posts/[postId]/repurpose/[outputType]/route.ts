@@ -11,6 +11,7 @@ import {
 } from "@/lib/adam/repurpose/storage";
 import {
   isRepurposeOutputType,
+  isRepurposePanelOutputType,
   type RepurposeOutputType,
 } from "@/lib/adam/repurpose/types";
 import { loadRepurposePostSource, RepurposePostError } from "@/lib/adam/repurpose/post-source";
@@ -36,6 +37,12 @@ export async function GET(request: Request, context: RouteContext) {
   const { postId, outputType: rawType } = await context.params;
   if (!isRepurposeOutputType(rawType)) {
     return NextResponse.json({ error: "Invalid output type" }, { status: 400 });
+  }
+  if (!isRepurposePanelOutputType(rawType)) {
+    return NextResponse.json(
+      { error: "This output type is not available from the Repurpose panel." },
+      { status: 410 },
+    );
   }
 
   const db = getDb();
@@ -81,6 +88,12 @@ export async function POST(request: Request, context: RouteContext) {
   const { postId, outputType: rawType } = await context.params;
   if (!isRepurposeOutputType(rawType)) {
     return NextResponse.json({ error: "Invalid output type" }, { status: 400 });
+  }
+  if (!isRepurposePanelOutputType(rawType)) {
+    return NextResponse.json(
+      { error: "This output type is not available from the Repurpose panel." },
+      { status: 410 },
+    );
   }
 
   try {

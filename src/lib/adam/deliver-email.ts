@@ -279,10 +279,12 @@ export async function sendNewsletterEmail(
     .where(eq(posts.id, input.postId))
     .limit(1);
 
+  const slug = paywallRow?.slug ?? gate.value.post.slug;
+  const canonicalUrl = paywallRow?.canonicalUrl ?? null;
   const emailContent = buildNewsletterEmailContent({
     emailHtml,
-    slug: paywallRow?.slug ?? gate.value.post.slug,
-    canonicalUrl: paywallRow?.canonicalUrl ?? null,
+    slug,
+    canonicalUrl,
     isGated: paywallRow?.isGated ?? false,
     freeContent: paywallRow?.freeContent ?? null,
     gatedContent: paywallRow?.gatedContent ?? null,

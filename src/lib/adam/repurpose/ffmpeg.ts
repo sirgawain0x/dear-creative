@@ -8,7 +8,11 @@ import {
   assertRepurposePipelineBudget,
   remainingRepurposePipelineMs,
 } from "./pipeline-deadline";
-import { renderSlideTitlePng } from "./slide-image";
+import {
+  buildSlideAssVideoFilter,
+  slideColorSourceSpec,
+  writeSlideAssFile,
+} from "./slide-ffmpeg";
 
 const execFile = promisify(execFileCb);
 
@@ -139,38 +143,39 @@ export async function buildNarratedSlidesMp4(input: {
   slides: SlideNarrationSpec[];
   outputPath: string;
   ffmpeg?: FfmpegRunner;
-  renderSlidePng?: (slide: {
-    title: string;
-    outputPath: string;
-  }) => Promise<void>;
+  prepareSlideAss?: (input: { title: string; assPath: string }) => Promise<void>;
 }): Promise<void> {
   if (input.slides.length === 0) {
     throw new Error("No slides for video overview.");
   }
 
   const ffmpeg = input.ffmpeg ?? defaultFfmpegRunner;
-  const renderSlide =
-    input.renderSlidePng ??
-    (async (slide: { title: string; outputPath: string }) => {
-      await renderSlideTitlePng(slide);
+  const prepareSlideAss =
+    input.prepareSlideAss ??
+    (async (spec: { title: string; assPath: string }) => {
+      await writeSlideAssFile(spec);
     });
   const segmentPaths: string[] = [];
+  const colorSource = slideColorSourceSpec();
 
   for (let i = 0; i < input.slides.length; i++) {
     const slide = input.slides[i]!;
-    const pngPath = join(input.workDir, `slide-${i}.png`);
-    await renderSlide({ title: slide.title, outputPath: pngPath });
     const segmentPath = join(input.workDir, `slide-${i}.mp4`);
     segmentPaths.push(segmentPath);
+    const assPath = join(input.workDir, `slide-${i}.ass`);
+    await prepareSlideAss({ title: slide.title, assPath });
+    const vf = buildSlideAssVideoFilter({ assPath });
 
     await ffmpeg([
       "-y",
-      "-loop",
-      "1",
+      "-f",
+      "lavfi",
       "-i",
-      pngPath,
+      colorSource,
       "-i",
       slide.audioPath,
+      "-vf",
+      vf,
       "-shortest",
       "-c:v",
       "libx264",

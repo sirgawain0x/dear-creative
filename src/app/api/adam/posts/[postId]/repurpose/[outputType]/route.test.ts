@@ -79,6 +79,20 @@ describe("POST /api/adam/posts/[postId]/repurpose/[outputType]", () => {
     setRepurposeEnabledForTests(undefined);
   });
 
+  it("returns 410 for removed audio_overview panel type", async () => {
+    vi.stubEnv("ADAM_API_TOKEN", "secret-token");
+    setRepurposeEnabledForTests(true);
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("http://localhost/api/adam/posts/x/repurpose/audio_overview", {
+        method: "POST",
+        headers: { Authorization: "Bearer secret-token" },
+      }),
+      { params: Promise.resolve({ postId: "x", outputType: "audio_overview" }) },
+    );
+    expect(response.status).toBe(410);
+  });
+
   it("requires studio auth", async () => {
     setRepurposeEnabledForTests(true);
     const { POST } = await import("./route");
