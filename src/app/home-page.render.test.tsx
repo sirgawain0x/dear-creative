@@ -45,6 +45,7 @@ function sampleSpotlightPost(index: number): PublishedPostListItem {
     canonicalUrl: null,
     coverImage: "data:image/svg+xml;utf8,%3Csvg/%3E",
     teaser: `Teaser ${index}`,
+    isGated: false,
   };
 }
 

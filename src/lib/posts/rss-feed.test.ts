@@ -43,12 +43,14 @@ describe("buildRssXml", () => {
         publishedAt: "2024-03-01T12:00:00.000Z",
         excerpt: "Teaser",
         canonicalUrl: "https://paragraph.xyz/@dear/alpha",
+        isGated: false,
       },
       {
         slug: "beta",
         title: "Beta Post",
         publishedAt: "2024-02-01T12:00:00.000Z",
         canonicalUrl: null,
+        isGated: false,
       },
     ];
 

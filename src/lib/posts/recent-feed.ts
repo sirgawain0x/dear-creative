@@ -22,5 +22,6 @@ export async function buildRecentPosts(limit = 6): Promise<RecentPost[]> {
     coverImage: post.coverImage,
     canonicalUrl: resolvePostPublicUrl(post),
     x402Url: `${origin}/api/posts/${encodeURIComponent(post.slug)}/full`,
+    isGated: post.isGated,
   }));
 }
