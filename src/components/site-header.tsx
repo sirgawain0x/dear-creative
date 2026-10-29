@@ -115,10 +115,10 @@ export function SiteHeader({
     : {};
 
   const visibleLinks = getVisibleNavLinks(isSignedIn);
-    const hideNavSignInForReaderWallet =
-      showReaderWalletButton && !isSignedIn && !fixtureAuthenticated;
+  const hideNavSignInForReaderWallet =
+    showReaderWalletButton && !isSignedIn && !fixtureAuthenticated;
 
-    return (
+  return (
       <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white/90 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90">
         <div className="mx-auto flex w-full max-w-[1800px] items-center justify-between gap-2 px-4 sm:px-6 lg:px-8 py-3.5">
           <div className="flex min-w-0 shrink items-center gap-2 sm:gap-3">
@@ -228,10 +228,10 @@ export function SiteHeader({
             </a>
           </nav>
 
-          <div className="flex items-center gap-2">
-            {/* Mobile: ReaderAccountDropdown removed from top bar — Sign In lives in hamburger menu */}
-            <CreativePlatformAppsDrawer />
-            <ThemeToggle />
+        <div className="flex items-center gap-2">
+          {/* Mobile: ReaderAccountDropdown removed from top bar — Sign In lives in hamburger menu */}
+          <CreativePlatformAppsDrawer />
+          <ThemeToggle />
           <button
             type="button"
             aria-expanded={mobileMenuOpen}
