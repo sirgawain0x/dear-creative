@@ -148,6 +148,30 @@ describe("AdminLinkedInConnect", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("shows status check error when status fetch throws", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.endsWith("/api/admin/linkedin/status")) {
+        throw new TypeError("Failed to fetch");
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AdminLinkedInConnect
+        isAdmin={true}
+        isSignedIn={true}
+        getAccessToken={getAccessTokenMock}
+      />,
+    );
+
+    expect(
+      await screen.findByTestId("admin-linkedin-status-error"),
+    ).toHaveTextContent(/couldn't check linkedin status/i);
+    expect(screen.queryByText(/^not connected\.$/i)).not.toBeInTheDocument();
+  });
+
   it("refetches status after linkedin=connected query param", async () => {
     mockSearchParams = new URLSearchParams("linkedin=connected");
     setWindowLocation("/admin?linkedin=connected");
