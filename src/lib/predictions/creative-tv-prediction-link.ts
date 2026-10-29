@@ -88,6 +88,33 @@ export function parseCreativeTvPredictionUrl(
   return { questionId, viewUrl, matchedUrl };
 }
 
+export const CANONICAL_PREDICTION_VIEW_ORIGIN =
+  "https://tv.creativeplatform.xyz";
+
+/**
+ * Resolve a candidate view URL to a trusted Creative TV URL for `questionId`.
+ * The candidate is only trusted when it parses as a Creative TV prediction
+ * link for the *same* question; anything else (foreign hosts, mismatched
+ * question ids, unparseable values) falls back to the canonical TV URL so an
+ * untrusted URL is never rendered under "View on Creative TV" chrome.
+ */
+export function resolveTrustedPredictionViewUrl(
+  questionIdRaw: string,
+  candidate?: string | null,
+): string {
+  const questionId = normalizePredictionQuestionId(questionIdRaw);
+  if (!questionId) {
+    return CANONICAL_PREDICTION_VIEW_ORIGIN;
+  }
+  if (candidate) {
+    const parsed = parseCreativeTvPredictionUrl(candidate);
+    if (parsed && parsed.questionId === questionId) {
+      return parsed.viewUrl;
+    }
+  }
+  return `${CANONICAL_PREDICTION_VIEW_ORIGIN}/predict/${questionId}`;
+}
+
 /** Collect unique prediction links from plain text or HTML. */
 export function findCreativeTvPredictionLinks(text: string): ParsedCreativeTvPredictionLink[] {
   const found: ParsedCreativeTvPredictionLink[] = [];

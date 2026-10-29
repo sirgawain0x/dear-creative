@@ -1,4 +1,5 @@
 import sanitizeHtml from "sanitize-html";
+import { resolveTrustedPredictionViewUrl } from "@/lib/predictions/creative-tv-prediction-link";
 import { resolveGroveOrIpfsUrl } from "@/lib/storage/lens-grove";
 import { decodeHtmlEntitiesOnce } from "./decode-html-entities-once";
 
@@ -217,8 +218,12 @@ export function sanitizeArticleHtml(raw: string): string {
         const safeQuestionId = /^0x[a-fA-F0-9]{64}$/.test(questionId)
           ? questionId.toLowerCase()
           : undefined;
+        // Only trusted Creative TV URLs for this exact question may ride on
+        // an embed placeholder; anything else becomes the canonical TV URL.
         const safeViewUrl =
-          isPredictionEmbed && /^https?:\/\//i.test(viewUrl) ? viewUrl : undefined;
+          isPredictionEmbed && safeQuestionId
+            ? resolveTrustedPredictionViewUrl(safeQuestionId, viewUrl)
+            : undefined;
         return {
           tagName,
           attribs: {

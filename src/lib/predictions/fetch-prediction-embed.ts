@@ -133,24 +133,37 @@ export function createPredictionEmbedReaderFromClient(
           bigint,
         ];
 
-        let questionText = "";
-        let templateId: number | null = null;
-
-        try {
-          const logs = await client.getLogs({
-            address: contractAddress,
-            event: LOG_NEW_QUESTION_EVENT,
-            args: { question_id: questionId },
-            fromBlock: BigInt(0),
-          });
-          if (logs[0]?.args) {
-            questionText = (logs[0].args as { question?: string }).question ?? "";
-            const tid = (logs[0].args as { template_id?: bigint }).template_id;
-            templateId = tid != null ? Number(tid) : null;
-          }
-        } catch {
-          // RPC log scan may fail; struct fields still useful
+        // Reality.eth returns a zero struct for unknown question ids instead
+        // of reverting. A zero content hash means the question does not
+        // exist — report it as not found rather than rendering a fake card.
+        const contentHash = tuple[0];
+        if (
+          !contentHash ||
+          contentHash.toLowerCase() ===
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        ) {
+          return null;
         }
+
+        // The question text, outcomes, and template id exist only on the
+        // LogNewQuestion event; the struct does not store them. If the log
+        // scan fails or finds no event, the embed cannot be rendered
+        // truthfully — return null so the caller falls back to the plain
+        // "View on Creative TV" link instead of an untitled card with
+        // default outcomes.
+        const logs = await client.getLogs({
+          address: contractAddress,
+          event: LOG_NEW_QUESTION_EVENT,
+          args: { question_id: questionId },
+          fromBlock: BigInt(0),
+        });
+        const questionText =
+          (logs[0]?.args as { question?: string } | undefined)?.question ?? "";
+        if (!questionText) {
+          return null;
+        }
+        const tid = (logs[0]?.args as { template_id?: bigint }).template_id;
+        const templateId = tid != null ? Number(tid) : null;
 
         return {
           questionText,
@@ -208,10 +221,19 @@ export async function fetchPredictionEmbed(
       return { ok: false, questionId, viewUrl, error: "Question not found on chain" };
     }
 
-    const parsed = parsePredictionDisplay(
-      state.questionText || "Untitled Prediction",
-      state.templateId,
-    );
+    // Never fabricate a title/outcomes: without the on-chain question text
+    // there is nothing truthful to render, so fail and let the caller fall
+    // back to the plain link.
+    if (!state.questionText) {
+      return {
+        ok: false,
+        questionId,
+        viewUrl,
+        error: "Question metadata unavailable",
+      };
+    }
+
+    const parsed = parsePredictionDisplay(state.questionText, state.templateId);
 
     const finalized = await reader.isFinalized(questionId);
     const nowSec = Math.floor(Date.now() / 1000);

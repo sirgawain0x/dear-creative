@@ -1,6 +1,7 @@
 import {
   findCreativeTvPredictionLinks,
   parseCreativeTvPredictionUrl,
+  resolveTrustedPredictionViewUrl,
 } from "@/lib/predictions/creative-tv-prediction-link";
 
 export type PredictionEmbedSlot = {
@@ -15,17 +16,31 @@ function slotMarkup(slot: PredictionEmbedSlot): string {
   return `<div class="dear-prediction-embed" data-question-id="${slot.questionId}" data-view-url="${slot.viewUrl.replace(/"/g, "&quot;")}"></div>`;
 }
 
+/**
+ * Replace bare prediction URLs in *text* segments only. Splitting on tags
+ * keeps URLs that live inside markup — `href`/`src` attributes and the
+ * `data-view-url` of placeholders this module (or the markdown pass) already
+ * emitted — untouched, so a placeholder can never be corrupted by nesting a
+ * second embed div inside its own attribute.
+ */
 function replaceBareUrlsInHtml(html: string, slots: PredictionEmbedSlot[]): string {
-  let next = html;
-  for (const link of findCreativeTvPredictionLinks(html)) {
-    const escaped = link.matchedUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const bare = new RegExp(escaped, "gi");
-    next = next.replace(bare, slotMarkup(link));
-    if (!slots.some((s) => s.questionId === link.questionId)) {
-      slots.push({ questionId: link.questionId, viewUrl: link.viewUrl });
-    }
-  }
-  return next;
+  const segments = html.split(/(<[^>]*>)/g);
+  return segments
+    .map((segment) => {
+      if (segment.startsWith("<")) {
+        return segment;
+      }
+      let text = segment;
+      for (const link of findCreativeTvPredictionLinks(segment)) {
+        const escaped = link.matchedUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        text = text.replace(new RegExp(escaped, "gi"), slotMarkup(link));
+        if (!slots.some((s) => s.questionId === link.questionId)) {
+          slots.push({ questionId: link.questionId, viewUrl: link.viewUrl });
+        }
+      }
+      return text;
+    })
+    .join("");
 }
 
 /**
@@ -64,7 +79,10 @@ export function extractPredictionEmbedSlots(html: string): PredictionEmbedSlot[]
   while ((match = re.exec(html)) !== null) {
     const questionId = match[1]!.toLowerCase() as `0x${string}`;
     if (!slots.some((s) => s.questionId === questionId)) {
-      slots.push({ questionId, viewUrl: match[2]! });
+      slots.push({
+        questionId,
+        viewUrl: resolveTrustedPredictionViewUrl(questionId, match[2]!),
+      });
     }
   }
   return slots;
@@ -85,11 +103,14 @@ export function splitPostBodyByPredictionEmbeds(html: string): PostBodySegment[]
     if (match.index > lastIndex) {
       segments.push({ kind: "html", html: html.slice(lastIndex, match.index) });
     }
+    const questionId = match[1]!.toLowerCase() as `0x${string}`;
     segments.push({
       kind: "embed",
       slot: {
-        questionId: match[1]!.toLowerCase() as `0x${string}`,
-        viewUrl: match[2]!,
+        questionId,
+        // Placeholder markup can carry an arbitrary data-view-url; only a
+        // trusted Creative TV URL for this question may be rendered.
+        viewUrl: resolveTrustedPredictionViewUrl(questionId, match[2]!),
       },
     });
     lastIndex = pattern.lastIndex;

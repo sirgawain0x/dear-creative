@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchPredictionEmbedCached } from "@/lib/predictions/fetch-prediction-embed";
-import { parseCreativeTvPredictionUrl } from "@/lib/predictions/creative-tv-prediction-link";
+import { resolveTrustedPredictionViewUrl } from "@/lib/predictions/creative-tv-prediction-link";
 
 type RouteContext = { params: Promise<{ questionId: string }> };
 
@@ -8,13 +8,9 @@ export async function GET(request: Request, context: RouteContext) {
   const { questionId } = await context.params;
   const url = new URL(request.url);
   const viewParam = url.searchParams.get("viewUrl")?.trim();
-  const parsedFromParam = viewParam
-    ? parseCreativeTvPredictionUrl(viewParam)
-    : null;
-  const viewUrl =
-    parsedFromParam?.viewUrl ??
-    viewParam ??
-    `https://tv.creativeplatform.xyz/predict/${questionId}`;
+  // Never trust a raw viewUrl: it must be a Creative TV prediction link for
+  // this exact question, otherwise use the canonical TV URL.
+  const viewUrl = resolveTrustedPredictionViewUrl(questionId, viewParam);
 
   const result = await fetchPredictionEmbedCached(questionId, viewUrl);
 
