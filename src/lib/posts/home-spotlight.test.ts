@@ -12,6 +12,7 @@ function samplePost(slug: string): PublishedPostListItem {
     publishedAt: "2024-01-01T00:00:00.000Z",
     canonicalUrl: null,
     coverImage: "data:image/svg+xml;utf8,%3Csvg/%3E",
+    isGated: false,
   };
 }
 

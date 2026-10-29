@@ -12,6 +12,7 @@ import { buildPublicPostTeaser } from "./post-public-teaser";
 import { calculateReadingTime } from "./reading-time";
 import { classifyArticleTopic } from "./topic-tagging";
 import type { PostMeta } from "./types";
+import { isPaywallEnabled } from "@/lib/paywall/feature-flag";
 import { bodyHtmlForPublicSurfaces } from "@/lib/paywall/public-body";
 
 export const DEFAULT_PUBLISHED_PAGE_SIZE = 20;
@@ -26,6 +27,7 @@ export function publishedVisibilityFilter(asOf: Date = new Date()) {
 
 export type PublishedPostListItem = PostMeta & {
   canonicalUrl: string | null;
+  isGated: boolean;
 };
 
 export type PublishedPostDetail = PublishedPostListItem & {
@@ -96,6 +98,7 @@ function mapListRow(row: {
     listenMinutes: metrics.listenMinutes,
     readingTimeLabel: metrics.label,
     topic,
+    isGated: isPaywallEnabled() && Boolean(row.isGated),
   };
 }
 

@@ -15,5 +15,7 @@ export type PostMeta = {
 export type RecentPost = PostMeta & {
   canonicalUrl: string;
   x402Url: string;
+  /** True when paywall is on and the post is paid-only / subscriber content. */
+  isGated: boolean;
 };
 

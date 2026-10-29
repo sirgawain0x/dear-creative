@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildPostPageMetadata } from "@/lib/posts/post-page-metadata";
+import { buildRecentPosts } from "@/lib/posts/recent-feed";
 import { buildRssXml } from "@/lib/posts/rss-feed";
 import { listRecentPublishedPosts } from "@/lib/posts/published-posts";
 import {
@@ -13,6 +14,23 @@ import {
 } from "./reader-post";
 
 const GATED_SECRET = "SECRET_GATED_LEAK_MARKER_XYZ";
+
+vi.mock("@/db/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/db/client")>();
+  return { ...actual, getDb: vi.fn() };
+});
+
+vi.mock("@/lib/subscribers/cached-active-subscriber-count", () => ({
+  getCachedActiveSubscriberCount: vi.fn(),
+}));
+
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>();
+  return {
+    ...actual,
+    connection: vi.fn(async () => undefined),
+  };
+});
 
 describe("paywall leak surfaces", () => {
   afterEach(() => {
@@ -86,6 +104,7 @@ describe("paywall leak surfaces", () => {
           listenMinutes: publicPost.listenMinutes,
           readingTimeLabel: publicPost.readingTimeLabel,
           topic: publicPost.topic,
+          isGated: false,
         },
       ],
     );
@@ -131,5 +150,44 @@ describe("paywall leak surfaces", () => {
       .join("");
     expect(xml).toContain("sitemap-gated");
     expect(xml).not.toContain(GATED_SECRET);
+  });
+
+  it("recent feed JSON exposes isGated but not gated body markers", async () => {
+    setPaywallEnabledForTests(true);
+    const db = await createPostsTestDb();
+    const { getDb } = await import("@/db/client");
+    vi.mocked(getDb).mockReturnValue(db);
+    await insertPost(db, {
+      slug: "recent-feed-gated",
+      title: "Recent Feed Gated",
+      status: "published",
+      publishedAt: new Date(),
+      isGated: true,
+      freeContent: "Public list teaser",
+      gatedContent: GATED_SECRET,
+      bodyHtml: `<p>Public list teaser</p><p>${GATED_SECRET}</p>`,
+    });
+
+    const posts = await buildRecentPosts(5);
+    expect(posts.some((p) => p.slug === "recent-feed-gated" && p.isGated)).toBe(
+      true,
+    );
+    expect(JSON.stringify(posts)).not.toContain(GATED_SECRET);
+  });
+
+  it("public stats returns only activeSubscriberCount (no PII)", async () => {
+    const { getCachedActiveSubscriberCount } = await import(
+      "@/lib/subscribers/cached-active-subscriber-count"
+    );
+    vi.mocked(getCachedActiveSubscriberCount).mockResolvedValue(42);
+
+    const { GET } = await import("@/app/api/public/stats/route");
+    const response = await GET();
+    const body = await response.json();
+    const serialized = JSON.stringify(body);
+
+    expect(body).toEqual({ activeSubscriberCount: 42 });
+    expect(Object.keys(body)).toEqual(["activeSubscriberCount"]);
+    expect(serialized).not.toMatch(/@|wallet|privy|email/i);
   });
 });
