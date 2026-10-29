@@ -215,6 +215,7 @@ export function RepurposePanel({ postId, authFetch }: RepurposePanelProps) {
                 <button
                   type="button"
                   disabled={!postId || row.isGenerating || status === "ready"}
+                  aria-busy={row.isGenerating}
                   onClick={() => void handleGenerate(type)}
                   className="rounded-lg border border-violet-300 bg-violet-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-violet-500 disabled:opacity-50 dark:border-violet-700"
                 >

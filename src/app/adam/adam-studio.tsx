@@ -52,6 +52,22 @@ import { resolveGroveOrIpfsUrl } from "@/lib/storage/lens-grove";
 import { useStopAudioOnLeave } from "@/hooks/use-stop-audio-on-leave";
 import { NARRATION_VOICES, voiceLabel } from "@/lib/audio/narration-voices";
 import { playAdamGoogleTts } from "@/app/adam/adam-message-tts";
+import {
+  adamChatAriaBusy,
+  adamChatLiveStatusLabel,
+  isAdamChatBusy,
+  type AdamAgentGenerationPhase,
+} from "@/app/adam/adam-agent-generation-state";
+import { AdamAssistantGenerationBubble } from "@/app/adam/adam-assistant-generation-bubble";
+import {
+  consumeAdamChatResponse,
+  type AdamChatCompletionPayload,
+} from "@/app/adam/adam-consume-chat-response";
+import { AdamAgentWorkingAnnouncer } from "@/app/adam/adam-agent-working-announcer";
+import {
+  readPrefersReducedMotion,
+  usePrefersReducedMotion,
+} from "@/hooks/use-prefers-reduced-motion";
 import { stopDispatchAudioResources } from "@/lib/audio/stop-active-audio";
 import { RepurposePanel } from "@/app/adam/repurpose-panel";
 import { EditorPreviewLinksPanel } from "@/components/admin/EditorPreviewLinksPanel";
@@ -363,10 +379,16 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
   ]);
   const [chatInput, setChatInput] = useState("");
   const [chatAttachments, setChatAttachments] = useState<ClientAttachment[]>([]);
-  const [isSendingChat, setIsSendingChat] = useState(false);
+  const [chatGenerationPhase, setChatGenerationPhase] =
+    useState<AdamAgentGenerationPhase>("idle");
+  const [pendingAssistantContent, setPendingAssistantContent] = useState("");
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const isSendingChat = isAdamChatBusy(chatGenerationPhase);
   const [chatThreads, setChatThreads] = useState<ChatThreadSummary[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const activeThreadIdRef = useRef<string | null>(null);
+  const chatAbortControllerRef = useRef<AbortController | null>(null);
+  const chatRequestEpochRef = useRef(0);
   const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
   const [editingThreadTitle, setEditingThreadTitle] = useState("");
 
@@ -1086,6 +1108,18 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
     [],
   );
 
+  const cancelChatInFlight = useCallback((options?: { resetUi?: boolean }) => {
+    chatRequestEpochRef.current += 1;
+    chatAbortControllerRef.current?.abort();
+    chatAbortControllerRef.current = null;
+    if (options?.resetUi !== false) {
+      setChatGenerationPhase("idle");
+      setPendingAssistantContent("");
+    }
+  }, []);
+
+  useEffect(() => () => cancelChatInFlight(), [cancelChatInFlight]);
+
   // --- Chat Threads Management ---
   const loadChatThreads = useCallback(async () => {
     try {
@@ -1118,6 +1152,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
 
   const selectChatThread = useCallback(
     async (threadId: string) => {
+      cancelChatInFlight();
       try {
         activeThreadIdRef.current = threadId;
         setActiveThreadId(threadId);
@@ -1155,10 +1190,11 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
         // ignore
       }
     },
-    [authFetch],
+    [authFetch, cancelChatInFlight],
   );
 
   const startNewChatThread = useCallback(() => {
+    cancelChatInFlight();
     activeThreadIdRef.current = null;
     setActiveThreadId(null);
     setChatInput("");
@@ -1170,7 +1206,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
           "Hi! I'm Adam, your Dear Creative editorial agent. You can chat with me by text or voice, upload images or reference files, paste rough ideas for me to turn into a newsletter draft, or configure my Monday morning schedule.",
       },
     ]);
-  }, []);
+  }, [cancelChatInFlight]);
 
   const renameChatThread = useCallback(
     async (threadId: string, newTitle: string) => {
@@ -1254,13 +1290,28 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
       const currentAttachments = [...chatAttachments];
       setChatInput("");
       setChatAttachments([]);
-      setIsSendingChat(true);
+      chatAbortControllerRef.current?.abort();
+      const requestEpoch = ++chatRequestEpochRef.current;
+      const threadAtRequest = activeThreadIdRef.current;
+      const abortController = new AbortController();
+      chatAbortControllerRef.current = abortController;
+      const isCurrentRequest = () => chatRequestEpochRef.current === requestEpoch;
+      const clearGenerationUi = () => {
+        setChatGenerationPhase("idle");
+        setPendingAssistantContent("");
+      };
+      const threadChangedDuringRequest = () =>
+        activeThreadIdRef.current !== threadAtRequest;
+
+      setChatGenerationPhase("waiting");
+      setPendingAssistantContent("");
       setStatusBanner(null);
 
       try {
         const res = await authFetch("/api/adam/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: abortController.signal,
           body: JSON.stringify({
             threadId: activeThreadIdRef.current || undefined,
             message: userMessage.content,
@@ -1271,43 +1322,74 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
           }),
         });
 
-        const data = (await res.json()) as {
-          reply?: string;
-          threadId?: string;
-          createdDraft?: {
-            postId: string;
-            approvalId: string;
-            slug: string;
-            title: string;
-          } | null;
-          generatedBanner?: {
-            url: string;
-            uri: string;
-          } | null;
-          error?: string;
-        };
+        if (!isCurrentRequest()) return;
 
         if (!res.ok) {
+          let errorText = "Could not reach Adam.";
+          try {
+            const errData = (await res.json()) as { error?: string };
+            if (errData.error) errorText = errData.error;
+          } catch {
+            // ignore parse failure
+          }
+          setChatGenerationPhase("error");
+          setPendingAssistantContent("");
           setStatusBanner({
             kind: "error",
-            text: data.error || "Could not reach Adam.",
+            text: errorText,
           });
           return;
         }
 
+        let completion: AdamChatCompletionPayload | null = null;
+
+        for await (const event of consumeAdamChatResponse(res, {
+          reducedMotion: readPrefersReducedMotion(),
+        })) {
+          if (!isCurrentRequest()) return;
+          if (event.type === "token") {
+            setChatGenerationPhase("streaming");
+            setPendingAssistantContent(event.textSoFar);
+          } else {
+            completion = event.payload;
+          }
+        }
+
+        if (!isCurrentRequest()) return;
+        if (threadChangedDuringRequest()) {
+          clearGenerationUi();
+          return;
+        }
+
+        if (!completion) {
+          setChatGenerationPhase("error");
+          setPendingAssistantContent("");
+          setStatusBanner({
+            kind: "error",
+            text: "Adam returned an empty response.",
+          });
+          return;
+        }
+
+        const data = completion;
+
         if (data.threadId) {
+          if (threadAtRequest !== null && threadChangedDuringRequest()) {
+            clearGenerationUi();
+            return;
+          }
           activeThreadIdRef.current = data.threadId;
           setActiveThreadId(data.threadId);
         }
         void loadChatThreads();
 
-        const replyText =
-          data.reply || "I processed your request.";
+        const replyText = data.reply || "I processed your request.";
         const nextMessages: StudioChatMessage[] = [
           ...updatedMessages,
           { role: "assistant", content: replyText },
         ];
         setMessages(nextMessages);
+        setPendingAssistantContent("");
 
         if (autoSpeakReplies) {
           void speakText(replyText, nextMessages.length - 1);
@@ -1318,20 +1400,35 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
             kind: "success",
             text: `Adam created draft "${data.createdDraft.title}" in the Approval Queue!`,
           });
+          setChatGenerationPhase("waiting");
           await loadStudioData();
-        } else if (data.generatedBanner) {
-          setStatusBanner({
-            kind: "success",
-            text: `Adam generated a new banner and uploaded it to Lens Grove (${data.generatedBanner.uri})!`,
-          });
+          if (!isCurrentRequest()) return;
+        } else {
+          setChatGenerationPhase("done");
+          if (data.generatedBanner) {
+            setStatusBanner({
+              kind: "success",
+              text: `Adam generated a new banner and uploaded it to Lens Grove (${data.generatedBanner.uri})!`,
+            });
+          }
         }
-      } catch {
+        if (!isCurrentRequest()) return;
+        setChatGenerationPhase("idle");
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+        if (!isCurrentRequest()) return;
+        setChatGenerationPhase("error");
+        setPendingAssistantContent("");
         setStatusBanner({
           kind: "error",
           text: "Network error while communicating with Adam.",
         });
       } finally {
-        setIsSendingChat(false);
+        if (chatAbortControllerRef.current === abortController) {
+          chatAbortControllerRef.current = null;
+        }
       }
     },
     [
@@ -2620,8 +2717,22 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
               </div>
             </div>
 
+            <span
+              data-testid="adam-chat-generation-status"
+              className="sr-only"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              {adamChatLiveStatusLabel(chatGenerationPhase) ?? ""}
+            </span>
+
             {/* Conversation Thread */}
-            <div className="max-h-[460px] min-h-[320px] min-w-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto pr-2">
+            <div
+              className="max-h-[460px] min-h-[320px] min-w-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto pr-2"
+              aria-busy={adamChatAriaBusy(chatGenerationPhase)}
+              data-testid="adam-chat-transcript"
+            >
               {messages.map((msg, idx) => (
                 <div
                   key={idx}
@@ -2772,6 +2883,20 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                   </div>
                 </div>
               ))}
+              {chatGenerationPhase === "waiting" ||
+              chatGenerationPhase === "streaming" ? (
+                <div className="flex flex-col items-start">
+                  <AdamAssistantGenerationBubble
+                    phase={
+                      chatGenerationPhase === "waiting"
+                        ? "waiting"
+                        : "streaming"
+                    }
+                    content={pendingAssistantContent}
+                    reducedMotion={prefersReducedMotion}
+                  />
+                </div>
+              ) : null}
             </div>
 
             {/* Attached Files / Images Preview Bar */}
@@ -2819,8 +2944,10 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={handleChatKeyDown}
+                readOnly={isSendingChat}
+                aria-busy={isSendingChat}
                 placeholder="Talk to Adam in plain text or Markdown, paste notes, or upload images/files… (Press Enter to send, Shift+Enter for new line)"
-                className="w-full rounded-xl border border-zinc-300 bg-zinc-50 p-3 text-sm focus:border-zinc-900 focus:outline-hidden dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-300"
+                className="w-full rounded-xl border border-zinc-300 bg-zinc-50 p-3 text-sm focus:border-zinc-900 focus:outline-hidden read-only:cursor-not-allowed read-only:opacity-60 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-300"
               />
 
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -2949,6 +3076,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                   {/* Send Button */}
                   <button
                     type="button"
+                    data-testid="adam-chat-send"
                     disabled={
                       isSendingChat ||
                       (!chatInput.trim() && chatAttachments.length === 0)
@@ -4163,9 +4291,14 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                     </button>
                   </div>
 
+                  <AdamAgentWorkingAnnouncer
+                    busy={isPolishingPost}
+                    label="Adam is fixing headers and formatting"
+                  />
                   <button
                     type="button"
                     disabled={isPolishingPost || !selectedEditPostId}
+                    aria-busy={isPolishingPost}
                     onClick={() => void handleAskAdamToFixFormatting()}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
                   >

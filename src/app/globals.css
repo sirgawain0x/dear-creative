@@ -449,4 +449,41 @@ body {
   }
 }
 
+@keyframes adam-thinking-bounce {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  40% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+.adam-thinking-dot {
+  animation: adam-thinking-bounce 1.15s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .adam-thinking-dot,
+  .adam-streaming-cursor {
+    animation: none !important;
+  }
+}
+
+@keyframes adam-streaming-blink {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.adam-streaming-cursor {
+  animation: adam-streaming-blink 1s ease-in-out infinite;
+}
 
