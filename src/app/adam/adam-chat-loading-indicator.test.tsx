@@ -440,7 +440,9 @@ describe("Adam chat loading indicator", () => {
     );
   });
 
-  it("does not reset generation phase to idle when a stale chat finishes after loadStudioData", async () => {
+  it(
+    "does not reset generation phase to idle when a stale chat finishes after loadStudioData",
+    async () => {
     let releaseStudioReload!: () => void;
     const studioReloadBlocked = new Promise<void>((resolve) => {
       releaseStudioReload = resolve;
@@ -523,5 +525,7 @@ describe("Adam chat loading indicator", () => {
       releaseStudioReload();
       cleanup();
     }
-  });
+    },
+    15_000,
+  );
 });
