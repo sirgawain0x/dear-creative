@@ -8,14 +8,32 @@ import {
 } from "@/lib/linkedin/read-linkedin-callback-banner";
 import { stripLinkedInCallbackSearchParams } from "@/lib/linkedin/strip-linkedin-callback-search-params";
 
+const LINKEDIN_STATUS_CHECK_FAILED_MESSAGE =
+  "Couldn't check LinkedIn status.";
+
 type AdminLinkedInConnectProps = {
   isAdmin: boolean;
   isSignedIn: boolean;
+  getAccessToken: () => Promise<string | null>;
 };
+
+type LinkedInStatusResponse = {
+  connected: boolean;
+  memberName?: string;
+  expiresAt?: string;
+};
+
+function connectButtonLabel(isConnected: boolean, isStarting: boolean): string {
+  if (isStarting) {
+    return "Starting…";
+  }
+  return isConnected ? "Reconnect" : "Connect LinkedIn";
+}
 
 function AdminLinkedInConnectInner({
   isAdmin,
   isSignedIn,
+  getAccessToken,
 }: AdminLinkedInConnectProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -23,7 +41,48 @@ function AdminLinkedInConnectInner({
     useState<LinkedInCallbackBanner | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
+  const [isLoadingStatus, setIsLoadingStatus] = useState(true);
+  const [statusLoadFailed, setStatusLoadFailed] = useState(false);
+  const [status, setStatus] = useState<LinkedInStatusResponse | null>(null);
   const handledCallbackKeyRef = useRef<string | null>(null);
+
+  const refreshStatus = useCallback(async () => {
+    setIsLoadingStatus(true);
+    setStatusLoadFailed(false);
+    try {
+      const token = await getAccessToken();
+      if (!token) {
+        setStatus(null);
+        setStatusLoadFailed(true);
+        return;
+      }
+      const response = await fetch("/api/admin/linkedin/status", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        setStatus(null);
+        setStatusLoadFailed(true);
+        return;
+      }
+      const body = (await response.json()) as LinkedInStatusResponse;
+      setStatus(body);
+      setStatusLoadFailed(false);
+    } catch {
+      setStatus(null);
+      setStatusLoadFailed(true);
+    } finally {
+      setIsLoadingStatus(false);
+    }
+  }, [getAccessToken]);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      return;
+    }
+    void (async () => {
+      await refreshStatus();
+    })();
+  }, [isAdmin, refreshStatus]);
 
   useEffect(() => {
     const linkedin = searchParams.get("linkedin")?.trim();
@@ -48,7 +107,11 @@ function AdminLinkedInConnectInner({
       new URL(window.location.href),
     );
     router.replace(cleanPath, { scroll: false });
-  }, [router, searchParams]);
+
+    if (linkedin === "connected") {
+      void refreshStatus();
+    }
+  }, [router, searchParams, refreshStatus]);
 
   const startLinkedInConnect = useCallback(async () => {
     setError(null);
@@ -91,6 +154,9 @@ function AdminLinkedInConnectInner({
     return null;
   }
 
+  const isConnected = status?.connected === true;
+  const connectLabel = connectButtonLabel(isConnected, isStarting);
+
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs dark:border-zinc-800 dark:bg-zinc-900/60">
       <h3 className="text-sm font-semibold">LinkedIn (G2 personal profile)</h3>
@@ -111,13 +177,41 @@ function AdminLinkedInConnectInner({
           {callbackBanner.message}
         </div>
       ) : null}
+      {isLoadingStatus ? (
+        <p className="mt-4 text-xs text-zinc-500">Checking LinkedIn status…</p>
+      ) : statusLoadFailed ? (
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <p
+            data-testid="admin-linkedin-status-error"
+            className="text-xs text-amber-800 dark:text-amber-200"
+          >
+            {LINKEDIN_STATUS_CHECK_FAILED_MESSAGE}
+          </p>
+          <button
+            type="button"
+            data-testid="admin-linkedin-status-retry"
+            onClick={() => void refreshStatus()}
+            className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          >
+            Retry
+          </button>
+        </div>
+      ) : isConnected ? (
+        <p className="mt-4 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+          Connected as {status?.memberName ?? "LinkedIn member"}
+        </p>
+      ) : (
+        <p className="mt-4 text-xs text-zinc-600 dark:text-zinc-400">
+          Not connected.
+        </p>
+      )}
       <button
         type="button"
         onClick={() => void startLinkedInConnect()}
-        disabled={isStarting}
+        disabled={isStarting || isLoadingStatus}
         className="mt-4 rounded-full bg-[#0a66c2] px-5 py-2 text-xs font-semibold text-white hover:bg-[#004182] disabled:opacity-50"
       >
-        {isStarting ? "Starting…" : "Connect LinkedIn"}
+        {connectLabel}
       </button>
       {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
     </div>

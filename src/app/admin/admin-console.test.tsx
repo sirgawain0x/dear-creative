@@ -64,6 +64,11 @@ describe("AdminConsole owner tools", () => {
             { status: 200 },
           );
         }
+        if (url.endsWith("/api/admin/linkedin/status")) {
+          return new Response(JSON.stringify({ connected: false }), {
+            status: 200,
+          });
+        }
         return new Response("{}", { status: 404 });
       }),
     );

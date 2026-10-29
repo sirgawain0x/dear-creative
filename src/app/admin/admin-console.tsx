@@ -258,6 +258,7 @@ export function AdminConsole() {
         <AdminLinkedInConnect
           isAdmin={session.isAdmin}
           isSignedIn={isSignedIn}
+          getAccessToken={getAccessToken}
         />
       ) : null}
       {session?.isAdmin ? (
