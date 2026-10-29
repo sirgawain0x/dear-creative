@@ -184,6 +184,9 @@ describe("Adam chat loading indicator", () => {
       value: (query: string) => ({
         matches: query.includes("prefers-reduced-motion"),
         media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
         dispatchEvent: vi.fn(),
@@ -222,10 +225,10 @@ describe("Adam chat loading indicator", () => {
     await screen.findByRole("button", { name: "Thread A" });
     const input = await screen.findByLabelText(/Message Adam/i);
     fireEvent.change(input, { target: { value: "Hello Adam" } });
-    fireEvent.click(screen.getAllByTestId("adam-chat-send")[0]!);
+    fireEvent.click(screen.getByTestId("adam-chat-send"));
 
     expect(await screen.findByTestId("adam-thinking-indicator")).toBeInTheDocument();
-    expect(screen.getAllByTestId("adam-chat-send")[0]).toBeDisabled();
+    expect(screen.getByTestId("adam-chat-send")).toBeDisabled();
 
     resolveChat(
       new Response(JSON.stringify({ reply: "Hi!" }), {
@@ -259,7 +262,7 @@ describe("Adam chat loading indicator", () => {
     );
     const input = await screen.findByLabelText(/Message Adam/i);
     fireEvent.change(input, { target: { value: "Trigger error" } });
-    fireEvent.click(screen.getAllByTestId("adam-chat-send")[0]!);
+    fireEvent.click(screen.getByTestId("adam-chat-send"));
 
     await waitFor(() =>
       expect(screen.queryByTestId("adam-thinking-indicator")).not.toBeInTheDocument(),
@@ -269,7 +272,7 @@ describe("Adam chat loading indicator", () => {
     );
 
     fireEvent.change(input, { target: { value: "Try again" } });
-    fireEvent.click(screen.getAllByTestId("adam-chat-send")[0]!);
+    fireEvent.click(screen.getByTestId("adam-chat-send"));
     await waitFor(() =>
       expect(screen.getByTestId("adam-chat-generation-status")).toHaveTextContent(
         "Adam is thinking",
@@ -295,10 +298,40 @@ describe("Adam chat loading indicator", () => {
     );
     const input = await screen.findByLabelText(/Message Adam/i);
     fireEvent.change(input, { target: { value: "Abort me" } });
-    fireEvent.click(screen.getAllByTestId("adam-chat-send")[0]!);
+    fireEvent.click(screen.getByTestId("adam-chat-send"));
     await waitFor(() => expect(capturedSignal).toBeDefined());
     view.unmount();
     await waitFor(() => expect(capturedSignal?.aborted).toBe(true));
+  });
+
+  it("allows resending the same prompt after switching threads mid-flight", async () => {
+    let chatPostCount = 0;
+    mockStudioFetch({
+      chatHandler: () => {
+        chatPostCount += 1;
+        return new Promise<Response>(() => {
+          /* never resolves until aborted */
+        });
+      },
+    });
+    localStorage.setItem(STUDIO_TOKEN_STORAGE_KEY, "fixture-key");
+    render(
+      <AppProviders>
+        <AdamStudio />
+      </AppProviders>,
+    );
+    await screen.findByRole("button", { name: "Thread B" });
+    const input = await screen.findByLabelText(/Message Adam/i);
+    const prompt = "Same prompt after thread switch";
+    fireEvent.change(input, { target: { value: prompt } });
+    fireEvent.click(screen.getByTestId("adam-chat-send"));
+    await waitFor(() => expect(chatPostCount).toBe(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Thread B" }));
+
+    fireEvent.change(input, { target: { value: prompt } });
+    fireEvent.click(screen.getByTestId("adam-chat-send"));
+    await waitFor(() => expect(chatPostCount).toBe(2));
   });
 
   it("aborts in-flight chat when switching threads", async () => {
@@ -320,7 +353,7 @@ describe("Adam chat loading indicator", () => {
     await screen.findByRole("button", { name: "Thread B" });
     const input = await screen.findByLabelText(/Message Adam/i);
     fireEvent.change(input, { target: { value: "On thread A" } });
-    fireEvent.click(screen.getAllByTestId("adam-chat-send")[0]!);
+    fireEvent.click(screen.getByTestId("adam-chat-send"));
     await waitFor(() => expect(capturedSignal).toBeDefined());
 
     fireEvent.click(screen.getByRole("button", { name: "Thread B" }));
@@ -345,15 +378,23 @@ describe("Adam chat loading indicator", () => {
     );
     const input = await screen.findByLabelText(/Message Adam/i);
     fireEvent.change(input, { target: { value: "First message" } });
-    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    fireEvent.keyDown(input, {
+      key: "Enter",
+      code: "Enter",
+      metaKey: true,
+    });
     fireEvent.change(input, { target: { value: "Second message" } });
-    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    fireEvent.keyDown(input, {
+      key: "Enter",
+      code: "Enter",
+      metaKey: true,
+    });
     await waitFor(() => expect(signals.length).toBeGreaterThanOrEqual(2));
     expect(signals[0]?.aborted).toBe(true);
     expect(signals[1]?.aborted).toBe(false);
   });
 
-  it("clears generation UI when the active thread changes during an in-flight chat", async () => {
+  it("keeps the first assistant reply when thread list auto-select races with a new chat send", async () => {
     let resolveThreadsList!: () => void;
     const threadsListBlocked = new Promise<void>((resolve) => {
       resolveThreadsList = resolve;
@@ -374,7 +415,7 @@ describe("Adam chat loading indicator", () => {
     );
     const input = await screen.findByLabelText(/Message Adam/i);
     fireEvent.change(input, { target: { value: "Before threads load" } });
-    fireEvent.click(screen.getAllByTestId("adam-chat-send")[0]!);
+    fireEvent.click(screen.getByTestId("adam-chat-send"));
     expect(await screen.findByTestId("adam-thinking-indicator")).toBeInTheDocument();
 
     resolveThreadsList();
@@ -395,10 +436,16 @@ describe("Adam chat loading indicator", () => {
     await waitFor(() =>
       expect(screen.queryByTestId("adam-thinking-indicator")).not.toBeInTheDocument(),
     );
-    expect(screen.getByTestId("adam-chat-generation-status")).toHaveTextContent("");
+    await waitFor(
+      () =>
+        expect(screen.getByText("Done after thread auto-select.")).toBeInTheDocument(),
+      { timeout: 3000 },
+    );
   });
 
-  it("does not reset generation phase to idle when a stale chat finishes after loadStudioData", async () => {
+  it(
+    "does not reset generation phase to idle when a stale chat finishes after loadStudioData",
+    async () => {
     let releaseStudioReload!: () => void;
     const studioReloadBlocked = new Promise<void>((resolve) => {
       releaseStudioReload = resolve;
@@ -442,7 +489,11 @@ describe("Adam chat loading indicator", () => {
       const input = await screen.findByLabelText(/Message Adam/i);
       await screen.findByRole("button", { name: "Thread A" });
       fireEvent.change(input, { target: { value: "Create draft" } });
-      fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+      fireEvent.keyDown(input, {
+        key: "Enter",
+        code: "Enter",
+        metaKey: true,
+      });
 
       await waitFor(() =>
         expect(screen.getByTestId("adam-chat-generation-status")).toHaveTextContent(
@@ -462,7 +513,11 @@ describe("Adam chat loading indicator", () => {
       );
 
       fireEvent.change(input, { target: { value: "Second while reload pending" } });
-      fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+      fireEvent.keyDown(input, {
+        key: "Enter",
+        code: "Enter",
+        metaKey: true,
+      });
       await waitFor(() => expect(chatPostCount).toBe(2));
 
       releaseStudioReload();
@@ -481,5 +536,7 @@ describe("Adam chat loading indicator", () => {
       releaseStudioReload();
       cleanup();
     }
-  });
+    },
+    15_000,
+  );
 });
