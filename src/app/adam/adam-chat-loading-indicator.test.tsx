@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AdamStudio } from "./adam-studio";
 import {
@@ -458,17 +458,17 @@ describe("Adam chat loading indicator", () => {
     await waitFor(() => expect(chatPostCount).toBe(2));
 
     releaseStudioReload();
-    // Allow the stale request to finish `await loadStudioData()`; without
+    // Let the stale request finish `await loadStudioData()`; without
     // `isCurrentRequest` guards this window clears the second send's UI.
-    await waitFor(
-      async () => {
-        await new Promise((r) => setTimeout(r, 50));
+    await act(async () => {
+      for (let i = 0; i < 8; i++) {
+        await new Promise((r) => setTimeout(r, 25));
         expect(screen.getByTestId("adam-chat-generation-status")).toHaveTextContent(
           "Adam is thinking",
         );
         expect(screen.getByTestId("adam-thinking-indicator")).toBeInTheDocument();
-      },
-      { timeout: 500 },
-    );
+      }
+    });
+    cleanup();
   });
 });
