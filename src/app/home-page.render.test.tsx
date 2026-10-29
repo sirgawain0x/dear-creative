@@ -31,6 +31,13 @@ vi.mock("@/components/home/active-subscriber-line", () => ({
 
 vi.mock("@/components/home/home-subscribe-cta", () => ({
   HomeSubscribeCta: () => <div data-testid="home-subscribe-cta" />,
+  HOME_SUBSCRIBE_SECTION_ID: "subscribe",
+}));
+
+const mockUsePathname = vi.fn(() => "/");
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => mockUsePathname(),
 }));
 
 vi.mock("@/components/home/home-about-section", () => ({
@@ -72,9 +79,10 @@ describe("Home page (rendered)", () => {
     const Home = (await import("./page")).default;
     render(<Home />);
     expect(screen.getByRole("heading", { name: /^Dear Creative$/i })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /Explore Dispatches/i })).toHaveAttribute(
+    expect(screen.queryByRole("link", { name: /Explore Dispatches/i })).toBeNull();
+    expect(screen.getByRole("link", { name: /Subscribe Free/i })).toHaveAttribute(
       "href",
-      "/posts",
+      "#subscribe",
     );
     expect(screen.queryByText(NEWSLETTER_POSTAL_ADDRESS)).toBeNull();
     expect(screen.queryByText(/Dover, Delaware/i)).toBeNull();

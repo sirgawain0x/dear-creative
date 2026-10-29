@@ -28,7 +28,6 @@ export const SITE_NAV_LINKS: readonly SiteNavLink[] = [
     homeSubscribeAnchor: true,
   },
   { href: "/adam", label: "Studio", matchPrefix: true, requiresAuth: true },
-  { href: "/approvals", label: "Approvals", matchPrefix: true, requiresAuth: true },
   { href: "/admin", label: "Sign In", matchPrefix: true },
 ] as const;
 
