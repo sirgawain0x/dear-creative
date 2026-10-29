@@ -47,6 +47,7 @@ describe("requirePublishedPostBySlug", () => {
       publishedAt: "2024-01-01T00:00:00.000Z",
       canonicalUrl: null,
       bodyHtml: "<p>Hi</p>",
+      isGated: false,
     });
 
     const post = await requirePublishedPostBySlug("live-post");

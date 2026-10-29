@@ -23,6 +23,7 @@ function samplePost(
     readingTimeLabel: "3 min read",
     topic: "onchain-culture",
     bodyHtml: "<p>Body</p>",
+    isGated: false,
     ...overrides,
   };
 }

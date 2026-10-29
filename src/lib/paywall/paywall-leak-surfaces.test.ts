@@ -104,6 +104,7 @@ describe("paywall leak surfaces", () => {
           listenMinutes: publicPost.listenMinutes,
           readingTimeLabel: publicPost.readingTimeLabel,
           topic: publicPost.topic,
+          isGated: false,
         },
       ],
     );
