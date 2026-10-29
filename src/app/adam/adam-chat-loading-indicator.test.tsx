@@ -73,6 +73,8 @@ function mockStudioFetch(options?: {
     gate: Promise<void>;
     /** Fires when that fetch reaches the gate (before `gate` settles). */
     onBlocked?: () => void;
+    /** Fires after `gate` settles and the blocked list fetch is about to respond. */
+    onGateReleased?: () => void;
   };
   /** Awaits `gate` before responding on fetch N and every later threads list fetch. */
   blockThreadsListFromFetch?: { fetchNumber: number; gate: Promise<void> };
@@ -125,6 +127,7 @@ function mockStudioFetch(options?: {
       if (blockOne && n === blockOne.fetchNumber) {
         blockOne.onBlocked?.();
         await blockOne.gate;
+        blockOne.onGateReleased?.();
       }
       const blockFrom = options?.blockThreadsListFromFetch;
       if (blockFrom && n >= blockFrom.fetchNumber) {
@@ -406,9 +409,10 @@ describe("Adam chat loading indicator", () => {
     });
     let chatPostCount = 0;
     mockStudioFetch({
-      // ideas #1 = mount loadStudioData; ideas #2 = post-draft await loadStudioData
-      blockLoadStudioDataFromIdeasFetch: {
-        fetchNumber: 2,
+      // threads #1 = mount loadStudioData; #2 = post-draft void loadChatThreads;
+      // #3 = post-draft await loadStudioData (must block this one, not #2)
+      blockThreadsListOnFetch: {
+        fetchNumber: 3,
         gate: studioReloadBlocked,
         onBlocked: awaitedStudioReloadBlocked,
       },
@@ -454,11 +458,17 @@ describe("Adam chat loading indicator", () => {
     await waitFor(() => expect(chatPostCount).toBe(2));
 
     releaseStudioReload();
-    await waitFor(() => {
-      expect(screen.getByTestId("adam-chat-generation-status")).toHaveTextContent(
-        "Adam is thinking",
-      );
-      expect(screen.getByTestId("adam-thinking-indicator")).toBeInTheDocument();
-    });
+    // Allow the stale request to finish `await loadStudioData()`; without
+    // `isCurrentRequest` guards this window clears the second send's UI.
+    await waitFor(
+      async () => {
+        await new Promise((r) => setTimeout(r, 50));
+        expect(screen.getByTestId("adam-chat-generation-status")).toHaveTextContent(
+          "Adam is thinking",
+        );
+        expect(screen.getByTestId("adam-thinking-indicator")).toBeInTheDocument();
+      },
+      { timeout: 500 },
+    );
   });
 });
