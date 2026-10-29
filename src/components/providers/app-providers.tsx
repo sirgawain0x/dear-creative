@@ -10,6 +10,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { PrivyBridgeContext, PrivyRootProvider } from "./privy-root-provider";
+import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ToastProvider } from "@/components/ui/toast";
 import { isReaderWalletE2eSessionActive } from "@/lib/wallet/reader-wallet-e2e-auth";
 
@@ -254,7 +255,9 @@ export function AppProviders({
     return (
       <AuthRuntimeConfigContext.Provider value={contextValue}>
         <StudioTokenProvider>
-          <ToastProvider>{children}</ToastProvider>
+          <ThemeProvider>
+            <ToastProvider>{children}</ToastProvider>
+          </ThemeProvider>
         </StudioTokenProvider>
       </AuthRuntimeConfigContext.Provider>
     );
@@ -264,7 +267,9 @@ export function AppProviders({
     <AuthRuntimeConfigContext.Provider value={contextValue}>
       <StudioTokenProvider>
         <PrivyRootProvider appId={resolvedAppId}>
-          <ToastProvider>{children}</ToastProvider>
+          <ThemeProvider>
+            <ToastProvider>{children}</ToastProvider>
+          </ThemeProvider>
         </PrivyRootProvider>
       </StudioTokenProvider>
     </AuthRuntimeConfigContext.Provider>
