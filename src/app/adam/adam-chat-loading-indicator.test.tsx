@@ -304,6 +304,36 @@ describe("Adam chat loading indicator", () => {
     await waitFor(() => expect(capturedSignal?.aborted).toBe(true));
   });
 
+  it("allows resending the same prompt after switching threads mid-flight", async () => {
+    let chatPostCount = 0;
+    mockStudioFetch({
+      chatHandler: () => {
+        chatPostCount += 1;
+        return new Promise<Response>(() => {
+          /* never resolves until aborted */
+        });
+      },
+    });
+    localStorage.setItem(STUDIO_TOKEN_STORAGE_KEY, "fixture-key");
+    render(
+      <AppProviders>
+        <AdamStudio />
+      </AppProviders>,
+    );
+    await screen.findByRole("button", { name: "Thread B" });
+    const input = await screen.findByLabelText(/Message Adam/i);
+    const prompt = "Same prompt after thread switch";
+    fireEvent.change(input, { target: { value: prompt } });
+    fireEvent.click(screen.getByTestId("adam-chat-send"));
+    await waitFor(() => expect(chatPostCount).toBe(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Thread B" }));
+
+    fireEvent.change(input, { target: { value: prompt } });
+    fireEvent.click(screen.getByTestId("adam-chat-send"));
+    await waitFor(() => expect(chatPostCount).toBe(2));
+  });
+
   it("aborts in-flight chat when switching threads", async () => {
     let capturedSignal: AbortSignal | undefined;
     mockStudioFetch({

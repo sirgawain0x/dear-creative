@@ -1121,6 +1121,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
     chatRequestEpochRef.current += 1;
     chatAbortControllerRef.current?.abort();
     chatAbortControllerRef.current = null;
+    chatInFlightDispatchKeyRef.current = null;
     if (options?.resetUi !== false) {
       setChatGenerationPhase("idle");
       setPendingAssistantContent("");
@@ -1302,7 +1303,12 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
         forceCreateDraft: Boolean(options.forceCreateDraft),
         forceGenerateBanner: Boolean(options.forceGenerateBanner),
       });
-      if (chatInFlightDispatchKeyRef.current === dispatchKey) return;
+      if (
+        chatInFlightDispatchKeyRef.current === dispatchKey &&
+        chatAbortControllerRef.current !== null
+      ) {
+        return;
+      }
 
       const userMessage: StudioChatMessage = {
         role: "user",
@@ -1321,7 +1327,10 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
       const currentAttachments = [...chatAttachments];
       setChatInput("");
       setChatAttachments([]);
-      chatAbortControllerRef.current?.abort();
+      if (chatAbortControllerRef.current) {
+        chatAbortControllerRef.current.abort();
+        chatInFlightDispatchKeyRef.current = null;
+      }
       const requestEpoch = ++chatRequestEpochRef.current;
       const threadAtRequest = activeThreadIdRef.current;
       const abortController = new AbortController();
