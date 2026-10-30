@@ -258,9 +258,10 @@ export function SiteHeader({
               const isAuthAction = link.href === "/admin";
               const label = isAuthAction && isSignedIn ? "Sign Out" : link.label;
 
-              if (isAuthAction && hideNavSignInForReaderWallet) {
-                return null;
-              }
+              // Mobile menu is the only auth entry point on small screens:
+              // the reader wallet button no longer sits in the top bar, so
+              // the desktop-only hideNavSignInForReaderWallet rule must not
+              // suppress Sign In here (issue #121).
 
               if (isAuthAction && isSignedIn) {
                 return (
