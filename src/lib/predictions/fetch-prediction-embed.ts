@@ -12,6 +12,7 @@ import {
 } from "@/lib/predictions/parse-prediction-display";
 import {
   resolveOracleChain,
+  resolveOracleNetworkId,
   resolveOracleRpcUrl,
 } from "@/lib/predictions/oracle-chain";
 import { resolveRealityEthContractAddress } from "@/lib/predictions/reality-eth-address";
@@ -70,18 +71,18 @@ function normalizeQuestionId(raw: string): Hex | null {
 
 function deriveStatus(input: {
   isFinalized: boolean;
-  openingTs: number;
   bondWei: bigint;
   bestAnswer: Hex;
-  nowSec: number;
 }): PredictionEmbedStatus {
   if (input.isFinalized) return "finalized";
+  // "Bonding" means answers are actively being bonded. A market whose
+  // opening time has passed but which has no answers yet is still open —
+  // elapsed time alone is not bonding activity.
   const hasActivity =
     input.bondWei > BigInt(0) ||
     (input.bestAnswer.toLowerCase() !== ZERO_ANSWER &&
       input.bestAnswer !== "0x");
-  if (hasActivity || input.nowSec >= input.openingTs) return "bonding";
-  return "open";
+  return hasActivity ? "bonding" : "open";
 }
 
 export function createDefaultPredictionEmbedReader(): PredictionEmbedReader {
@@ -95,6 +96,12 @@ export function createDefaultPredictionEmbedReader(): PredictionEmbedReader {
   return createPredictionEmbedReaderFromClient(
     client as unknown as EmbedChainClient,
     address,
+    {
+      logScanFloorBlock:
+        resolveOracleNetworkId() === "base"
+          ? REALITY_ETH_BASE_DEPLOYMENT_BLOCK
+          : BigInt(0),
+    },
   );
 }
 
@@ -103,11 +110,92 @@ type EmbedChainClient = {
   getLogs: (
     args: unknown,
   ) => Promise<Array<{ args?: Record<string, unknown> }>>;
+  getBlockNumber?: () => Promise<bigint>;
 };
+
+type EmbedLog = { args?: Record<string, unknown> };
+
+// RealityETH-3.0 on Base was deployed at this block (per Creative TV's
+// subgraph config for the same contract), so LogNewQuestion events for this
+// contract cannot exist below it.
+export const REALITY_ETH_BASE_DEPLOYMENT_BLOCK = BigInt(26_260_675);
+// Providers (Alchemy, public Base RPC) reject eth_getLogs ranges much above
+// ~10k blocks, so an unbounded from-genesis scan always fails. Scan backwards
+// from the latest block in provider-safe windows instead.
+export const LOG_SCAN_WINDOW_BLOCKS = BigInt(10_000);
+// Total span covered: 200 windows * 10k blocks = 2M blocks (~46 days on
+// Base). Posts embed recently created markets; anything older degrades to
+// the plain fallback link. A subgraph/indexer is the long-term source for
+// question text (Creative TV itself uses one) — tracked as follow-up.
+export const LOG_SCAN_MAX_WINDOWS = 200;
+const LOG_SCAN_BATCH = 8;
+
+/**
+ * Find the LogNewQuestion event for `questionId` without an unbounded
+ * genesis scan. Windows are scanned newest-first in parallel batches; the
+ * creation event is unique, so the first hit is the answer. Returns null
+ * when no event exists at or above `floorBlock` within the scan budget.
+ * Throws on RPC failure so the caller fails closed.
+ */
+async function findNewQuestionLog(
+  client: EmbedChainClient,
+  contractAddress: Address,
+  questionId: Hex,
+  floorBlock: bigint,
+): Promise<EmbedLog | null> {
+  if (typeof client.getBlockNumber !== "function") {
+    // Minimal injected clients (tests) keep the single-call behavior.
+    const logs = await client.getLogs({
+      address: contractAddress,
+      event: LOG_NEW_QUESTION_EVENT,
+      args: { question_id: questionId },
+      fromBlock: floorBlock,
+    });
+    return logs[0] ?? null;
+  }
+
+  const latest = await client.getBlockNumber();
+  let cursor = latest;
+  let windows = 0;
+  while (cursor >= floorBlock && windows < LOG_SCAN_MAX_WINDOWS) {
+    const batch: Array<{ fromBlock: bigint; toBlock: bigint }> = [];
+    while (
+      batch.length < LOG_SCAN_BATCH &&
+      cursor >= floorBlock &&
+      windows + batch.length < LOG_SCAN_MAX_WINDOWS
+    ) {
+      const fromBlock =
+        cursor - LOG_SCAN_WINDOW_BLOCKS + BigInt(1) < floorBlock
+          ? floorBlock
+          : cursor - LOG_SCAN_WINDOW_BLOCKS + BigInt(1);
+      batch.push({ fromBlock, toBlock: cursor });
+      cursor = fromBlock - BigInt(1);
+    }
+    if (batch.length === 0) break;
+    windows += batch.length;
+    const results = await Promise.all(
+      batch.map((range) =>
+        client.getLogs({
+          address: contractAddress,
+          event: LOG_NEW_QUESTION_EVENT,
+          args: { question_id: questionId },
+          fromBlock: range.fromBlock,
+          toBlock: range.toBlock,
+        }),
+      ),
+    );
+    // Batch windows are newest-first; the creation event is unique.
+    for (const logs of results) {
+      if (logs[0]) return logs[0];
+    }
+  }
+  return null;
+}
 
 export function createPredictionEmbedReaderFromClient(
   client: EmbedChainClient,
   contractAddress: Address,
+  opts?: { logScanFloorBlock?: bigint },
 ): PredictionEmbedReader {
   return {
     async getQuestionState(questionId) {
@@ -151,18 +239,18 @@ export function createPredictionEmbedReaderFromClient(
         // truthfully — return null so the caller falls back to the plain
         // "View on Creative TV" link instead of an untitled card with
         // default outcomes.
-        const logs = await client.getLogs({
-          address: contractAddress,
-          event: LOG_NEW_QUESTION_EVENT,
-          args: { question_id: questionId },
-          fromBlock: BigInt(0),
-        });
+        const log = await findNewQuestionLog(
+          client,
+          contractAddress,
+          questionId,
+          opts?.logScanFloorBlock ?? BigInt(0),
+        );
         const questionText =
-          (logs[0]?.args as { question?: string } | undefined)?.question ?? "";
+          (log?.args as { question?: string } | undefined)?.question ?? "";
         if (!questionText) {
           return null;
         }
-        const tid = (logs[0]?.args as { template_id?: bigint }).template_id;
+        const tid = (log?.args as { template_id?: bigint }).template_id;
         const templateId = tid != null ? Number(tid) : null;
 
         return {
@@ -236,13 +324,10 @@ export async function fetchPredictionEmbed(
     const parsed = parsePredictionDisplay(state.questionText, state.templateId);
 
     const finalized = await reader.isFinalized(questionId);
-    const nowSec = Math.floor(Date.now() / 1000);
     const status = deriveStatus({
       isFinalized: finalized,
-      openingTs: state.openingTs,
       bondWei: state.bondWei,
       bestAnswer: state.bestAnswer,
-      nowSec,
     });
 
     let resultLabel: string | null = null;

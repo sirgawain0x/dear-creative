@@ -4,6 +4,7 @@ import {
   type PredictionEmbedData,
 } from "@/lib/predictions/fetch-prediction-embed";
 import {
+  extractPredictionEmbedSlots,
   splitPostBodyByPredictionEmbeds,
   transformPredictionLinksInArticleHtml,
   type PredictionEmbedSlot,
@@ -33,7 +34,20 @@ export async function PostBodyWithPredictions({
 }: {
   bodyHtml: string;
 }) {
-  const { html: withSlots, slots } = transformPredictionLinksInArticleHtml(bodyHtml);
+  const { html: withSlots, slots: transformSlots } =
+    transformPredictionLinksInArticleHtml(bodyHtml);
+  // Bodies stored from markdown already contain dear-prediction-embed
+  // placeholders; the transform only reports slots for links it rewrote.
+  // Merge in the pre-existing placeholders so their chain data is fetched
+  // too — otherwise those cards always render without data.
+  const slots = [...transformSlots];
+  const seen = new Set(slots.map((slot) => slot.questionId));
+  for (const slot of extractPredictionEmbedSlots(bodyHtml)) {
+    if (!seen.has(slot.questionId)) {
+      seen.add(slot.questionId);
+      slots.push(slot);
+    }
+  }
   const embedData = slots.length > 0 ? await loadEmbeds(slots) : new Map();
   const segments = splitPostBodyByPredictionEmbeds(withSlots);
 

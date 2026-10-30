@@ -84,6 +84,36 @@ describe("fetch-prediction-embed", () => {
     expect(result.ok).toBe(false);
   });
 
+  it("marks open (not bonding) when past opening with no answers yet", async () => {
+    const viewUrl = `https://tv.creativeplatform.xyz/predict/${Q}`;
+    const result = await fetchPredictionEmbed(
+      Q,
+      viewUrl,
+      mockReader({
+        async getQuestionState() {
+          return {
+            questionText: `Will it rain?\u241f["No","Yes"]\u241fgeneral\u241fen_US`,
+            templateId: 0,
+            openingTs: 1_700_000_000,
+            timeoutSec: 86_400,
+            finalizeTs: 0,
+            minBondWei: BigInt("1000000000000000"),
+            bondWei: BigInt(0),
+            bestAnswer:
+              "0x0000000000000000000000000000000000000000000000000000000000000000",
+          };
+        },
+        async isFinalized() {
+          return false;
+        },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.status).toBe("open");
+    }
+  });
+
   it("marks bonding when not finalized but bond is active", async () => {
     const viewUrl = `https://tv.creativeplatform.xyz/predict/${Q}`;
     const result = await fetchPredictionEmbed(
@@ -184,5 +214,80 @@ describe("createPredictionEmbedReaderFromClient", () => {
     const state = await reader.getQuestionState(Q);
     expect(state?.questionText).toContain("Will it rain?");
     expect(state?.templateId).toBe(0);
+  });
+});
+
+describe("windowed LogNewQuestion scan", () => {
+  const CREATED_BLOCK = BigInt(55_000);
+  const LATEST_BLOCK = BigInt(100_000);
+
+  function windowedClient(overrides?: { logsError?: boolean }) {
+    const ranges: Array<{ fromBlock: bigint; toBlock: bigint }> = [];
+    const client = {
+      ranges,
+      async readContract() {
+        return questionTuple(`0x${"ab".repeat(32)}`);
+      },
+      async getBlockNumber() {
+        return LATEST_BLOCK;
+      },
+      async getLogs(rawArgs: unknown) {
+        const args = rawArgs as { fromBlock: bigint; toBlock: bigint };
+        if (overrides?.logsError) throw new Error("range too large");
+        ranges.push({ fromBlock: args.fromBlock, toBlock: args.toBlock });
+        if (args.fromBlock <= CREATED_BLOCK && CREATED_BLOCK <= args.toBlock) {
+          return [
+            {
+              args: {
+                question: `Will it rain?\u241f["No","Yes"]\u241fgeneral\u241fen_US`,
+                template_id: BigInt(0),
+              },
+            },
+          ];
+        }
+        return [];
+      },
+    };
+    return client;
+  }
+
+  it("finds the event in an older window using provider-safe ranges", async () => {
+    const client = windowedClient();
+    const reader = createPredictionEmbedReaderFromClient(client, CONTRACT);
+    const state = await reader.getQuestionState(Q);
+    expect(state?.questionText).toContain("Will it rain?");
+    expect(client.ranges.length).toBeGreaterThan(1);
+    for (const range of client.ranges) {
+      expect(range.toBlock - range.fromBlock).toBeLessThan(BigInt(10_000));
+      expect(range.fromBlock).toBeGreaterThanOrEqual(BigInt(0));
+    }
+  });
+
+  it("returns null when the event is beyond the scan budget", async () => {
+    let calls = 0;
+    const client = {
+      async readContract() {
+        return questionTuple(`0x${"ab".repeat(32)}`);
+      },
+      async getBlockNumber() {
+        return BigInt(3_000_000);
+      },
+      async getLogs() {
+        calls++;
+        return [] as Array<{ args?: Record<string, unknown> }>;
+      },
+    };
+    const reader = createPredictionEmbedReaderFromClient(client, CONTRACT);
+    expect(await reader.getQuestionState(Q)).toBeNull();
+    expect(calls).toBeLessThanOrEqual(200);
+    expect(calls).toBeGreaterThan(0);
+  });
+
+  it("returns null when a window scan errors", async () => {
+    const reader = createPredictionEmbedReaderFromClient(
+      windowedClient({ logsError: true }),
+      CONTRACT,
+    );
+    expect(await reader.getQuestionState(Q)).toBeNull();
   });
 });
