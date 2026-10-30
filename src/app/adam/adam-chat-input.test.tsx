@@ -160,8 +160,13 @@ describe("Adam chat input", () => {
     fireEvent.change(input, { target: { value: "Hello Adam" } });
     fireEvent.click(screen.getByTestId("adam-chat-send"));
     await waitFor(() => expect(chatPostCount).toBe(1));
-    await waitFor(() =>
-      expect(screen.getByText("Sent once.")).toBeInTheDocument(),
+    // The reply render can exceed waitFor's 1s default under full-suite /
+    // CI load, which made this test flaky (failed ~half of local runs and
+    // intermittently in CI). Give the render assertion a longer budget;
+    // the behavior under test (one POST, reply shown) is unchanged.
+    await waitFor(
+      () => expect(screen.getByText("Sent once.")).toBeInTheDocument(),
+      { timeout: 10_000 },
     );
   });
 
