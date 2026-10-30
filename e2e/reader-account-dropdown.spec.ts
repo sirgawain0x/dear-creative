@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 const SITE_HEADER_FIXTURE = "/reader/site-header-fixture";
+const ACCOUNT_DROPDOWN_FIXTURE = "/reader/account-dropdown-fixture";
 
 test.describe("Reader account dropdown on site header", () => {
   test("signed-out mobile: Sign In lives in the hamburger menu, not the top bar", async ({
@@ -27,7 +28,12 @@ test.describe("Reader account dropdown on site header", () => {
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(SITE_HEADER_FIXTURE, { waitUntil: "domcontentloaded" });
+    // The site header no longer hosts the mobile account dropdown (#121),
+    // so exercise the dropdown's mobile sheet on its dedicated fixture,
+    // which renders the mobile surface at this width.
+    await page.goto(ACCOUNT_DROPDOWN_FIXTURE, {
+      waitUntil: "domcontentloaded",
+    });
 
     const trigger = page.getByRole("button", { name: "Open account menu" });
     await expect(trigger).toBeVisible({ timeout: 15_000 });
