@@ -114,20 +114,6 @@ describe("Adam chat input", () => {
     cleanup();
     localStorage.clear();
     vi.restoreAllMocks();
-    Object.defineProperty(window, "matchMedia", {
-      writable: true,
-      configurable: true,
-      value: (query: string) => ({
-        matches: query.includes("prefers-reduced-motion"),
-        media: query,
-        onchange: null,
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      }),
-    });
   });
 
   it("plain Enter does not send (Shift+Enter also does not send)", async () => {
