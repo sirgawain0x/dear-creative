@@ -4,6 +4,7 @@ import {
   generateVideoEmbedHtml,
   isSupportedVideoUrl,
 } from "./video-embed";
+import { parseCreativeTvPredictionUrl } from "@/lib/predictions/creative-tv-prediction-link";
 
 function escapeHtml(text: string): string {
   return text
@@ -186,6 +187,19 @@ export function renderMarkdownToSafeHtml(markdown: string): string {
         i++;
         continue;
       }
+    }
+
+    const predictionLink = parseCreativeTvPredictionUrl(cleanLine);
+    // Standalone embed only when the line is exactly the predict URL (like
+    // the X/video handlers above). The parser is unanchored, so without this
+    // check a sentence containing a predict URL would be replaced wholesale
+    // by the embed placeholder, dropping the surrounding text.
+    if (predictionLink && predictionLink.matchedUrl === cleanLine) {
+      blocks.push(
+        `<div class="dear-prediction-embed" data-question-id="${predictionLink.questionId}" data-view-url="${predictionLink.viewUrl}"></div>`,
+      );
+      i++;
+      continue;
     }
 
     // Headings (#, ##, ###, ####+) -> mapped to h2, h3, h4 allowed by sanitizeArticleHtml

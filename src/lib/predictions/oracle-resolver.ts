@@ -22,26 +22,15 @@ import {
   resolveOracleChain,
   resolveOracleRpcUrl,
 } from "@/lib/predictions/oracle-chain";
+import {
+  REALITY_ETH_BASE_MAINNET,
+  resolveRealityEthContractAddress,
+} from "@/lib/predictions/reality-eth-address";
+import { REALITY_ETH_ORACLE_ABI } from "@/lib/predictions/reality-eth-embed-abi";
 
-export const REALITY_ETH_BASE_MAINNET =
-  "0x446e545A6d0429718429B57c9135061413a2F44a" as const;
+export { REALITY_ETH_BASE_MAINNET };
 
-export const REALITY_ETH_ABI = [
-  {
-    inputs: [{ name: "question_id", type: "bytes32" }],
-    name: "isFinalized",
-    outputs: [{ name: "", type: "bool" }],
-    stateMutability: "view",
-    type: "function",
-  },
-  {
-    inputs: [{ name: "question_id", type: "bytes32" }],
-    name: "resultFor",
-    outputs: [{ name: "", type: "bytes32" }],
-    stateMutability: "view",
-    type: "function",
-  },
-] as const;
+export const REALITY_ETH_ABI = REALITY_ETH_ORACLE_ABI;
 
 export interface OracleContractReader {
   isFinalized(questionId: Hex): Promise<boolean>;
@@ -50,9 +39,7 @@ export interface OracleContractReader {
 
 export function createDefaultOracleReader(): OracleContractReader {
   const chain = resolveOracleChain();
-  const contractAddress = (
-    process.env.REALITY_ETH_ADDRESS || REALITY_ETH_BASE_MAINNET
-  ) as Address;
+  const contractAddress = resolveRealityEthContractAddress() as Address;
 
   const rpcUrl = resolveOracleRpcUrl();
 

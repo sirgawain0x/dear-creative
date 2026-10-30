@@ -1,4 +1,5 @@
 import sanitizeHtml from "sanitize-html";
+import { resolveTrustedPredictionViewUrl } from "@/lib/predictions/creative-tv-prediction-link";
 import { resolveGroveOrIpfsUrl } from "@/lib/storage/lens-grove";
 import { decodeHtmlEntitiesOnce } from "./decode-html-entities-once";
 
@@ -119,7 +120,7 @@ export function sanitizeArticleHtml(raw: string): string {
       a: ["href", "rel", "class", "target"],
       img: ["src", "alt", "loading", "class", "width", "height"],
       blockquote: ["class", "data-dnt", "cite"],
-      div: ["class"],
+      div: ["class", "data-question-id", "data-view-url"],
       span: ["class"],
       p: ["class"],
       iframe: [
@@ -209,10 +210,26 @@ export function sanitizeArticleHtml(raw: string): string {
           .split(/\s+/)
           .filter((c) => /^[a-zA-Z0-9_-]+$/.test(c))
           .join(" ");
+        const isPredictionEmbed = safeClass
+          .split(/\s+/)
+          .includes("dear-prediction-embed");
+        const questionId = attribs["data-question-id"]?.trim() ?? "";
+        const viewUrl = attribs["data-view-url"]?.trim() ?? "";
+        const safeQuestionId = /^0x[a-fA-F0-9]{64}$/.test(questionId)
+          ? questionId.toLowerCase()
+          : undefined;
+        // Only trusted Creative TV URLs for this exact question may ride on
+        // an embed placeholder; anything else becomes the canonical TV URL.
+        const safeViewUrl =
+          isPredictionEmbed && safeQuestionId
+            ? resolveTrustedPredictionViewUrl(safeQuestionId, viewUrl)
+            : undefined;
         return {
           tagName,
           attribs: {
             ...(safeClass ? { class: safeClass } : {}),
+            ...(safeQuestionId ? { "data-question-id": safeQuestionId } : {}),
+            ...(safeViewUrl ? { "data-view-url": safeViewUrl } : {}),
           },
         };
       },

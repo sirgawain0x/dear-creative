@@ -114,6 +114,27 @@ describe("renderMarkdownToSafeHtml & ensureArticleHtml", () => {
     expect(html).toContain('title="Creative TV Player"');
   });
 
+  it("embeds standalone Creative TV predict URLs", () => {
+    const q =
+      "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+    const html = renderMarkdownToSafeHtml(
+      `https://tv.creativeplatform.xyz/predict/${q}`,
+    );
+    expect(html).toContain("dear-prediction-embed");
+    expect(html).toContain(`data-question-id="${q}"`);
+  });
+
+  it("keeps sentence text around an inline predict URL instead of embedding", () => {
+    const q =
+      "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+    const html = renderMarkdownToSafeHtml(
+      `Will it rain tomorrow? https://tv.creativeplatform.xyz/predict/${q} — place your bets`,
+    );
+    expect(html).not.toContain("dear-prediction-embed");
+    expect(html).toContain("Will it rain tomorrow?");
+    expect(html).toContain("place your bets");
+  });
+
   it("converts explicit [video](url) and [creative-tv](url) markdown syntax", () => {
     const md = [
       "[video: Live Broadcast](https://lvpr.tv/?v=c7b744p7j8l7m7k9)",
