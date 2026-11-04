@@ -5,6 +5,7 @@ import { checkRateLimit } from "@/lib/rate-limit/memory";
 import { getResendClient, getResendFromAddress } from "@/lib/resend/client";
 import { requireHumanVisitor } from "@/lib/botid/verify";
 import { getRequiredPublicSiteUrl } from "@/lib/site/public-origin";
+import { sanitizeSignupSrc } from "@/lib/subscribers/signup-src";
 import { requestSubscription } from "@/lib/subscribers/subscribe";
 import { SUBSCRIBE_HTTP_ACK } from "@/lib/subscribers/subscribe-response";
 
@@ -39,9 +40,9 @@ export async function POST(request: Request) {
     );
   }
 
-  let body: { email?: string };
+  let body: { email?: string; signupSrc?: string | null };
   try {
-    body = (await request.json()) as { email?: string };
+    body = (await request.json()) as { email?: string; signupSrc?: string | null };
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -67,13 +68,19 @@ export async function POST(request: Request) {
     );
   }
 
-  await requestSubscription(email, {
-    db: getDb(),
-    resend: getResendClient(),
-    tokenSecret,
-    siteOrigin,
-    resendFrom: getResendFromAddress() ?? "newsletter@example.test",
-  });
+  const signupSrc = sanitizeSignupSrc(body.signupSrc);
+
+  await requestSubscription(
+    email,
+    {
+      db: getDb(),
+      resend: getResendClient(),
+      tokenSecret,
+      siteOrigin,
+      resendFrom: getResendFromAddress() ?? "newsletter@example.test",
+    },
+    { signupSrc },
+  );
 
   return NextResponse.json(SUBSCRIBE_HTTP_ACK);
 }

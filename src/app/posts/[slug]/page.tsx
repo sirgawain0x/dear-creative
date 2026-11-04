@@ -97,7 +97,7 @@ async function PostArticle({
             <span>⏱</span> {metrics.label}
           </span>
           <span className="text-zinc-300 dark:text-zinc-700">•</span>
-          <span className="rounded-md bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+          <span className="text-zinc-600 dark:text-zinc-400">
             {getTopicLabel(topic)}
           </span>
         </div>

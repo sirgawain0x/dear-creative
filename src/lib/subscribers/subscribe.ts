@@ -4,6 +4,7 @@ import type { DearCreativeDb } from "@/db/client";
 import { subscribers } from "@/db/schema";
 import { normalizeEmail } from "@/lib/email/validate";
 import type { ResendEmailClient } from "@/lib/resend/client";
+import { sanitizeSignupSrc } from "@/lib/subscribers/signup-src";
 import { signSubscriberToken } from "./tokens";
 
 export type SubscribeOutcome =
@@ -28,6 +29,7 @@ export type SubscribeDeps = {
 export async function requestSubscription(
   rawEmail: string,
   deps: SubscribeDeps,
+  options?: { signupSrc?: string | null },
 ): Promise<SubscribeSummary> {
   const email = normalizeEmail(rawEmail);
 
@@ -46,11 +48,13 @@ export async function requestSubscription(
   }
 
   if (!row) {
+    const signupSrc = sanitizeSignupSrc(options?.signupSrc);
     await deps.db.insert(subscribers).values({
       id: randomUUID(),
       email,
       status: "pending",
       source: "signup",
+      ...(signupSrc ? { signupSrc } : {}),
     });
   }
 

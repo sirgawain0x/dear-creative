@@ -126,6 +126,129 @@ describe("requestSubscription", () => {
     expect(summary.outcome).toBe("blocked");
   });
 
+  it("stores signupSrc only on insert when sanitized", async () => {
+    const db = await createTestDb();
+    await requestSubscription("src-new@example.test", {
+      db,
+      resend: null,
+      tokenSecret: "secret",
+      siteOrigin: "https://dear.example.test",
+      resendFrom: "news@example.test",
+    }, { signupSrc: "HashNode" });
+
+    const [row] = await db
+      .select()
+      .from(subscribers)
+      .where(eq(subscribers.email, "src-new@example.test"));
+    expect(row?.signupSrc).toBe("hashnode");
+    expect(row?.source).toBe("signup");
+  });
+
+  it("does not overwrite signupSrc on existing pending rows", async () => {
+    const db = await createTestDb();
+    await db.insert(subscribers).values({
+      id: randomUUID(),
+      email: "existing-src@example.test",
+      status: "pending",
+      source: "signup",
+      signupSrc: "ctv",
+    });
+
+    await requestSubscription("existing-src@example.test", {
+      db,
+      resend: null,
+      tokenSecret: "secret",
+      siteOrigin: "https://dear.example.test",
+      resendFrom: "news@example.test",
+    }, { signupSrc: "yt" });
+
+    const [row] = await db
+      .select()
+      .from(subscribers)
+      .where(eq(subscribers.email, "existing-src@example.test"));
+    expect(row?.signupSrc).toBe("ctv");
+  });
+
+  it("does not duplicate or overwrite signup_src for subscribed rows", async () => {
+    const db = await createTestDb();
+    const rowId = randomUUID();
+    await db.insert(subscribers).values({
+      id: rowId,
+      email: "live-src@example.test",
+      status: "subscribed",
+      source: "signup",
+      signupSrc: "ctv",
+      subscribedAt: new Date("2026-01-01T00:00:00.000Z"),
+    });
+
+    const summary = await requestSubscription(
+      "live-src@example.test",
+      {
+        db,
+        resend: null,
+        tokenSecret: "secret",
+        siteOrigin: "https://dear.example.test",
+        resendFrom: "news@example.test",
+      },
+      { signupSrc: "yt" },
+    );
+    expect(summary.outcome).toBe("already_subscribed");
+
+    const rows = await db
+      .select()
+      .from(subscribers)
+      .where(eq(subscribers.email, "live-src@example.test"));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.id).toBe(rowId);
+    expect(rows[0]?.signupSrc).toBe("ctv");
+  });
+
+  it("keeps null signup_src when an subscribed address re-requests", async () => {
+    const db = await createTestDb();
+    await db.insert(subscribers).values({
+      id: randomUUID(),
+      email: "live-null-src@example.test",
+      status: "subscribed",
+      source: "signup",
+      subscribedAt: new Date(),
+    });
+
+    await requestSubscription(
+      "live-null-src@example.test",
+      {
+        db,
+        resend: null,
+        tokenSecret: "secret",
+        siteOrigin: "https://dear.example.test",
+        resendFrom: "news@example.test",
+      },
+      { signupSrc: "hashnode" },
+    );
+
+    const [row] = await db
+      .select()
+      .from(subscribers)
+      .where(eq(subscribers.email, "live-null-src@example.test"));
+    expect(row?.signupSrc).toBeNull();
+  });
+
+  it("drops invalid signupSrc on insert", async () => {
+    const db = await createTestDb();
+    await requestSubscription("invalid-src@example.test", {
+      db,
+      resend: null,
+      tokenSecret: "secret",
+      siteOrigin: "https://dear.example.test",
+      resendFrom: "news@example.test",
+    }, { signupSrc: "!!!" });
+
+    const [row] = await db
+      .select()
+      .from(subscribers)
+      .where(eq(subscribers.email, "invalid-src@example.test"));
+    expect(row?.signupSrc).toBeNull();
+  });
+
   it("promotes pending on confirm and leaves unsubscribed alone", async () => {
     const db = await createTestDb();
     await db.insert(subscribers).values({

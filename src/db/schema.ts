@@ -162,6 +162,8 @@ export const subscribers = sqliteTable(
     source: text("source", { enum: subscriberSourceEnum })
       .notNull()
       .default("signup"),
+    /** Marketing attribution from ?src= on signup (e.g. ctv, yt, hashnode). */
+    signupSrc: text("signup_src"),
     subscribedAt: integer("subscribed_at", { mode: "timestamp_ms" }),
     unsubscribedAt: integer("unsubscribed_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" })

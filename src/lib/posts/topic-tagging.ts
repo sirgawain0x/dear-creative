@@ -1,8 +1,24 @@
+import { getTopicLabel } from "@/lib/topics/labels";
+
+export { getTopicLabel } from "@/lib/topics/labels";
+
 export const TOPIC_BUCKETS = [
   { id: "all", label: "All Topics", slug: "all" },
-  { id: "ai-ownership", label: "AI & Ownership", slug: "ai-ownership" },
-  { id: "creator-economics", label: "Creator Economics", slug: "creator-economics" },
-  { id: "onchain-culture", label: "Onchain Culture", slug: "onchain-culture" },
+  {
+    id: "ai-ownership",
+    label: getTopicLabel("ai-ownership"),
+    slug: "ai-ownership",
+  },
+  {
+    id: "creator-economics",
+    label: getTopicLabel("creator-economics"),
+    slug: "creator-economics",
+  },
+  {
+    id: "onchain-culture",
+    label: getTopicLabel("onchain-culture"),
+    slug: "onchain-culture",
+  },
 ] as const;
 
 export type TopicBucketId = "ai-ownership" | "creator-economics" | "onchain-culture";
@@ -94,8 +110,8 @@ function scoreText(text: string, keywords: string[]): number {
 /**
  * Classifies an article into one of the 3 clean buckets:
  * - "ai-ownership": AI & Ownership
- * - "creator-economics": Creator Economics
- * - "onchain-culture": Onchain Culture
+ * - "creator-economics": Getting Paid
+ * - "onchain-culture": Internet Culture
  */
 export function classifyArticleTopic(input: {
   title: string;
@@ -120,14 +136,3 @@ export function classifyArticleTopic(input: {
   return "creator-economics";
 }
 
-export function getTopicLabel(topic: TopicBucketId | string): string {
-  switch (topic) {
-    case "ai-ownership":
-      return "AI & Ownership";
-    case "onchain-culture":
-      return "Onchain Culture";
-    case "creator-economics":
-    default:
-      return "Creator Economics";
-  }
-}
