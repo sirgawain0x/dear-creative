@@ -327,7 +327,11 @@ export function AdamChatThreadHistory({
     }
 
     function handleDialogKeyDown(event: globalThis.KeyboardEvent) {
-      const focusables = getFocusableElements(panel);
+      const root = mobileDialogPanelRef.current;
+      if (!root) {
+        return;
+      }
+      const focusables = getFocusableElements(root);
       if (event.key === "Tab" && focusables.length > 0) {
         const first = focusables[0]!;
         const last = focusables[focusables.length - 1]!;
