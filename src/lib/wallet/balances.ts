@@ -26,6 +26,41 @@ function createBaseClient() {
   });
 }
 
+function logWalletBalanceFetchFailure(error: unknown): void {
+  const errorName =
+    error instanceof Error
+      ? error.name || error.constructor.name
+      : "UnknownError";
+
+  let httpStatus: number | null = null;
+  if (error && typeof error === "object" && "status" in error) {
+    const status = (error as { status?: unknown }).status;
+    if (typeof status === "number") {
+      httpStatus = status;
+    }
+  }
+
+  let message: string | null = null;
+  if (error && typeof error === "object" && "details" in error) {
+    const details = (error as { details?: unknown }).details;
+    if (typeof details === "string" && details.trim()) {
+      message = details.trim();
+    }
+  }
+  if (!message && error instanceof Error && "shortMessage" in error) {
+    const shortMessage = (error as { shortMessage?: unknown }).shortMessage;
+    if (typeof shortMessage === "string" && shortMessage.trim()) {
+      message = shortMessage.trim();
+    }
+  }
+
+  console.error("[wallet] fetch_wallet_balances_failed", {
+    errorName,
+    httpStatus,
+    message,
+  });
+}
+
 let balanceReaderOverride:
   | ((address: Address) => Promise<WalletBalances>)
   | null
@@ -48,25 +83,30 @@ export async function fetchWalletBalances(
     return balanceReaderOverride(address);
   }
 
-  const client = createBaseClient();
-  const [ethWei, usdcRaw] = await Promise.all([
-    client.getBalance({ address }),
-    client.readContract({
-      address: BASE_USDC_ADDRESS,
-      abi: erc20Abi,
-      functionName: "balanceOf",
-      args: [address],
-    }),
-  ]);
+  try {
+    const client = createBaseClient();
+    const [ethWei, usdcRaw] = await Promise.all([
+      client.getBalance({ address }),
+      client.readContract({
+        address: BASE_USDC_ADDRESS,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [address],
+      }),
+    ]);
 
-  return {
-    eth: {
-      raw: ethWei.toString(),
-      formatted: formatUnits(ethWei, 18),
-    },
-    usdc: {
-      raw: usdcRaw.toString(),
-      formatted: formatUnits(usdcRaw, USDC_DECIMALS),
-    },
-  };
+    return {
+      eth: {
+        raw: ethWei.toString(),
+        formatted: formatUnits(ethWei, 18),
+      },
+      usdc: {
+        raw: usdcRaw.toString(),
+        formatted: formatUnits(usdcRaw, USDC_DECIMALS),
+      },
+    };
+  } catch (error) {
+    logWalletBalanceFetchFailure(error);
+    throw error;
+  }
 }
