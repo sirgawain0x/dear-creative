@@ -183,7 +183,28 @@ async function runEnsurePostsSchema(db: DearCreativeDb): Promise<void> {
       }
     }
 
-    // 2. Ensure additive posts columns exist
+    // 2. Ensure additive adam_chat_threads columns (even when `posts` is absent)
+    try {
+      const threadInfo = await db.all<{ name?: string }>(
+        sql.raw("PRAGMA table_info('adam_chat_threads')"),
+      );
+      if (threadInfo?.length) {
+        const threadCols = new Set(
+          threadInfo
+            .map((r) => (typeof r.name === "string" ? r.name : ""))
+            .filter(Boolean),
+        );
+        if (!threadCols.has("owner_user_id")) {
+          await db.run(
+            sql.raw("ALTER TABLE adam_chat_threads ADD owner_user_id text"),
+          );
+        }
+      }
+    } catch {
+      // Non-fatal for unmigrated or read-only databases
+    }
+
+    // 3. Ensure additive posts columns exist
     const infoRows = await db.all<{ name?: string }>(
       sql.raw("PRAGMA table_info('posts')"),
     );
@@ -208,26 +229,6 @@ async function runEnsurePostsSchema(db: DearCreativeDb): Promise<void> {
       } catch {
         // Ignore if column was added concurrently or connection is read-only
       }
-    }
-
-    try {
-      const threadInfo = await db.all<{ name?: string }>(
-        sql.raw("PRAGMA table_info('adam_chat_threads')"),
-      );
-      if (threadInfo?.length) {
-        const threadCols = new Set(
-          threadInfo
-            .map((r) => (typeof r.name === "string" ? r.name : ""))
-            .filter(Boolean),
-        );
-        if (!threadCols.has("owner_user_id")) {
-          await db.run(
-            sql.raw("ALTER TABLE adam_chat_threads ADD owner_user_id text"),
-          );
-        }
-      }
-    } catch {
-      // Non-fatal for unmigrated or read-only databases
     }
   } catch {
     // Non-fatal: explicit column selection in queries still protects reads
