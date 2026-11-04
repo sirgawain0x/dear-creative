@@ -18,6 +18,7 @@ const COWRITERS_JOURNAL_WHEN = 1792602394384;
 const BEEHIIV_IMPORT_JOURNAL_WHEN = 1792605000000;
 const PREVIEW_LINKS_JOURNAL_WHEN = 1792610000000;
 const AUTHOR_TAGLINE_JOURNAL_WHEN = 1792616000000;
+const SUBSCRIBER_SIGNUP_SRC_JOURNAL_WHEN = 1792620000000;
 
 function createMigrationsFolderThrough0016(): string {
   const dir = mkdtempSync(join(tmpdir(), "dear-drizzle-through-0016-"));
@@ -30,6 +31,7 @@ function createMigrationsFolderThrough0016(): string {
   rmSync(join(dir, "0022_beehiiv_import.sql"));
   rmSync(join(dir, "0023_post_preview_links.sql"));
   rmSync(join(dir, "0024_author_tagline.sql"));
+  rmSync(join(dir, "0025_subscriber_signup_src.sql"));
   rmSync(join(dir, "meta/0017_snapshot.json"));
   rmSync(join(dir, "meta/0021_snapshot.json"), { force: true });
   rmSync(join(dir, "meta/0022_snapshot.json"), { force: true });
@@ -47,7 +49,8 @@ function createMigrationsFolderThrough0016(): string {
       entry.when !== COWRITERS_JOURNAL_WHEN &&
       entry.when !== BEEHIIV_IMPORT_JOURNAL_WHEN &&
       entry.when !== PREVIEW_LINKS_JOURNAL_WHEN &&
-      entry.when !== AUTHOR_TAGLINE_JOURNAL_WHEN,
+      entry.when !== AUTHOR_TAGLINE_JOURNAL_WHEN &&
+      entry.when !== SUBSCRIBER_SIGNUP_SRC_JOURNAL_WHEN,
   );
   writeFileSync(journalPath, `${JSON.stringify(journal, null, 2)}\n`);
   return dir;

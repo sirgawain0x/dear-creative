@@ -169,6 +169,13 @@
       "when": 1792616000000,
       "tag": "0024_author_tagline",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1792620000000,
+      "tag": "0025_subscriber_signup_src",
+      "breakpoints": true
     }
   ]
 }
