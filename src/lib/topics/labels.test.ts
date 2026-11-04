@@ -28,6 +28,10 @@ describe("topic labels", () => {
     expect(getTopicLabel("unknown-topic")).toBe("Getting Paid");
   });
 
+  it("falls back for prototype property names such as toString", () => {
+    expect(getTopicLabel("toString")).toBe("Getting Paid");
+  });
+
   it("covers every declared topic key", () => {
     const keys: TopicKey[] = [
       "ai-ownership",

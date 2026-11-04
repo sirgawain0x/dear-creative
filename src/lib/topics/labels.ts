@@ -12,7 +12,7 @@ export const TOPIC_LABELS: Record<TopicKey, string> = {
 export const TOPIC_KEYS = Object.keys(TOPIC_LABELS) as TopicKey[];
 
 export function getTopicLabel(topic: TopicKey | string): string {
-  if (topic in TOPIC_LABELS) {
+  if (Object.hasOwn(TOPIC_LABELS, topic)) {
     return TOPIC_LABELS[topic as TopicKey];
   }
   return TOPIC_LABELS["creator-economics"];
