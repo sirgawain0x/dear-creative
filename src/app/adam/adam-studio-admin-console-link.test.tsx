@@ -1,8 +1,9 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { stubMatchMedia } from "@/test/match-media";
 import { AdamStudio } from "./adam-studio";
 import {
   AppProviders,
@@ -72,11 +73,20 @@ function mockStudioFetch(options: {
         { status: 200 },
       );
     }
-    if (url.includes("/api/adam/")) {
-      return new Response(JSON.stringify({}), {
+    if (url.includes("/api/adam/chat/threads")) {
+      return new Response(JSON.stringify({ threads: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
+    }
+    if (url.includes("/api/adam/")) {
+      return new Response(
+        JSON.stringify({ ideas: [], posts: [], schedule: null }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     }
     if (url.includes("/api/approvals")) {
       return new Response(JSON.stringify({ approvals: [] }), {
@@ -98,18 +108,19 @@ function renderStudioWithKey() {
 }
 
 describe("AdamStudio Admin Console link", () => {
-  afterEach(() => {
-    cleanup();
-  });
-
   beforeEach(() => {
     localStorage.clear();
     vi.restoreAllMocks();
+    stubMatchMedia({ mobile: false });
     Object.defineProperty(window, "innerWidth", {
       writable: true,
       configurable: true,
       value: 1440,
     });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("shows Admin Console link when /api/admin/me confirms admin", async () => {

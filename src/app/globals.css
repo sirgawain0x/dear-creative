@@ -47,6 +47,25 @@ body {
   color: #d4d4d8;
 }
 
+/* Filled chat bubbles: keep .prose typography, inherit bubble foreground for WCAG */
+.prose.prose-inherit-color,
+.dark .prose.prose-inherit-color {
+  color: inherit;
+}
+
+.prose.prose-inherit-color :where(h1, h2, h3, h4, h5, h6, p, li, blockquote) {
+  color: inherit;
+}
+
+.prose.prose-inherit-color a:not(.dear-btn) {
+  color: inherit;
+}
+
+.prose.prose-inherit-color :not(pre) > code,
+.prose.prose-inherit-color pre {
+  color: inherit;
+}
+
 .prose h1,
 .prose h2,
 .prose h3,

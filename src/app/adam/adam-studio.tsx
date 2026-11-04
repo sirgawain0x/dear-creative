@@ -72,6 +72,11 @@ import { stopDispatchAudioResources } from "@/lib/audio/stop-active-audio";
 import { RepurposePanel } from "@/app/adam/repurpose-panel";
 import { EditorPreviewLinksPanel } from "@/components/admin/EditorPreviewLinksPanel";
 import { EditorWritersPanel } from "@/components/admin/EditorWritersPanel";
+import { AdamChatThreadHistory } from "@/app/adam/adam-chat-thread-history";
+
+/** User bubble markdown — keep prose typography; inherit bubble text color for WCAG contrast. */
+export const ADAM_USER_BUBBLE_BODY_CLASS =
+  "prose prose-sm prose-inherit-color min-w-0 max-w-full space-y-2 [overflow-wrap:anywhere] [&_a]:underline [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_img]:h-auto [&_img]:max-w-full";
 
 export type StudioTab = "chat" | "ideas" | "posts" | "approvals" | "schedule";
 type VoiceEngineMode = "google" | "browser";
@@ -1257,11 +1262,6 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
 
   const deleteChatThread = useCallback(
     async (threadId: string) => {
-      if (
-        !confirm("Are you sure you want to delete this conversation thread?")
-      ) {
-        return;
-      }
       try {
         const res = await authFetch(`/api/adam/chat/threads/${threadId}`, {
           method: "DELETE",
@@ -2618,138 +2618,23 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
         <section className="mt-6 grid min-w-0 gap-6 lg:grid-cols-12">
           <div className="flex min-w-0 max-w-full flex-col rounded-2xl border border-zinc-200 bg-white p-5 shadow-xs lg:col-span-8 xl:col-span-9 dark:border-zinc-800 dark:bg-zinc-900/60">
             {/* Thread Header Bar */}
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 pb-3 dark:border-zinc-800/80">
-              <div className="flex max-w-full items-center gap-1.5 overflow-x-auto py-0.5">
-                <button
-                  type="button"
-                  onClick={startNewChatThread}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition ${
-                    activeThreadId === null
-                      ? "bg-zinc-900 text-white shadow-2xs dark:bg-zinc-100 dark:text-zinc-900"
-                      : "border border-zinc-200 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800"
-                  }`}
-                  title="Start a fresh conversation thread"
-                >
-                  <svg
-                    className="h-3.5 w-3.5"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <line x1="12" y1="5" x2="12" y2="19" />
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                  </svg>
-                  <span>New Chat</span>
-                </button>
-
-                {chatThreads.map((thread) => {
-                  const isActive = activeThreadId === thread.id;
-                  const isEditing = editingThreadId === thread.id;
-
-                  if (isEditing) {
-                    return (
-                      <div
-                        key={thread.id}
-                        className="inline-flex items-center gap-1 rounded-lg border border-amber-500 bg-amber-50/50 px-2 py-0.5 dark:bg-amber-950/30"
-                      >
-                        <input
-                          type="text"
-                          value={editingThreadTitle}
-                          onChange={(e) => setEditingThreadTitle(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              void renameChatThread(thread.id, editingThreadTitle);
-                            } else if (e.key === "Escape") {
-                              setEditingThreadId(null);
-                            }
-                          }}
-                          className="w-28 bg-transparent text-xs font-medium text-zinc-900 outline-hidden dark:text-zinc-100"
-                          autoFocus
-                        />
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void renameChatThread(thread.id, editingThreadTitle)
-                          }
-                          className="text-[10px] font-semibold text-amber-600 hover:underline dark:text-amber-400"
-                        >
-                          Save
-                        </button>
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <div
-                      key={thread.id}
-                      className={`group relative inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs transition ${
-                        isActive
-                          ? "border-zinc-900 bg-zinc-900 font-medium text-white shadow-2xs dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
-                          : "border-zinc-200 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800"
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => void selectChatThread(thread.id)}
-                        className="max-w-[130px] truncate text-left"
-                        title={thread.title}
-                      >
-                        {thread.title}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingThreadId(thread.id);
-                          setEditingThreadTitle(thread.title);
-                        }}
-                        className={`p-0.5 opacity-0 transition group-hover:opacity-100 hover:text-amber-500 ${
-                          isActive
-                            ? "text-zinc-400 hover:text-white dark:text-zinc-600 dark:hover:text-zinc-900"
-                            : ""
-                        }`}
-                        title="Rename conversation"
-                      >
-                        <svg
-                          className="h-3 w-3"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                        >
-                          <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void deleteChatThread(thread.id);
-                        }}
-                        className={`p-0.5 opacity-0 transition group-hover:opacity-100 hover:text-rose-500 ${
-                          isActive
-                            ? "text-zinc-400 hover:text-white dark:text-zinc-600 dark:hover:text-zinc-900"
-                            : ""
-                        }`}
-                        title="Delete conversation"
-                      >
-                        <svg
-                          className="h-3 w-3"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                        >
-                          <path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-                        </svg>
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
+            <div className="mb-4 flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-zinc-100 pb-3 dark:border-zinc-800/80">
+              <AdamChatThreadHistory
+                chatThreads={chatThreads}
+                activeThreadId={activeThreadId}
+                editingThreadId={editingThreadId}
+                editingThreadTitle={editingThreadTitle}
+                onNewChat={startNewChatThread}
+                onSelectThread={selectChatThread}
+                onStartRename={(threadId, title) => {
+                  setEditingThreadId(threadId);
+                  setEditingThreadTitle(title);
+                }}
+                onEditingTitleChange={setEditingThreadTitle}
+                onSaveRename={renameChatThread}
+                onCancelRename={() => setEditingThreadId(null)}
+                onDeleteThread={deleteChatThread}
+              />
 
               <div className="shrink-0 text-[11px] text-zinc-400">
                 {activeThreadId ? (
@@ -2788,7 +2673,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                   <div
                     className={`min-w-0 w-fit max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                       msg.role === "user"
-                        ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                        ? "bg-zinc-900 text-zinc-50 dark:bg-zinc-100 dark:text-zinc-950"
                         : "border border-zinc-200 bg-zinc-50 text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
                     }`}
                   >
@@ -2853,7 +2738,14 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                       ) : null}
                     </div>
                     <div
-                      className="prose prose-sm dark:prose-invert min-w-0 max-w-full space-y-2 [overflow-wrap:anywhere] [&_img]:h-auto [&_img]:max-w-full [&_pre]:max-w-full [&_pre]:overflow-x-auto"
+                      className={
+                        msg.role === "user"
+                          ? ADAM_USER_BUBBLE_BODY_CLASS
+                          : "prose prose-sm dark:prose-invert min-w-0 max-w-full space-y-2 [overflow-wrap:anywhere] [&_img]:h-auto [&_img]:max-w-full [&_pre]:max-w-full [&_pre]:overflow-x-auto"
+                      }
+                      data-testid={
+                        msg.role === "user" ? "adam-user-message-body" : undefined
+                      }
                       dangerouslySetInnerHTML={{
                         __html:
                           renderMarkdownToSafeHtml(msg.content) || msg.content,
