@@ -283,8 +283,6 @@ export function AdamChatThreadHistory({
   const editingThreadIdRef = useRef(editingThreadId);
   const pendingDeleteIdRef = useRef(pendingDeleteId);
   const closeMenuRef = useRef<() => void>(() => {});
-  editingThreadIdRef.current = editingThreadId;
-  pendingDeleteIdRef.current = pendingDeleteId;
 
   const focusHistoryTrigger = useCallback(() => {
     triggerRef.current?.focus();
@@ -296,10 +294,15 @@ export function AdamChatThreadHistory({
     onCancelRename();
     focusHistoryTrigger();
   }, [onCancelRename, focusHistoryTrigger]);
-  closeMenuRef.current = closeMenu;
 
   useEffect(() => {
-    if (!isMobile || !menuOpen) {
+    editingThreadIdRef.current = editingThreadId;
+    pendingDeleteIdRef.current = pendingDeleteId;
+    closeMenuRef.current = closeMenu;
+  }, [editingThreadId, pendingDeleteId, closeMenu]);
+
+  useEffect(() => {
+    if (!isMobile || !menuOpen || editingThreadId || pendingDeleteId) {
       return undefined;
     }
     const panel = mobileDialogPanelRef.current;
@@ -312,7 +315,7 @@ export function AdamChatThreadHistory({
       panel.querySelector<HTMLElement>("[data-autofocus-history]") ??
       focusables[0];
     preferred?.focus();
-  }, [isMobile, menuOpen]);
+  }, [isMobile, menuOpen, editingThreadId, pendingDeleteId]);
 
   useEffect(() => {
     if (!isMobile || !menuOpen) {

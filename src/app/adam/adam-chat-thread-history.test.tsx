@@ -10,6 +10,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { stubMatchMedia } from "@/test/match-media";
 import { AdamChatThreadHistory } from "./adam-chat-thread-history";
 
 const threads = [
@@ -46,24 +47,9 @@ function renderHistory(
   return { onSelectThread, onSaveRename, onDeleteThread, onCancelRename };
 }
 
-function stubDesktopViewport() {
-  vi.stubGlobal(
-    "matchMedia",
-    vi.fn().mockImplementation((query: string) => ({
-      matches: query === "(max-width: 767px)" ? false : false,
-      media: query,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    })),
-  );
-}
-
 describe("AdamChatThreadHistory", () => {
   beforeEach(() => {
-    stubDesktopViewport();
+    stubMatchMedia({ mobile: false });
   });
 
   afterEach(() => {
@@ -79,8 +65,7 @@ describe("AdamChatThreadHistory", () => {
 
   it("opens desktop popover and selects a thread", () => {
     const { onSelectThread } = renderHistory();
-    const list = screen.getByTestId("adam-chat-thread-history-list");
-    fireEvent.click(within(list).getByRole("button", { name: "Beta chat" }));
+    fireEvent.click(screen.getByTestId("adam-chat-thread-select-thread_b"));
     expect(onSelectThread).toHaveBeenCalledWith("thread_b");
   });
 
@@ -99,10 +84,12 @@ describe("AdamChatThreadHistory", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Delete Beta chat" }),
     );
-    expect(
-      screen.getByTestId("adam-chat-thread-delete-confirm-thread_b"),
-    ).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    const confirmPanel = screen.getByTestId(
+      "adam-chat-thread-delete-confirm-thread_b",
+    );
+    fireEvent.click(
+      within(confirmPanel).getByRole("button", { name: "Delete" }),
+    );
     expect(onDeleteThread).toHaveBeenCalledWith("thread_b");
   });
 
@@ -123,18 +110,7 @@ describe("AdamChatThreadHistory", () => {
 
   it("does not steal focus from rename input when mobile edit starts", async () => {
     vi.unstubAllGlobals();
-    vi.stubGlobal(
-      "matchMedia",
-      vi.fn().mockImplementation((query: string) => ({
-        matches: query === "(max-width: 767px)",
-        media: query,
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      })),
-    );
+    stubMatchMedia({ mobile: true });
 
     const baseProps = {
       chatThreads: threads,
@@ -171,18 +147,7 @@ describe("AdamChatThreadHistory", () => {
 
   it("focuses the mobile history dialog when opened", async () => {
     vi.unstubAllGlobals();
-    vi.stubGlobal(
-      "matchMedia",
-      vi.fn().mockImplementation((query: string) => ({
-        matches: query === "(max-width: 767px)",
-        media: query,
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      })),
-    );
+    stubMatchMedia({ mobile: true });
 
     renderHistory({ initialHistoryOpen: true });
     await waitFor(() => {
@@ -192,18 +157,7 @@ describe("AdamChatThreadHistory", () => {
 
   it("uses modal layout on narrow viewports", () => {
     vi.unstubAllGlobals();
-    vi.stubGlobal(
-      "matchMedia",
-      vi.fn().mockImplementation((query: string) => ({
-        matches: query === "(max-width: 767px)",
-        media: query,
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      })),
-    );
+    stubMatchMedia({ mobile: true });
 
     renderHistory({ initialHistoryOpen: false });
     fireEvent.click(screen.getByTestId("adam-chat-thread-history-trigger"));

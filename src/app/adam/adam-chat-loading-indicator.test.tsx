@@ -3,6 +3,7 @@
  */
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { stubMatchMedia } from "@/test/match-media";
 import { AdamStudio } from "./adam-studio";
 import {
   AppProviders,
@@ -180,6 +181,7 @@ async function waitForAdamChatShell() {
 
 async function openHistoryAndSelectThread(threadId: string) {
   fireEvent.click(screen.getByTestId("adam-chat-thread-history-trigger"));
+  await screen.findByTestId("adam-chat-thread-history-modal");
   const row = await screen.findByTestId(`adam-chat-thread-select-${threadId}`);
   fireEvent.click(row);
 }
@@ -189,18 +191,8 @@ describe("Adam chat loading indicator", () => {
     cleanup();
     localStorage.clear();
     vi.restoreAllMocks();
-    vi.stubGlobal(
-      "matchMedia",
-      vi.fn().mockImplementation((query: string) => ({
-        matches: query === "(max-width: 767px)",
-        media: query,
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      })),
-    );
+    // Mobile layout: history opens as a modal (Radix dropdown does not open reliably in jsdom).
+    stubMatchMedia({ mobile: true });
   });
 
   it("idle: send enabled before first message", async () => {
