@@ -7,11 +7,13 @@ import { drizzle } from "drizzle-orm/libsql";
 import { migrate } from "drizzle-orm/libsql/migrator";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as schema from "@/db/schema";
+import { eq } from "drizzle-orm";
 import { subscribers } from "@/db/schema";
 import {
   resetBotIdCheckForTests,
   setBotIdCheckForTests,
 } from "@/lib/botid/verify";
+import { resetRateLimitStoreForTests } from "@/lib/rate-limit/memory";
 import { SUBSCRIBE_HTTP_ACK } from "@/lib/subscribers/subscribe-response";
 import { POST } from "./route";
 
@@ -43,6 +45,7 @@ async function createTestDb() {
 
 describe("POST /api/subscribe", () => {
   beforeEach(async () => {
+    resetRateLimitStoreForTests();
     testDb = await createTestDb();
     resendSendMock.mockClear();
     vi.stubEnv("SUBSCRIBER_TOKEN_SECRET", "test-secret");
@@ -54,14 +57,19 @@ describe("POST /api/subscribe", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     resetBotIdCheckForTests();
+    resetRateLimitStoreForTests();
   });
 
-  async function postSubscribe(email: string, host = "https://evil-scanner.example") {
+  async function postSubscribe(
+    email: string,
+    host = "https://evil-scanner.example",
+    extra?: { signupSrc?: string | null },
+  ) {
     return POST(
       new Request(`${host}/api/subscribe`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, ...extra }),
       }),
     );
   }
@@ -145,6 +153,18 @@ describe("POST /api/subscribe", () => {
   it("still returns 400 for invalid email", async () => {
     const response = await postSubscribe("not-an-email");
     expect(response.status).toBe(400);
+  });
+
+  it("persists signupSrc for new subscribers via the API", async () => {
+    const response = await postSubscribe("api-src@example.test", undefined, {
+      signupSrc: "yt",
+    });
+    expect(response.status).toBe(200);
+    const [row] = await testDb
+      .select()
+      .from(subscribers)
+      .where(eq(subscribers.email, "api-src@example.test"));
+    expect(row?.signupSrc).toBe("yt");
   });
 
   it("returns 403 when BotID flags the request as a bot", async () => {

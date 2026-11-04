@@ -126,6 +126,66 @@ describe("requestSubscription", () => {
     expect(summary.outcome).toBe("blocked");
   });
 
+  it("stores signupSrc only on insert when sanitized", async () => {
+    const db = await createTestDb();
+    await requestSubscription("src-new@example.test", {
+      db,
+      resend: null,
+      tokenSecret: "secret",
+      siteOrigin: "https://dear.example.test",
+      resendFrom: "news@example.test",
+    }, { signupSrc: "HashNode" });
+
+    const [row] = await db
+      .select()
+      .from(subscribers)
+      .where(eq(subscribers.email, "src-new@example.test"));
+    expect(row?.signupSrc).toBe("hashnode");
+    expect(row?.source).toBe("signup");
+  });
+
+  it("does not overwrite signupSrc on existing pending rows", async () => {
+    const db = await createTestDb();
+    await db.insert(subscribers).values({
+      id: randomUUID(),
+      email: "existing-src@example.test",
+      status: "pending",
+      source: "signup",
+      signupSrc: "ctv",
+    });
+
+    await requestSubscription("existing-src@example.test", {
+      db,
+      resend: null,
+      tokenSecret: "secret",
+      siteOrigin: "https://dear.example.test",
+      resendFrom: "news@example.test",
+    }, { signupSrc: "yt" });
+
+    const [row] = await db
+      .select()
+      .from(subscribers)
+      .where(eq(subscribers.email, "existing-src@example.test"));
+    expect(row?.signupSrc).toBe("ctv");
+  });
+
+  it("drops invalid signupSrc on insert", async () => {
+    const db = await createTestDb();
+    await requestSubscription("invalid-src@example.test", {
+      db,
+      resend: null,
+      tokenSecret: "secret",
+      siteOrigin: "https://dear.example.test",
+      resendFrom: "news@example.test",
+    }, { signupSrc: "!!!" });
+
+    const [row] = await db
+      .select()
+      .from(subscribers)
+      .where(eq(subscribers.email, "invalid-src@example.test"));
+    expect(row?.signupSrc).toBeNull();
+  });
+
   it("promotes pending on confirm and leaves unsubscribed alone", async () => {
     const db = await createTestDb();
     await db.insert(subscribers).values({
