@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   persistSignupSrcFromSearch,
   readSignupSrcFromSession,
@@ -22,5 +22,16 @@ describe("signup-src session capture", () => {
   it("does not store invalid src values", () => {
     persistSignupSrcFromSearch("?src=!!!");
     expect(sessionStorage.getItem(SIGNUP_SRC_SESSION_KEY)).toBeNull();
+  });
+
+  it("tolerates blocked sessionStorage on read and write", () => {
+    const deny = () => {
+      throw new DOMException("Access denied", "SecurityError");
+    };
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(deny);
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(deny);
+
+    expect(() => persistSignupSrcFromSearch("?src=yt")).not.toThrow();
+    expect(readSignupSrcFromSession()).toBeNull();
   });
 });

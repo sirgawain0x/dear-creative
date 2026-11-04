@@ -1,8 +1,8 @@
 /**
  * @vitest-environment jsdom
  */
-import { render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AdamStudio } from "./adam-studio";
 import {
   AppProviders,
@@ -98,6 +98,10 @@ function renderStudioWithKey() {
 }
 
 describe("AdamStudio Admin Console link", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   beforeEach(() => {
     localStorage.clear();
     vi.restoreAllMocks();
