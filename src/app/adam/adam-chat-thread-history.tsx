@@ -28,13 +28,21 @@ function useMobileHistoryLayout() {
 
   useEffect(() => {
     if (typeof window.matchMedia !== "function") {
-      return;
+      return undefined;
     }
+    let active = true;
     const media = window.matchMedia(MOBILE_HISTORY_MQ);
-    const sync = () => setIsMobile(media.matches);
+    const sync = () => {
+      if (active) {
+        setIsMobile(media.matches);
+      }
+    };
     sync();
     media.addEventListener("change", sync);
-    return () => media.removeEventListener("change", sync);
+    return () => {
+      active = false;
+      media.removeEventListener("change", sync);
+    };
   }, []);
 
   return isMobile;

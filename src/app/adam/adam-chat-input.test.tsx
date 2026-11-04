@@ -1,8 +1,9 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { stubMatchMedia } from "@/test/match-media";
 import { AdamStudio } from "./adam-studio";
 import {
   AppProviders,
@@ -111,9 +112,13 @@ function chatShortcutEnter(input: HTMLElement, modifier: "meta" | "ctrl" = "meta
 
 describe("Adam chat input", () => {
   beforeEach(() => {
-    cleanup();
     localStorage.clear();
     vi.restoreAllMocks();
+    stubMatchMedia({ mobile: true });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("plain Enter does not send (Shift+Enter also does not send)", async () => {
