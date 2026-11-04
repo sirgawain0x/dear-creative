@@ -229,7 +229,14 @@ export function SiteHeader({
           </nav>
 
         <div className="flex items-center gap-2">
-          {/* Mobile: ReaderAccountDropdown removed from top bar — Sign In lives in hamburger menu */}
+          {showReaderWalletButton && isSignedIn ? (
+            <div className="lg:hidden">
+              <ReaderAccountDropdown
+                surface="mobile"
+                {...readerDropdownFixture}
+              />
+            </div>
+          ) : null}
           <CreativePlatformAppsDrawer />
           <ThemeToggle />
           <button
@@ -262,6 +269,14 @@ export function SiteHeader({
               // the reader wallet button no longer sits in the top bar, so
               // the desktop-only hideNavSignInForReaderWallet rule must not
               // suppress Sign In here (issue #121).
+
+              if (
+                isAuthAction &&
+                isSignedIn &&
+                showReaderWalletButton
+              ) {
+                return null;
+              }
 
               if (isAuthAction && isSignedIn) {
                 return (
