@@ -38,19 +38,19 @@ export function buildAdamChatOverflowMessages() {
       content: longUrl,
     },
     {
-      role: "assistant" as const,
+      role: "model" as const,
       content: ADAM_CHAT_SHORT_REPLY,
     },
     {
-      role: "assistant" as const,
+      role: "model" as const,
       content: longWord,
     },
     {
-      role: "assistant" as const,
+      role: "model" as const,
       content: wideImageMarkdown,
     },
     {
-      role: "assistant" as const,
+      role: "model" as const,
       content: wideCodeMarkdown,
     },
   ];

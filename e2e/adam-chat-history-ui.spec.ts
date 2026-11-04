@@ -157,7 +157,10 @@ for (const { width, tag } of [
       fullPage: false,
     });
 
-    await page.getByLabel("Conversation title").press("Escape");
+    await page
+      .getByTestId("adam-chat-thread-rename-thread_fixture_second")
+      .getByRole("button", { name: "Cancel" })
+      .click();
     await expect(
       page.getByRole("button", { name: "Delete Second thread" }),
     ).toBeVisible();
