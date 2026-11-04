@@ -1,5 +1,6 @@
 import { ImageResponse } from "next/og";
 import { connection, type NextRequest } from "next/server";
+import { getTopicLabel } from "@/lib/topics/labels";
 
 export const MAX_OG_TITLE_LENGTH = 120;
 
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest) {
     );
     const date = searchParams.get("date") || "Weekly Dispatch";
     const readTime = searchParams.get("readTime") || "3 min read • 2 min audio";
-    const topic = searchParams.get("topic") || "Creator Economics";
+    const topic = searchParams.get("topic") || getTopicLabel("creator-economics");
 
     return new ImageResponse(
       (
