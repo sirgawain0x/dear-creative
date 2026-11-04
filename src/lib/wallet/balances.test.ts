@@ -57,7 +57,7 @@ describe("fetchWalletBalances", () => {
       details: "Unspecified origin not on whitelist",
     });
     mockGetBalance.mockRejectedValue(httpError);
-    mockReadContract.mockResolvedValue(0n);
+    mockReadContract.mockResolvedValue(BigInt(0));
 
     await expect(fetchWalletBalances(WALLET)).rejects.toBe(httpError);
 
@@ -81,8 +81,8 @@ describe("fetchWalletBalances", () => {
   });
 
   it("returns formatted balances when RPC calls succeed", async () => {
-    mockGetBalance.mockResolvedValue(42_000_000_000_000_000n);
-    mockReadContract.mockResolvedValue(1_250_500_000n);
+    mockGetBalance.mockResolvedValue(BigInt("42000000000000000"));
+    mockReadContract.mockResolvedValue(BigInt("1250500000"));
 
     await expect(fetchWalletBalances(WALLET)).resolves.toEqual({
       eth: { raw: "42000000000000000", formatted: "0.042" },
