@@ -76,7 +76,7 @@ import { AdamChatThreadHistory } from "@/app/adam/adam-chat-thread-history";
 
 /** User bubble markdown — keep prose typography; inherit bubble text color for WCAG contrast. */
 export const ADAM_USER_BUBBLE_BODY_CLASS =
-  "prose prose-sm min-w-0 max-w-full space-y-2 [overflow-wrap:anywhere] prose-invert dark:prose-invert-0 [&_a]:text-inherit [&_a]:underline [&_code]:text-inherit [&_em]:text-inherit [&_li]:text-inherit [&_p]:text-inherit [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_pre]:text-inherit [&_strong]:text-inherit [&_img]:h-auto [&_img]:max-w-full";
+  "prose prose-sm prose-inherit-color min-w-0 max-w-full space-y-2 [overflow-wrap:anywhere] [&_a]:underline [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_img]:h-auto [&_img]:max-w-full";
 
 export type StudioTab = "chat" | "ideas" | "posts" | "approvals" | "schedule";
 type VoiceEngineMode = "google" | "browser";
