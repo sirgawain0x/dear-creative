@@ -8,6 +8,7 @@ import {
   AppProviders,
   STUDIO_TOKEN_STORAGE_KEY,
 } from "@/components/providers/app-providers";
+import { installWindowMatchMedia } from "@/test/setup";
 
 vi.mock("next/link", () => ({
   default: ({
@@ -114,6 +115,7 @@ describe("Adam chat input", () => {
     cleanup();
     localStorage.clear();
     vi.restoreAllMocks();
+    installWindowMatchMedia((q) => q.includes("prefers-reduced-motion"));
   });
 
   it("plain Enter does not send (Shift+Enter also does not send)", async () => {

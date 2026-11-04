@@ -8,6 +8,7 @@ import {
   AppProviders,
   STUDIO_TOKEN_STORAGE_KEY,
 } from "@/components/providers/app-providers";
+import { installWindowMatchMedia } from "@/test/setup";
 
 vi.mock("next/link", () => ({
   default: ({
@@ -178,6 +179,7 @@ describe("Adam chat loading indicator", () => {
     cleanup();
     localStorage.clear();
     vi.restoreAllMocks();
+    installWindowMatchMedia((q) => q.includes("prefers-reduced-motion"));
   });
 
   it("idle: send enabled before first message", async () => {

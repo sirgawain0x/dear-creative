@@ -15,10 +15,16 @@ export function createMatchMedia(query: string, matches = false) {
   };
 }
 
-if (typeof window !== "undefined") {
+export function installWindowMatchMedia(
+  resolveMatches: (query: string) => boolean = () => false,
+) {
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     configurable: true,
-    value: (query: string) => createMatchMedia(query, false),
+    value: (query: string) => createMatchMedia(query, resolveMatches(query)),
   });
+}
+
+if (typeof window !== "undefined") {
+  installWindowMatchMedia(() => false);
 }
