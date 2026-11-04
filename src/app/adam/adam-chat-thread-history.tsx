@@ -4,9 +4,11 @@ import {
   useCallback,
   useEffect,
   useId,
+  useRef,
   useState,
   type KeyboardEvent,
 } from "react";
+import { getFocusableElements } from "@/lib/a11y/focusable-elements";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -76,6 +78,8 @@ function AdamChatThreadHistoryList({
     if (event.key === "Enter") {
       void onSaveRename(threadId, editingThreadTitle);
     } else if (event.key === "Escape") {
+      event.stopPropagation();
+      event.preventDefault();
       onCancelRename();
     }
   };
@@ -274,12 +278,64 @@ export function AdamChatThreadHistory({
   const isMobile = useMobileHistoryLayout();
   const [menuOpen, setMenuOpen] = useState(initialHistoryOpen);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const mobileDialogPanelRef = useRef<HTMLDivElement>(null);
+
+  const focusHistoryTrigger = useCallback(() => {
+    triggerRef.current?.focus();
+  }, []);
 
   const closeMenu = useCallback(() => {
     setMenuOpen(false);
     setPendingDeleteId(null);
     onCancelRename();
-  }, [onCancelRename]);
+    focusHistoryTrigger();
+  }, [onCancelRename, focusHistoryTrigger]);
+
+  useEffect(() => {
+    if (!isMobile || !menuOpen) {
+      return undefined;
+    }
+    const panel = mobileDialogPanelRef.current;
+    if (!panel) {
+      return undefined;
+    }
+
+    const focusables = getFocusableElements(panel);
+    const preferred =
+      panel.querySelector<HTMLElement>("[data-autofocus-history]") ??
+      focusables[0];
+    preferred?.focus();
+
+    function handleDialogKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === "Tab" && focusables.length > 0) {
+        const first = focusables[0]!;
+        const last = focusables[focusables.length - 1]!;
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+        return;
+      }
+      if (event.key === "Escape" && !editingThreadId && !pendingDeleteId) {
+        event.preventDefault();
+        closeMenu();
+      }
+    }
+
+    panel.addEventListener("keydown", handleDialogKeyDown);
+    return () => panel.removeEventListener("keydown", handleDialogKeyDown);
+  }, [
+    isMobile,
+    menuOpen,
+    editingThreadId,
+    pendingDeleteId,
+    closeMenu,
+    chatThreads.length,
+  ]);
 
   const handleSelectThread = useCallback(
     async (threadId: string) => {
@@ -322,6 +378,7 @@ export function AdamChatThreadHistory({
       aria-expanded={menuOpen}
       aria-haspopup="dialog"
       data-testid="adam-chat-thread-history-trigger"
+      ref={triggerRef}
       onClick={() => {
         if (isMobile) {
           setMenuOpen(true);
@@ -392,7 +449,9 @@ export function AdamChatThreadHistory({
               onClick={closeMenu}
             >
               <div
-                className="max-h-[85vh] w-full max-w-md overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-xl sm:rounded-2xl dark:border-zinc-800 dark:bg-zinc-950"
+                ref={mobileDialogPanelRef}
+                tabIndex={-1}
+                className="max-h-[85vh] w-full max-w-md overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-xl outline-hidden sm:rounded-2xl dark:border-zinc-800 dark:bg-zinc-950"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
@@ -404,6 +463,7 @@ export function AdamChatThreadHistory({
                     onClick={closeMenu}
                     className="rounded-lg p-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
                     aria-label="Close history"
+                    data-autofocus-history
                   >
                     <svg className="h-5 w-5" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" fill="none">
                       <path d="M18 6 6 18M6 6l12 12" />
@@ -431,6 +491,11 @@ export function AdamChatThreadHistory({
             align="start"
             className="w-[min(320px,calc(100vw-2rem))] p-0"
             data-testid="adam-chat-thread-history-popover"
+            onEscapeKeyDown={(event) => {
+              if (editingThreadId || pendingDeleteId) {
+                event.preventDefault();
+              }
+            }}
           >
             <p className="border-b border-zinc-100 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
               Conversation history

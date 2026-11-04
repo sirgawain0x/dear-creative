@@ -1,7 +1,14 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AdamChatThreadHistory } from "./adam-chat-thread-history";
 
@@ -16,6 +23,7 @@ function renderHistory(
   const onSelectThread = vi.fn();
   const onSaveRename = vi.fn();
   const onDeleteThread = vi.fn();
+  const onCancelRename = vi.fn();
 
   render(
     <AdamChatThreadHistory
@@ -28,14 +36,14 @@ function renderHistory(
       onStartRename={vi.fn()}
       onEditingTitleChange={vi.fn()}
       onSaveRename={onSaveRename}
-      onCancelRename={vi.fn()}
+      onCancelRename={onCancelRename}
       onDeleteThread={onDeleteThread}
       initialHistoryOpen
       {...overrides}
     />,
   );
 
-  return { onSelectThread, onSaveRename, onDeleteThread };
+  return { onSelectThread, onSaveRename, onDeleteThread, onCancelRename };
 }
 
 function stubDesktopViewport() {
@@ -96,6 +104,42 @@ describe("AdamChatThreadHistory", () => {
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     expect(onDeleteThread).toHaveBeenCalledWith("thread_b");
+  });
+
+  it("Escape in rename input cancels edit without closing desktop popover", () => {
+    const onCancelRename = vi.fn();
+    renderHistory({
+      editingThreadId: "thread_b",
+      editingThreadTitle: "Beta chat",
+      onCancelRename,
+    });
+    fireEvent.keyDown(screen.getByLabelText("Conversation title"), {
+      key: "Escape",
+      code: "Escape",
+    });
+    expect(onCancelRename).toHaveBeenCalled();
+    expect(screen.getByTestId("adam-chat-thread-history-popover")).toBeInTheDocument();
+  });
+
+  it("focuses the mobile history dialog when opened", async () => {
+    vi.unstubAllGlobals();
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockImplementation((query: string) => ({
+        matches: query === "(max-width: 767px)",
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    );
+
+    renderHistory({ initialHistoryOpen: true });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Close history")).toHaveFocus();
+    });
   });
 
   it("uses modal layout on narrow viewports", () => {
