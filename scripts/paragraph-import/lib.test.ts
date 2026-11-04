@@ -143,6 +143,17 @@ describe("importParagraphSubscribers", () => {
     expect(row?.source).toBe("signup");
     expect(row?.subscribedAt).toBeInstanceOf(Date);
   });
+
+  it("leaves signup_src null on import inserts", async () => {
+    const db = await createTestDb();
+    const summary = await importParagraphSubscribers(db, fixtureCsv);
+    expect(summary.inserted).toBeGreaterThan(0);
+
+    const rows = await db.select().from(subscribers);
+    for (const row of rows) {
+      expect(row.signupSrc).toBeNull();
+    }
+  });
 });
 
 describe("isValidEmail", () => {

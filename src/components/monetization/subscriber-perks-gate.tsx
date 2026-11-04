@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { readSignupSrcFromSession } from "@/lib/subscribers/signup-src-session";
 
 type SubscriberPerksGateProps = {
   slug: string;
@@ -47,7 +48,10 @@ export function SubscriberPerksGate({
       const res = await fetch("/api/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({
+          email,
+          signupSrc: readSignupSrcFromSession(),
+        }),
       });
 
       if (!res.ok) {
