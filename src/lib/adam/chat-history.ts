@@ -1,4 +1,10 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
+import {
+  canAccessChatThread,
+  ownedThreadWhere,
+  studioChatThreadVisibilityCondition,
+  type ChatThreadAccess,
+} from "@/lib/adam/chat-thread-access";
 import type { DearCreativeDb } from "@/db/client";
 import { ensureAdamStudioSchema } from "@/db/ensure-schema";
 import {
@@ -36,7 +42,7 @@ export function autoGenerateThreadTitle(firstMessage: string): string {
 
 export async function createChatThread(
   db: DearCreativeDb,
-  input: { title?: string; summary?: string } = {},
+  input: { title?: string; summary?: string; ownerUserId?: string | null } = {},
 ): Promise<AdamChatThreadRecord> {
   await ensureAdamStudioSchema(db);
   const id = `thread_${crypto.randomUUID()}`;
@@ -51,6 +57,7 @@ export async function createChatThread(
         title,
         summary: input.summary ?? null,
         isArchived: false,
+        ownerUserId: input.ownerUserId ?? null,
         createdAt: new Date(now),
         updatedAt: new Date(now),
       })
@@ -64,6 +71,7 @@ export async function createChatThread(
       title,
       summary: input.summary ?? null,
       isArchived: false,
+      ownerUserId: input.ownerUserId ?? null,
       createdAt: new Date(now),
       updatedAt: new Date(now),
     };
@@ -72,20 +80,36 @@ export async function createChatThread(
 
 export async function listChatThreads(
   db: DearCreativeDb,
-  options: { limit?: number; includeArchived?: boolean } = {},
+  options: {
+    limit?: number;
+    includeArchived?: boolean;
+    access?: ChatThreadAccess;
+  } = {},
 ): Promise<AdamChatThreadRecord[]> {
   await ensureAdamStudioSchema(db);
   const limit = options.limit ?? 50;
+  const visibility = options.access
+    ? studioChatThreadVisibilityCondition(options.access)
+    : undefined;
 
   try {
-    const query = db
+    let query = db
       .select()
       .from(adamChatThreads)
       .orderBy(desc(adamChatThreads.updatedAt))
       .limit(limit);
 
     if (!options.includeArchived) {
-      return await query.where(eq(adamChatThreads.isArchived, false));
+      query = query.where(
+        visibility
+          ? and(eq(adamChatThreads.isArchived, false), visibility)
+          : eq(adamChatThreads.isArchived, false),
+      ) as typeof query;
+      return await query;
+    }
+
+    if (visibility) {
+      query = query.where(visibility) as typeof query;
     }
 
     return await query;
@@ -98,13 +122,16 @@ export async function listChatThreads(
 export async function getChatThread(
   db: DearCreativeDb,
   threadId: string,
+  access?: ChatThreadAccess,
 ): Promise<AdamChatThreadRecord | null> {
   await ensureAdamStudioSchema(db);
   try {
     const [thread] = await db
       .select()
       .from(adamChatThreads)
-      .where(eq(adamChatThreads.id, threadId))
+      .where(
+        access ? ownedThreadWhere(threadId, access) : eq(adamChatThreads.id, threadId),
+      )
       .limit(1);
 
     return thread ?? null;
@@ -155,11 +182,12 @@ export async function getThreadMessages(
 export async function getChatThreadWithMessages(
   db: DearCreativeDb,
   threadId: string,
+  access?: ChatThreadAccess,
 ): Promise<{
   thread: AdamChatThreadRecord;
   messages: StoredChatMessage[];
 } | null> {
-  const thread = await getChatThread(db, threadId);
+  const thread = await getChatThread(db, threadId, access);
   if (!thread) return null;
   const messages = await getThreadMessages(db, threadId);
   return { thread, messages };
@@ -248,8 +276,15 @@ export async function updateChatThread(
   db: DearCreativeDb,
   threadId: string,
   updates: { title?: string; isArchived?: boolean; summary?: string },
+  access?: ChatThreadAccess,
 ): Promise<AdamChatThreadRecord | null> {
   await ensureAdamStudioSchema(db);
+  if (access) {
+    const existing = await getChatThread(db, threadId, access);
+    if (!existing) {
+      return null;
+    }
+  }
   const now = Date.now();
   const values: Partial<typeof adamChatThreads.$inferInsert> = {
     updatedAt: new Date(now),
@@ -281,12 +316,21 @@ export async function updateChatThread(
 export async function deleteChatThread(
   db: DearCreativeDb,
   threadId: string,
+  access?: ChatThreadAccess,
 ): Promise<boolean> {
   await ensureAdamStudioSchema(db);
+  if (access) {
+    const existing = await getChatThread(db, threadId, access);
+    if (!existing) {
+      return false;
+    }
+  }
   try {
     const result = await db
       .delete(adamChatThreads)
-      .where(eq(adamChatThreads.id, threadId))
+      .where(
+        access ? ownedThreadWhere(threadId, access) : eq(adamChatThreads.id, threadId),
+      )
       .returning({ id: adamChatThreads.id });
 
     return result.length > 0;
