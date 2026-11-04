@@ -173,11 +173,34 @@ function mockStudioFetch(options?: {
   });
 }
 
+async function waitForAdamChatShell() {
+  await screen.findByTestId("adam-chat-thread-history");
+  await screen.findByLabelText(/Message Adam/i);
+}
+
+async function openHistoryAndSelectThread(threadId: string) {
+  fireEvent.click(screen.getByTestId("adam-chat-thread-history-trigger"));
+  const row = await screen.findByTestId(`adam-chat-thread-select-${threadId}`);
+  fireEvent.click(row);
+}
+
 describe("Adam chat loading indicator", () => {
   beforeEach(() => {
     cleanup();
     localStorage.clear();
     vi.restoreAllMocks();
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockImplementation((query: string) => ({
+        matches: query === "(max-width: 767px)",
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    );
   });
 
   it("idle: send enabled before first message", async () => {
@@ -208,8 +231,8 @@ describe("Adam chat loading indicator", () => {
         <AdamStudio />
       </AppProviders>,
     );
-    await screen.findByRole("button", { name: "Thread A" });
-    const input = await screen.findByLabelText(/Message Adam/i);
+    await waitForAdamChatShell();
+    const input = screen.getByLabelText(/Message Adam/i);
     fireEvent.change(input, { target: { value: "Hello Adam" } });
     fireEvent.click(screen.getByTestId("adam-chat-send"));
 
@@ -306,14 +329,14 @@ describe("Adam chat loading indicator", () => {
         <AdamStudio />
       </AppProviders>,
     );
-    await screen.findByRole("button", { name: "Thread B" });
-    const input = await screen.findByLabelText(/Message Adam/i);
+    await waitForAdamChatShell();
+    const input = screen.getByLabelText(/Message Adam/i);
     const prompt = "Same prompt after thread switch";
     fireEvent.change(input, { target: { value: prompt } });
     fireEvent.click(screen.getByTestId("adam-chat-send"));
     await waitFor(() => expect(chatPostCount).toBe(1));
 
-    fireEvent.click(screen.getByRole("button", { name: "Thread B" }));
+    await openHistoryAndSelectThread("thread_fixture_b");
 
     fireEvent.change(input, { target: { value: prompt } });
     fireEvent.click(screen.getByTestId("adam-chat-send"));
@@ -336,13 +359,13 @@ describe("Adam chat loading indicator", () => {
         <AdamStudio />
       </AppProviders>,
     );
-    await screen.findByRole("button", { name: "Thread B" });
-    const input = await screen.findByLabelText(/Message Adam/i);
+    await waitForAdamChatShell();
+    const input = screen.getByLabelText(/Message Adam/i);
     fireEvent.change(input, { target: { value: "On thread A" } });
     fireEvent.click(screen.getByTestId("adam-chat-send"));
     await waitFor(() => expect(capturedSignal).toBeDefined());
 
-    fireEvent.click(screen.getByRole("button", { name: "Thread B" }));
+    await openHistoryAndSelectThread("thread_fixture_b");
     await waitFor(() => expect(capturedSignal?.aborted).toBe(true));
   });
 
@@ -406,7 +429,7 @@ describe("Adam chat loading indicator", () => {
 
     resolveThreadsList();
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Thread A" })).toBeInTheDocument(),
+      expect(screen.getByTestId("adam-chat-thread-history")).toBeInTheDocument(),
     );
 
     resolveChat(
@@ -473,7 +496,7 @@ describe("Adam chat loading indicator", () => {
     );
     try {
       const input = await screen.findByLabelText(/Message Adam/i);
-      await screen.findByRole("button", { name: "Thread A" });
+      await screen.findByTestId("adam-chat-thread-history");
       fireEvent.change(input, { target: { value: "Create draft" } });
       fireEvent.keyDown(input, {
         key: "Enter",

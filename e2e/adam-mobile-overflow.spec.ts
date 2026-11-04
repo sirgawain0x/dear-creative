@@ -17,6 +17,17 @@ import { READER_WALLET_E2E_STORAGE_KEY } from "../src/lib/wallet/reader-wallet-e
 async function mockAdamStudioApis(page: Page) {
   const posts = buildAdamPostsFixture(40);
 
+  await page.route("**/api/admin/config", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        privyConfigured: false,
+        adamTokenConfigured: true,
+      }),
+    });
+  });
+
   await page.route("**/api/adam/posts**", async (route) => {
     if (route.request().method() !== "GET") {
       await route.continue();
@@ -114,7 +125,9 @@ async function openAdamChatTab(page: Page, width: number) {
     "aria-current",
     "page",
   );
-  await expect(page.getByText("Overflow fixture")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("adam-chat-thread-history")).toBeVisible({
+    timeout: 15_000,
+  });
   await expect(page.getByText("supercalifragilisticexpialidocious")).toBeVisible({
     timeout: 15_000,
   });
@@ -124,7 +137,7 @@ async function installStudioFixtureSession(page: Page, width: number) {
   await page.setViewportSize({ width, height: 900 });
   await page.addInitScript(
     ({ token, e2eKey }) => {
-      localStorage.removeItem(e2eKey);
+      localStorage.setItem(e2eKey, "1");
       localStorage.setItem("dear_creative_studio_token", token);
     },
     { token: STUDIO_TOKEN_FIXTURE, e2eKey: READER_WALLET_E2E_STORAGE_KEY },
