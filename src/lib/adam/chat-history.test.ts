@@ -38,32 +38,61 @@ describe("chat-history", () => {
     expect(autoGenerateThreadTitle("   ")).toBe("New Conversation");
   });
 
+  it("denies delete when the caller does not own the thread", async () => {
+    const thread = await createChatThread(db, {
+      title: "Owned by B",
+      ownerUserId: "did:privy:user-b",
+    });
+    const deleted = await deleteChatThread(db, thread.id, {
+      actor: "did:privy:user-a",
+      mode: "privy_admin",
+    });
+    expect(deleted).toBe(false);
+    const stillThere = await getChatThreadWithMessages(db, thread.id, {
+      actor: "did:privy:user-b",
+      mode: "privy_admin",
+    });
+    expect(stillThere?.thread.id).toBe(thread.id);
+  });
+
   it("creates, lists, updates, and deletes threads", async () => {
-    const thread = await createChatThread(db, { title: "Test Conversation" });
+    const access = { actor: "did:privy:owner", mode: "privy_admin" as const };
+    const thread = await createChatThread(db, {
+      title: "Test Conversation",
+      ownerUserId: access.actor,
+    });
     expect(thread.id).toMatch(/^thread_/);
     expect(thread.title).toBe("Test Conversation");
     expect(thread.isArchived).toBe(false);
 
-    const list = await listChatThreads(db);
+    const list = await listChatThreads(db, { access });
     expect(list.length).toBe(1);
     expect(list[0]?.id).toBe(thread.id);
 
-    const updated = await updateChatThread(db, thread.id, {
-      title: "Renamed Thread",
-      isArchived: true,
-    });
+    const updated = await updateChatThread(
+      db,
+      thread.id,
+      {
+        title: "Renamed Thread",
+        isArchived: true,
+      },
+      access,
+    );
     expect(updated?.title).toBe("Renamed Thread");
     expect(updated?.isArchived).toBe(true);
 
-    const activeList = await listChatThreads(db, { includeArchived: false });
+    const activeList = await listChatThreads(db, {
+      includeArchived: false,
+      access,
+    });
     expect(activeList.length).toBe(0);
 
-    const allList = await listChatThreads(db, { includeArchived: true });
+    const allList = await listChatThreads(db, { includeArchived: true, access });
     expect(allList.length).toBe(1);
 
-    const deleted = await deleteChatThread(db, thread.id);
+    const deleted = await deleteChatThread(db, thread.id, access);
     expect(deleted).toBe(true);
-    const afterDelete = await listChatThreads(db, { includeArchived: true });
+    const afterDelete = await listChatThreads(db, { includeArchived: true, access });
     expect(afterDelete.length).toBe(0);
   });
 

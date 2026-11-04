@@ -209,6 +209,26 @@ async function runEnsurePostsSchema(db: DearCreativeDb): Promise<void> {
         // Ignore if column was added concurrently or connection is read-only
       }
     }
+
+    try {
+      const threadInfo = await db.all<{ name?: string }>(
+        sql.raw("PRAGMA table_info('adam_chat_threads')"),
+      );
+      if (threadInfo?.length) {
+        const threadCols = new Set(
+          threadInfo
+            .map((r) => (typeof r.name === "string" ? r.name : ""))
+            .filter(Boolean),
+        );
+        if (!threadCols.has("owner_user_id")) {
+          await db.run(
+            sql.raw("ALTER TABLE adam_chat_threads ADD owner_user_id text"),
+          );
+        }
+      }
+    } catch {
+      // Non-fatal for unmigrated or read-only databases
+    }
   } catch {
     // Non-fatal: explicit column selection in queries still protects reads
   }
