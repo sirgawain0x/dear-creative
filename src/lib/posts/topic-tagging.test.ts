@@ -31,7 +31,7 @@ describe("topic-tagging", () => {
       excerpt: "Decentralized storage and smart contracts for indie writers.",
     });
     expect(topic).toBe("onchain-culture");
-    expect(getTopicLabel(topic)).toBe("Onchain Culture");
+    expect(getTopicLabel(topic)).toBe("Internet Culture");
   });
 
   it("classifies creator economics articles", () => {
@@ -40,6 +40,6 @@ describe("topic-tagging", () => {
       excerpt: "Pricing your publication, finding brand sponsors, and sustaining creator revenue.",
     });
     expect(topic).toBe("creator-economics");
-    expect(getTopicLabel(topic)).toBe("Creator Economics");
+    expect(getTopicLabel(topic)).toBe("Getting Paid");
   });
 });
