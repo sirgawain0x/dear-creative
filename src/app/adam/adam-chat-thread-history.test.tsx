@@ -121,6 +121,54 @@ describe("AdamChatThreadHistory", () => {
     expect(screen.getByTestId("adam-chat-thread-history-popover")).toBeInTheDocument();
   });
 
+  it("does not steal focus from rename input when mobile edit starts", async () => {
+    vi.unstubAllGlobals();
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockImplementation((query: string) => ({
+        matches: query === "(max-width: 767px)",
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    );
+
+    const baseProps = {
+      chatThreads: threads,
+      activeThreadId: "thread_a" as const,
+      editingThreadId: null as string | null,
+      editingThreadTitle: "",
+      onNewChat: vi.fn(),
+      onSelectThread: vi.fn(),
+      onStartRename: vi.fn(),
+      onEditingTitleChange: vi.fn(),
+      onSaveRename: vi.fn(),
+      onCancelRename: vi.fn(),
+      onDeleteThread: vi.fn(),
+      initialHistoryOpen: true,
+    };
+
+    const { rerender } = render(<AdamChatThreadHistory {...baseProps} />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Close history")).toHaveFocus();
+    });
+
+    rerender(
+      <AdamChatThreadHistory
+        {...baseProps}
+        editingThreadId="thread_b"
+        editingThreadTitle="Beta chat"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Conversation title")).toHaveFocus();
+    });
+  });
+
   it("focuses the mobile history dialog when opened", async () => {
     vi.unstubAllGlobals();
     vi.stubGlobal(

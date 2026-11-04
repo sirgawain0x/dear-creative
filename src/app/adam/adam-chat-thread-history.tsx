@@ -280,6 +280,11 @@ export function AdamChatThreadHistory({
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const mobileDialogPanelRef = useRef<HTMLDivElement>(null);
+  const editingThreadIdRef = useRef(editingThreadId);
+  const pendingDeleteIdRef = useRef(pendingDeleteId);
+  const closeMenuRef = useRef<() => void>(() => {});
+  editingThreadIdRef.current = editingThreadId;
+  pendingDeleteIdRef.current = pendingDeleteId;
 
   const focusHistoryTrigger = useCallback(() => {
     triggerRef.current?.focus();
@@ -291,6 +296,7 @@ export function AdamChatThreadHistory({
     onCancelRename();
     focusHistoryTrigger();
   }, [onCancelRename, focusHistoryTrigger]);
+  closeMenuRef.current = closeMenu;
 
   useEffect(() => {
     if (!isMobile || !menuOpen) {
@@ -306,8 +312,19 @@ export function AdamChatThreadHistory({
       panel.querySelector<HTMLElement>("[data-autofocus-history]") ??
       focusables[0];
     preferred?.focus();
+  }, [isMobile, menuOpen]);
+
+  useEffect(() => {
+    if (!isMobile || !menuOpen) {
+      return undefined;
+    }
+    const panel = mobileDialogPanelRef.current;
+    if (!panel) {
+      return undefined;
+    }
 
     function handleDialogKeyDown(event: globalThis.KeyboardEvent) {
+      const focusables = getFocusableElements(panel);
       if (event.key === "Tab" && focusables.length > 0) {
         const first = focusables[0]!;
         const last = focusables[focusables.length - 1]!;
@@ -320,22 +337,19 @@ export function AdamChatThreadHistory({
         }
         return;
       }
-      if (event.key === "Escape" && !editingThreadId && !pendingDeleteId) {
+      if (
+        event.key === "Escape" &&
+        !editingThreadIdRef.current &&
+        !pendingDeleteIdRef.current
+      ) {
         event.preventDefault();
-        closeMenu();
+        closeMenuRef.current();
       }
     }
 
     panel.addEventListener("keydown", handleDialogKeyDown);
     return () => panel.removeEventListener("keydown", handleDialogKeyDown);
-  }, [
-    isMobile,
-    menuOpen,
-    editingThreadId,
-    pendingDeleteId,
-    closeMenu,
-    chatThreads.length,
-  ]);
+  }, [isMobile, menuOpen]);
 
   const handleSelectThread = useCallback(
     async (threadId: string) => {
