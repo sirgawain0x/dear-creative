@@ -106,6 +106,8 @@ export function SiteHeader({
     privyTimedOut,
   } = useAuthSession();
   const showReaderWalletButton = readerWalletEnabled || fixtureAuthenticated;
+  /** Matches ReaderAccountDropdown session gate (fixture || live Privy). */
+  const readerWalletSessionSignedIn = isSignedIn || fixtureAuthenticated;
   const readerDropdownFixture = fixtureAuthenticated
     ? {
         fixtureAuthenticated: true as const,
@@ -229,7 +231,7 @@ export function SiteHeader({
           </nav>
 
         <div className="flex items-center gap-2">
-          {showReaderWalletButton && isSignedIn ? (
+          {showReaderWalletButton && readerWalletSessionSignedIn ? (
             <div className="lg:hidden">
               <ReaderAccountDropdown
                 surface="mobile"
@@ -271,7 +273,7 @@ export function SiteHeader({
 
               if (
                 isAuthAction &&
-                isSignedIn &&
+                readerWalletSessionSignedIn &&
                 showReaderWalletButton
               ) {
                 return null;

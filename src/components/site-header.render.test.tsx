@@ -160,4 +160,25 @@ describe("SiteHeader auth control", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByTestId("reader-wallet-header-button")).toBeInTheDocument();
   });
+
+  it("renders mobile wallet and hides hamburger Sign Out for fixture-authenticated sessions", async () => {
+    const { SiteHeader } = await import("./site-header");
+    render(
+      <SiteHeader readerWalletEnabled fixtureAuthenticated />,
+    );
+
+    expect(
+      screen.getByTestId("reader-wallet-header-button-mobile"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Toggle navigation menu" }),
+    );
+    const mobileNav = screen.getByRole("navigation", {
+      name: "Mobile navigation",
+    });
+    expect(
+      within(mobileNav).queryByRole("button", { name: "Sign Out" }),
+    ).not.toBeInTheDocument();
+  });
 });
