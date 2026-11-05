@@ -139,4 +139,46 @@ describe("SiteHeader auth control", () => {
     ).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /admin/i })).not.toBeInTheDocument();
   });
+
+  it("renders mobile reader wallet button when signed in and reader wallet is enabled", async () => {
+    mockIsSignedIn = true;
+    mockAuthenticated = true;
+    const { SiteHeader } = await import("./site-header");
+    render(<SiteHeader readerWalletEnabled />);
+
+    expect(
+      screen.getByTestId("reader-wallet-header-button-mobile"),
+    ).toBeInTheDocument();
+  });
+
+  it("does not render mobile reader wallet button when signed out", async () => {
+    const { SiteHeader } = await import("./site-header");
+    render(<SiteHeader readerWalletEnabled />);
+
+    expect(
+      screen.queryByTestId("reader-wallet-header-button-mobile"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("reader-wallet-header-button")).toBeInTheDocument();
+  });
+
+  it("renders mobile wallet and hides hamburger Sign Out for fixture-authenticated sessions", async () => {
+    const { SiteHeader } = await import("./site-header");
+    render(
+      <SiteHeader readerWalletEnabled fixtureAuthenticated />,
+    );
+
+    expect(
+      screen.getByTestId("reader-wallet-header-button-mobile"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Toggle navigation menu" }),
+    );
+    const mobileNav = screen.getByRole("navigation", {
+      name: "Mobile navigation",
+    });
+    expect(
+      within(mobileNav).queryByRole("button", { name: "Sign Out" }),
+    ).not.toBeInTheDocument();
+  });
 });

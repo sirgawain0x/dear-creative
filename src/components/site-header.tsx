@@ -106,6 +106,8 @@ export function SiteHeader({
     privyTimedOut,
   } = useAuthSession();
   const showReaderWalletButton = readerWalletEnabled || fixtureAuthenticated;
+  /** Matches ReaderAccountDropdown session gate (fixture || live Privy). */
+  const readerWalletSessionSignedIn = isSignedIn || fixtureAuthenticated;
   const readerDropdownFixture = fixtureAuthenticated
     ? {
         fixtureAuthenticated: true as const,
@@ -229,7 +231,14 @@ export function SiteHeader({
           </nav>
 
         <div className="flex items-center gap-2">
-          {/* Mobile: ReaderAccountDropdown removed from top bar — Sign In lives in hamburger menu */}
+          {showReaderWalletButton && readerWalletSessionSignedIn ? (
+            <div className="lg:hidden">
+              <ReaderAccountDropdown
+                surface="mobile"
+                {...readerDropdownFixture}
+              />
+            </div>
+          ) : null}
           <CreativePlatformAppsDrawer />
           <ThemeToggle />
           <button
@@ -258,10 +267,17 @@ export function SiteHeader({
               const isAuthAction = link.href === "/admin";
               const label = isAuthAction && isSignedIn ? "Sign Out" : link.label;
 
-              // Mobile menu is the only auth entry point on small screens:
-              // the reader wallet button no longer sits in the top bar, so
-              // the desktop-only hideNavSignInForReaderWallet rule must not
-              // suppress Sign In here (issue #121).
+              // Signed-out Sign In stays in the hamburger on small screens only
+              // (signed-in wallet lives in the top bar). Do not apply the
+              // desktop-only hideNavSignInForReaderWallet rule here (issue #121).
+
+              if (
+                isAuthAction &&
+                readerWalletSessionSignedIn &&
+                showReaderWalletButton
+              ) {
+                return null;
+              }
 
               if (isAuthAction && isSignedIn) {
                 return (
