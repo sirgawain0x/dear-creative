@@ -58,7 +58,12 @@ export async function requestSubscription(
     });
   }
 
-  await sendConfirmEmail(email, deps);
+  try {
+    await sendConfirmEmail(email, deps);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[subscribe] confirm email send failed", message);
+  }
 
   return row?.status === "pending"
     ? { outcome: "confirmation_resent" }
