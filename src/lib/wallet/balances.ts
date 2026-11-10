@@ -17,10 +17,10 @@ export type WalletBalances = {
   usdc: { raw: string; formatted: string };
 };
 
-function createBaseClient() {
+function createBaseClient(rpcUrl: string) {
   return createPublicClient({
     chain: base,
-    transport: http(alchemyBaseMainnetRpcUrl(), {
+    transport: http(rpcUrl, {
       timeout: WALLET_RPC_TIMEOUT_MS,
     }),
   });
@@ -78,35 +78,48 @@ export function resetWalletBalanceReaderForTests(): void {
 
 export async function fetchWalletBalances(
   address: Address,
+  { allowPublicFallback = false } = {},
 ): Promise<WalletBalances> {
   if (balanceReaderOverride !== undefined && balanceReaderOverride !== null) {
     return balanceReaderOverride(address);
   }
 
+  const rpcUrl = alchemyBaseMainnetRpcUrl();
+  const publicRpcUrl = base.rpcUrls.default.http[0];
   try {
-    const client = createBaseClient();
-    const [ethWei, usdcRaw] = await Promise.all([
-      client.getBalance({ address }),
-      client.readContract({
-        address: BASE_USDC_ADDRESS,
-        abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [address],
-      }),
-    ]);
-
-    return {
-      eth: {
-        raw: ethWei.toString(),
-        formatted: formatUnits(ethWei, 18),
-      },
-      usdc: {
-        raw: usdcRaw.toString(),
-        formatted: formatUnits(usdcRaw, USDC_DECIMALS),
-      },
-    };
+    return await readBalances(address, rpcUrl);
   } catch (error) {
     logWalletBalanceFetchFailure(error);
-    throw error;
+    if (!allowPublicFallback || rpcUrl === publicRpcUrl) throw error;
+    try {
+      return await readBalances(address, publicRpcUrl);
+    } catch (fallbackError) {
+      logWalletBalanceFetchFailure(fallbackError);
+      throw fallbackError;
+    }
   }
+}
+
+async function readBalances(address: Address, rpcUrl: string): Promise<WalletBalances> {
+  const client = createBaseClient(rpcUrl);
+  const [ethWei, usdcRaw] = await Promise.all([
+    client.getBalance({ address }),
+    client.readContract({
+      address: BASE_USDC_ADDRESS,
+      abi: erc20Abi,
+      functionName: "balanceOf",
+      args: [address],
+    }),
+  ]);
+
+  return {
+    eth: {
+      raw: ethWei.toString(),
+      formatted: formatUnits(ethWei, 18),
+    },
+    usdc: {
+      raw: usdcRaw.toString(),
+      formatted: formatUnits(usdcRaw, USDC_DECIMALS),
+    },
+  };
 }

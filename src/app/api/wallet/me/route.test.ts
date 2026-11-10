@@ -86,7 +86,7 @@ describe("GET /api/wallet/me", () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.address).toBe(ADDR_A);
-    expect(fetchWalletBalances).toHaveBeenCalledWith(ADDR_A);
+    expect(fetchWalletBalances).toHaveBeenCalledWith(ADDR_A, { allowPublicFallback: true });
     expect(json.chainId).toBe(8453);
   });
 
@@ -109,7 +109,24 @@ describe("GET /api/wallet/me", () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.address).toBe(ADDR_B);
-    expect(fetchWalletBalances).toHaveBeenCalledWith(ADDR_B);
+    expect(fetchWalletBalances).toHaveBeenCalledWith(ADDR_B, { allowPublicFallback: true });
+  });
+
+  it("keeps the authenticated receive address available when balance reads fail", async () => {
+    vi.mocked(fetchWalletBalances).mockRejectedValueOnce(new Error("RPC unavailable"));
+
+    const res = await GET(new Request("http://localhost/api/wallet/me", {
+      headers: { Authorization: "Bearer token-a" },
+    }));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+    await expect(res.json()).resolves.toMatchObject({
+      configured: true,
+      address: ADDR_A,
+      chainId: 8453,
+      balances: null,
+    });
   });
 
   it("requires privy auth without admin gate", async () => {

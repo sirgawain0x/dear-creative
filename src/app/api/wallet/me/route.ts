@@ -41,7 +41,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const balances = await fetchWalletBalances(address);
+    const balances = await fetchWalletBalances(address, { allowPublicFallback: true });
     return readerWalletJson({
       configured: true,
       address,
@@ -54,8 +54,13 @@ export async function GET(request: Request) {
       code: "wallet_balances_fetch_failed",
     });
     return readerWalletJson(
-      { error: "balances_unavailable" },
-      { status: 502 },
+      {
+        configured: true,
+        address,
+        network: "base",
+        chainId: READER_WALLET_CHAIN_ID,
+        balances: null,
+      },
     );
   }
 }
