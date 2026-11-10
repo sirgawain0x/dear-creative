@@ -24,19 +24,26 @@ export function readSignupSrcForSubscribe(): string | null {
 
 /** Persist sanitized `src` from a query string when no valid value exists yet. */
 export function persistSignupSrcFromSearch(search: string): void {
+  const existingSession = readSignupSrcFromSession();
+  const existingCookie = readSignupSrcFromDocumentCookie();
+  if (existingSession && !existingCookie) {
+    writeSignupSrcDocumentCookie(existingSession);
+  }
+
   const query = search.startsWith("?") ? search.slice(1) : search;
   const raw = new URLSearchParams(query).get("src");
   if (raw == null) {
     return;
   }
+
   const sanitized = sanitizeSignupSrc(raw);
   if (!sanitized) {
     return;
   }
 
-  const existingSession = readSignupSrcFromSession();
-  const existingCookie = readSignupSrcFromDocumentCookie();
-  if (existingSession ?? existingCookie) {
+  const alreadyStored =
+    readSignupSrcFromSession() ?? readSignupSrcFromDocumentCookie();
+  if (alreadyStored) {
     return;
   }
 

@@ -54,7 +54,11 @@ export function writeSignupSrcDocumentCookie(value: string): void {
   }
   try {
     const encoded = encodeURIComponent(sanitized);
-    document.cookie = `${SIGNUP_SRC_COOKIE_NAME}=${encoded}; Path=/; SameSite=Lax; Secure; Max-Age=${SIGNUP_SRC_COOKIE_MAX_AGE_SECONDS}`;
+    const secure =
+      typeof location !== "undefined" && location.protocol === "https:"
+        ? "; Secure"
+        : "";
+    document.cookie = `${SIGNUP_SRC_COOKIE_NAME}=${encoded}; Path=/; SameSite=Lax${secure}; Max-Age=${SIGNUP_SRC_COOKIE_MAX_AGE_SECONDS}`;
   } catch {
     // Cookie blocked or quota
   }

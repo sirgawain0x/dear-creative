@@ -18,6 +18,7 @@ describe("signup-src session capture", () => {
   afterEach(() => {
     sessionStorage.clear();
     clearSignupSrcCookie();
+    vi.restoreAllMocks();
   });
 
   it("persists sanitized src from the query string to session and cookie", () => {
@@ -46,6 +47,20 @@ describe("signup-src session capture", () => {
     expect(sessionStorage.getItem(SIGNUP_SRC_SESSION_KEY)).toBe("original");
   });
 
+  it("backfills cookie when session is valid but cookie is missing", () => {
+    sessionStorage.setItem(SIGNUP_SRC_SESSION_KEY, "session-only");
+    persistSignupSrcFromSearch("");
+    expect(document.cookie).toContain(`${SIGNUP_SRC_COOKIE_NAME}=session-only`);
+    expect(sessionStorage.getItem(SIGNUP_SRC_SESSION_KEY)).toBe("session-only");
+  });
+
+  it("backfills cookie on navigation with new src without overwriting session", () => {
+    sessionStorage.setItem(SIGNUP_SRC_SESSION_KEY, "keep-me");
+    persistSignupSrcFromSearch("?src=attacker");
+    expect(sessionStorage.getItem(SIGNUP_SRC_SESSION_KEY)).toBe("keep-me");
+    expect(document.cookie).toContain(`${SIGNUP_SRC_COOKIE_NAME}=keep-me`);
+  });
+
   it("readSignupSrcForSubscribe falls back to cookie when session is cleared", () => {
     document.cookie = `${SIGNUP_SRC_COOKIE_NAME}=persisted; Path=/; SameSite=Lax; Secure; Max-Age=2592000`;
     sessionStorage.clear();
@@ -59,7 +74,7 @@ describe("signup-src session capture", () => {
     expect(readSignupSrcForSubscribe()).toBe("session-val");
   });
 
-  it("tolerates blocked sessionStorage on read and write", () => {
+  it("still writes cookie when sessionStorage getItem/setItem throw", () => {
     const deny = () => {
       throw new DOMException("Access denied", "SecurityError");
     };
@@ -68,5 +83,6 @@ describe("signup-src session capture", () => {
 
     expect(() => persistSignupSrcFromSearch("?src=yt")).not.toThrow();
     expect(readSignupSrcFromSession()).toBeNull();
+    expect(document.cookie).toContain(`${SIGNUP_SRC_COOKIE_NAME}=yt`);
   });
 });
