@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { NextResponse } from "next/server";
 import { buildCdpFacilitatorJwt } from "@/lib/payments/x402-agent";
 import { requireReaderWalletApi } from "@/lib/wallet/require-reader-wallet-api";
@@ -15,6 +16,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "onramp_unavailable" }, { status: 503, headers });
   }
 
+  const forwardedIp = request.headers.get("x-vercel-forwarded-for")?.trim();
+  const clientIp = process.env.VERCEL === "1" && forwardedIp && isIP(forwardedIp)
+    ? forwardedIp
+    : undefined;
+  if (process.env.VERCEL === "1" && !clientIp) {
+    return NextResponse.json({ error: "onramp_unavailable" }, { status: 503, headers });
+  }
+
   try {
     const jwt = buildCdpFacilitatorJwt({
       method: "POST",
@@ -28,6 +37,7 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         addresses: [{ address: gate.ctx.address, blockchains: ["base"] }],
         assets: ["USDC"],
+        clientIp,
       }),
       cache: "no-store",
       signal: AbortSignal.timeout(10_000),
