@@ -261,4 +261,51 @@ describe("POST /api/subscribe", () => {
     const response = await postSubscribe("new@example.test");
     expect(response.status).toBe(403);
   });
+
+  it("returns SUBSCRIBE_HTTP_ACK when insert succeeds but confirm email send fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    resendSendMock.mockRejectedValueOnce(new Error("Resend API key is invalid"));
+
+    const response = await postSubscribe("send-fail@example.test");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(SUBSCRIBE_HTTP_ACK);
+
+    const [row] = await testDb
+      .select()
+      .from(subscribers)
+      .where(eq(subscribers.email, "send-fail@example.test"));
+    expect(row?.status).toBe("pending");
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[subscribe] confirm email send failed",
+      "Resend API key is invalid",
+    );
+    errorSpy.mockRestore();
+  });
+
+  it("returns 400 for validation failure without SUBSCRIBE_HTTP_ACK", async () => {
+    const response = await postSubscribe("");
+    expect(response.status).toBe(400);
+    expect(await response.json()).not.toEqual(SUBSCRIBE_HTTP_ACK);
+  });
+
+  it("propagates DB insert errors without SUBSCRIBE_HTTP_ACK", async () => {
+    const insertSpy = vi.spyOn(testDb, "insert").mockImplementationOnce(() => {
+      return {
+        values: () => Promise.reject(new Error("db insert failed")),
+      } as unknown as ReturnType<typeof testDb.insert>;
+    });
+
+    await expect(postSubscribe("db-fail@example.test")).rejects.toThrow(
+      "db insert failed",
+    );
+
+    const rows = await testDb
+      .select()
+      .from(subscribers)
+      .where(eq(subscribers.email, "db-fail@example.test"));
+    expect(rows).toHaveLength(0);
+
+    insertSpy.mockRestore();
+  });
 });

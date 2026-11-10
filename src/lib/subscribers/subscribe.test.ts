@@ -34,6 +34,34 @@ describe("requestSubscription", () => {
     resetResendClientForTests();
   });
 
+  it("returns pending_created when confirm email send throws after insert", async () => {
+    const db = await createTestDb();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const send = vi.fn(async () => {
+      throw new Error("Resend rejected");
+    });
+
+    const summary = await requestSubscription("send-throw@example.test", {
+      db,
+      resend: { send },
+      tokenSecret: "secret",
+      siteOrigin: "https://dear.example.test",
+      resendFrom: "news@example.test",
+    });
+
+    expect(summary.outcome).toBe("pending_created");
+    const [row] = await db
+      .select()
+      .from(subscribers)
+      .where(eq(subscribers.email, "send-throw@example.test"));
+    expect(row?.status).toBe("pending");
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[subscribe] confirm email send failed",
+      "Resend rejected",
+    );
+    errorSpy.mockRestore();
+  });
+
   it("creates pending and sends confirmation", async () => {
     const db = await createTestDb();
     const send = vi.fn(async (_payload: ResendSendPayload) => {
