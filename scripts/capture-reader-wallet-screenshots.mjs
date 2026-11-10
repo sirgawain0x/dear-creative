@@ -33,9 +33,8 @@ for (const shot of shots) {
     waitUntil: "networkidle",
   });
   await page.getByTestId("reader-wallet-panel").waitFor({ state: "visible" });
-  await page.getByTestId("reader-wallet-receive-qr").waitFor({
-    state: "visible",
-  });
+  await page.getByRole("button", { name: "Receive", exact: true }).click();
+  await page.getByRole("button", { name: "Copy address" }).waitFor({ state: "visible" });
   await page.screenshot({
     path: path.join(assetDir, shot.name),
     fullPage: true,

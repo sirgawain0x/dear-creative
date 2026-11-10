@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { QRCodeSVG } from "qrcode.react";
+import { useCallback, useContext, useEffect, useState } from "react";
 import { privyAuthorizationHeaders } from "@/lib/privy/privy-authorization-headers";
-import { buildEip681BaseUsdcReceiveUri } from "@/lib/wallet/eip681-receive-uri";
+import { PrivyBridgeContext } from "@/components/providers/privy-root-provider";
+import { ReaderWalletCreateButton, ReaderWalletSend } from "./reader-wallet-transactions";
 import { useAuthSession } from "@/components/providers/app-providers";
 
 type WalletSummaryResponse =
@@ -20,8 +20,8 @@ type WalletSummaryResponse =
       chainId: number;
       balances: {
         eth: { formatted: string };
-        usdc: { formatted: string };
-      };
+        usdc: { formatted: string; raw?: string };
+      } | null;
     };
 
 type HistoryResponse = {
@@ -58,6 +58,12 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
     privyConfigured,
   } = useAuthSession();
 
+  const privy = useContext(PrivyBridgeContext);
+  const [needsWallet, setNeedsWallet] = useState(false);
+  const [receiving, setReceiving] = useState(false);
+  const [funding, setFunding] = useState(false);
+  const [fundingError, setFundingError] = useState(false);
+  const [copyStatus, setCopyStatus] = useState("");
   const [loading, setLoading] = useState(() => !previewData);
   const [error, setError] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -73,6 +79,9 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
       return;
     }
 
+    setNeedsWallet(false);
+    setError(null);
+    setHistoryError(null);
     try {
       const headers = await privyAuthorizationHeaders({
         privyConfigured,
@@ -86,17 +95,23 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
         return;
       }
 
-      const [summaryRes, historyRes] = await Promise.all([
+      const [summaryResult, historyResult] = await Promise.allSettled([
         fetch("/api/wallet/me", { headers }),
         fetch("/api/wallet/history", { headers }),
       ]);
+
+      if (summaryResult.status === "rejected") {
+        setError(BALANCES_ERROR);
+        return;
+      }
+      const summaryRes = summaryResult.value;
 
       if (summaryRes.status === 404 && !summaryRes.ok) {
         const body = (await summaryRes.json().catch(() => null)) as {
           reason?: string;
         } | null;
         if (body?.reason === "no_embedded_wallet") {
-          setError("No Privy embedded wallet is linked to this account.");
+          setNeedsWallet(true);
           setSummary(null);
           setHistory(null);
           return;
@@ -122,15 +137,20 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
       }
       setSummary(summaryJson);
 
-      if (!historyRes.ok) {
+      if (historyResult.status === "rejected" || !historyResult.value.ok) {
         setHistoryError(HISTORY_ERROR);
         setHistory({ configured: true, transfers: [] });
         return;
       }
 
-      const historyJson = (await historyRes.json()) as HistoryResponse & {
+      const historyJson = (await historyResult.value.json().catch(() => null)) as (HistoryResponse & {
         chainId?: number;
-      };
+      }) | null;
+      if (!historyJson) {
+        setHistoryError(HISTORY_ERROR);
+        setHistory({ configured: true, transfers: [] });
+        return;
+      }
       if (historyJson.chainId !== undefined && historyJson.chainId !== 8453) {
         setHistoryError(WRONG_CHAIN_ERROR);
         setHistory({ configured: true, transfers: [] });
@@ -165,12 +185,27 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
     };
   }, [ready, fetchWallet, previewData]);
 
-  const receiveUri = useMemo(() => {
-    if (!summary || !summary.configured) {
-      return null;
+  async function openCoinbaseOnramp() {
+    setFunding(true);
+    setFundingError(false);
+    try {
+      const headers = await privyAuthorizationHeaders({
+        privyConfigured,
+        authenticated,
+        getAccessToken,
+      });
+      if (!headers) throw new Error("Sign in required");
+      const response = await fetch("/api/wallet/onramp", { method: "POST", headers });
+      if (!response.ok) throw new Error("On-ramp unavailable");
+      const { checkoutUrl } = (await response.json()) as { checkoutUrl: string };
+      const destination = new URL(checkoutUrl);
+      if (destination.origin !== "https://pay.coinbase.com") throw new Error("Invalid checkout URL");
+      window.location.assign(destination.href);
+    } catch {
+      setFundingError(true);
+      setFunding(false);
     }
-    return buildEip681BaseUsdcReceiveUri(summary.address);
-  }, [summary]);
+  }
 
   return (
     <div className="flex flex-col gap-5" data-testid="reader-wallet-panel">
@@ -179,7 +214,7 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
           Your wallet
         </h2>
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-          Read-only balances and USDC activity on Base.
+          Receive and send USDC on Base.
         </p>
       </div>
 
@@ -187,58 +222,83 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
         <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
       ) : null}
 
+      {needsWallet && privy?.authenticated && (
+        <ReaderWalletCreateButton onCreated={fetchWallet} />
+      )}
+
       {loading && !summary ? (
         <p className="text-sm text-zinc-500">Loading wallet…</p>
       ) : null}
 
-      {summary && summary.configured ? (
+      {summary && summary.configured && (previewData || authenticated) ? (
         <>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                ETH balance
-              </p>
-              <p className="mt-1 text-2xl font-bold tabular-nums">
-                {summary.balances.eth.formatted}
-              </p>
-            </div>
-            <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                USDC balance
-              </p>
-              <p className="mt-1 text-2xl font-bold tabular-nums">
-                {summary.balances.usdc.formatted}
-              </p>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-              Receive
-            </p>
-            <code className="mt-2 block break-all text-xs font-mono text-emerald-700 dark:text-emerald-400">
-              {summary.address}
-            </code>
-            {receiveUri ? (
-              <div className="mt-3 inline-flex max-w-full flex-col items-start gap-2">
-                <span
-                  className="rounded-full border border-sky-300 bg-sky-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-sky-900 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-200"
-                  data-testid="reader-wallet-receive-network-label"
-                >
-                  USDC on Base only
-                </span>
-                <QRCodeSVG
-                  value={receiveUri}
-                  size={200}
-                  level="M"
-                  marginSize={1}
-                  className="max-w-full rounded-lg border border-zinc-200 dark:border-zinc-700"
-                  data-testid="reader-wallet-receive-qr"
-                  title="QR code for USDC on Base (EIP-681)"
-                />
+          {summary.balances ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  ETH balance
+                </p>
+                <p className="mt-1 text-2xl font-bold tabular-nums">
+                  {summary.balances.eth.formatted}
+                </p>
               </div>
-            ) : null}
+              <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  USDC balance
+                </p>
+                <p className="mt-1 text-2xl font-bold tabular-nums">
+                  {summary.balances.usdc.formatted}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-amber-700 dark:text-amber-300">{BALANCES_ERROR}</p>
+          )}
+
+          <div className="flex flex-wrap gap-3">
+            {!previewData && privy?.authenticated && (
+              <button type="button" className="rounded-full border px-3 py-1 text-sm"
+                disabled={funding} onClick={openCoinbaseOnramp}>
+                {funding ? "Opening Coinbase…" : "Add USDC"}
+              </button>
+            )}
+            <button
+              type="button"
+              aria-expanded={receiving}
+              className="rounded-full border px-3 py-1 text-sm"
+              onClick={() => {
+                setCopyStatus("");
+                setReceiving(!receiving);
+              }}
+            >
+              Receive
+            </button>
+            {!previewData && privy?.authenticated && (
+              <ReaderWalletSend address={summary.address} balance={summary.balances?.usdc.raw} />
+            )}
           </div>
+          {fundingError && <p role="alert" className="text-xs">Couldn’t open Coinbase checkout. Try again.</p>}
+          {receiving && (
+            <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+              <p className="text-sm font-medium">Receive USDC on Base</p>
+              <code className="my-2 block break-all text-xs">{summary.address}</code>
+              <button
+                type="button"
+                className="rounded-full border px-3 py-1 text-xs"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(summary.address);
+                    setCopyStatus("Address copied.");
+                  } catch {
+                    setCopyStatus("Couldn’t copy automatically. Select the address to copy it.");
+                  }
+                }}
+              >
+                Copy address
+              </button>
+              <p role="status" className="mt-2 text-xs">{copyStatus}</p>
+            </div>
+          )}
 
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
