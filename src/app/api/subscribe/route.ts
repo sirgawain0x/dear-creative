@@ -5,6 +5,7 @@ import { checkRateLimit } from "@/lib/rate-limit/memory";
 import { getResendClient, getResendFromAddress } from "@/lib/resend/client";
 import { requireHumanVisitor } from "@/lib/botid/verify";
 import { getRequiredPublicSiteUrl } from "@/lib/site/public-origin";
+import { readSignupSrcFromCookieHeader } from "@/lib/subscribers/signup-src-cookie";
 import { sanitizeSignupSrc } from "@/lib/subscribers/signup-src";
 import { requestSubscription } from "@/lib/subscribers/subscribe";
 import { SUBSCRIBE_HTTP_ACK } from "@/lib/subscribers/subscribe-response";
@@ -68,7 +69,9 @@ export async function POST(request: Request) {
     );
   }
 
-  const signupSrc = sanitizeSignupSrc(body.signupSrc);
+  const signupSrc =
+    sanitizeSignupSrc(body.signupSrc) ??
+    readSignupSrcFromCookieHeader(request.headers.get("cookie"));
 
   await requestSubscription(
     email,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { readSignupSrcFromSession } from "@/lib/subscribers/signup-src-session";
+import { readSignupSrcForSubscribe } from "@/lib/subscribers/signup-src-session";
 
 type SubscribeFormProps = {
   centered?: boolean;
@@ -22,7 +22,7 @@ export function SubscribeForm({ centered = false }: SubscribeFormProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email,
-          signupSrc: readSignupSrcFromSession(),
+          signupSrc: readSignupSrcForSubscribe(),
         }),
       });
       const data = (await response.json()) as {
