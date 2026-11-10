@@ -8,6 +8,7 @@ import {
   useMemo,
   useState,
   useSyncExternalStore,
+  Suspense,
 } from "react";
 import { PrivyBridgeContext, PrivyRootProvider } from "./privy-root-provider";
 import { CaptureSignupSrc } from "@/components/subscribers/capture-signup-src";
@@ -258,7 +259,9 @@ export function AppProviders({
         <StudioTokenProvider>
           <ThemeProvider>
             <ToastProvider>
-              <CaptureSignupSrc />
+              <Suspense fallback={null}>
+                <CaptureSignupSrc />
+              </Suspense>
               {children}
             </ToastProvider>
           </ThemeProvider>
@@ -273,7 +276,9 @@ export function AppProviders({
         <PrivyRootProvider appId={resolvedAppId}>
           <ThemeProvider>
             <ToastProvider>
-              <CaptureSignupSrc />
+              <Suspense fallback={null}>
+                <CaptureSignupSrc />
+              </Suspense>
               {children}
             </ToastProvider>
           </ThemeProvider>

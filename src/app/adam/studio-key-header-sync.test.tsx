@@ -24,6 +24,7 @@ vi.mock("next/link", () => ({
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/adam",
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("@/components/providers/app-providers", async (importOriginal) => {

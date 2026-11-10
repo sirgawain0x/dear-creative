@@ -167,6 +167,95 @@ describe("POST /api/subscribe", () => {
     expect(row?.signupSrc).toBe("yt");
   });
 
+  it("persists signup_src from dc_signup_src cookie when body omits signupSrc", async () => {
+    const response = await POST(
+      new Request("https://dear.example.test/api/subscribe", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: "dc_signup_src=hashnode",
+        },
+        body: JSON.stringify({ email: "cookie-src@example.test" }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    const [row] = await testDb
+      .select()
+      .from(subscribers)
+      .where(eq(subscribers.email, "cookie-src@example.test"));
+    expect(row?.signupSrc).toBe("hashnode");
+  });
+
+  it("prefers body signupSrc over dc_signup_src cookie", async () => {
+    const response = await POST(
+      new Request("https://dear.example.test/api/subscribe", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: "dc_signup_src=hashnode",
+        },
+        body: JSON.stringify({
+          email: "body-wins@example.test",
+          signupSrc: "yt",
+        }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    const [row] = await testDb
+      .select()
+      .from(subscribers)
+      .where(eq(subscribers.email, "body-wins@example.test"));
+    expect(row?.signupSrc).toBe("yt");
+  });
+
+  it("falls back to cookie when body signupSrc is invalid", async () => {
+    const response = await POST(
+      new Request("https://dear.example.test/api/subscribe", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: "dc_signup_src=ctv",
+        },
+        body: JSON.stringify({
+          email: "invalid-body@example.test",
+          signupSrc: "!!!",
+        }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    const [row] = await testDb
+      .select()
+      .from(subscribers)
+      .where(eq(subscribers.email, "invalid-body@example.test"));
+    expect(row?.signupSrc).toBe("ctv");
+  });
+
+  it("does not overwrite signup_src on existing pending rows when using cookie fallback", async () => {
+    await testDb.insert(subscribers).values({
+      id: randomUUID(),
+      email: "pending-cookie@example.test",
+      status: "pending",
+      source: "signup",
+      signupSrc: "ctv",
+    });
+    const response = await POST(
+      new Request("https://dear.example.test/api/subscribe", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: "dc_signup_src=yt",
+        },
+        body: JSON.stringify({ email: "pending-cookie@example.test" }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    const [row] = await testDb
+      .select()
+      .from(subscribers)
+      .where(eq(subscribers.email, "pending-cookie@example.test"));
+    expect(row?.signupSrc).toBe("ctv");
+  });
+
   it("returns 403 when BotID flags the request as a bot", async () => {
     setBotIdCheckForTests(async () => ({ isBot: true }));
     const response = await postSubscribe("new@example.test");

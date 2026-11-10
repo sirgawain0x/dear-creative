@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { readSignupSrcFromSession } from "@/lib/subscribers/signup-src-session";
+import { readSignupSrcForSubscribe } from "@/lib/subscribers/signup-src-session";
 
 type SubscriberPerksGateProps = {
   slug: string;
@@ -50,7 +50,7 @@ export function SubscriberPerksGate({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email,
-          signupSrc: readSignupSrcFromSession(),
+          signupSrc: readSignupSrcForSubscribe(),
         }),
       });
 
