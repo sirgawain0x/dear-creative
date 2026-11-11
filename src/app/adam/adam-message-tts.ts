@@ -22,10 +22,12 @@ export async function playAdamGoogleTts({
   const ttsAbort = new AbortController();
   abortRef.current = ttsAbort;
 
+  let fallbackStarted = false;
   const tryFallback = () => {
-    if (!mayContinuePlayback(isSessionActive(), ttsAbort.signal.aborted)) {
+    if (fallbackStarted || !mayContinuePlayback(isSessionActive(), ttsAbort.signal.aborted)) {
       return;
     }
+    fallbackStarted = true;
     speakBrowserFallback(text, messageIndex);
   };
 

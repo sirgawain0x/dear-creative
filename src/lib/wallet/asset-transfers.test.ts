@@ -163,6 +163,31 @@ describe("asset transfer normalizer", () => {
     vi.unstubAllEnvs();
   });
 
+  it.each(["ALCHEMY_API_KEY", "ALCHEMY_WALLET_HISTORY_API_KEY"])(
+    "sends the allowlisted app origin for USDC history using %s",
+    async (key) => {
+      vi.stubEnv("ALCHEMY_API_KEY", "");
+      vi.stubEnv("ALCHEMY_WALLET_HISTORY_API_KEY", "");
+      vi.stubEnv(key, "test-key");
+      const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        Response.json({ result: { transfers: [] } }),
+      );
+      try {
+        await expect(fetchAlchemyAssetTransfersPage({
+          wallet: WALLET,
+          direction: "in",
+          usdcOnly: true,
+        })).resolves.toEqual({ transfers: [] });
+        expect(fetchMock.mock.calls[0]?.[0]).toBe("https://base-mainnet.g.alchemy.com/v2/test-key");
+        expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("Origin"))
+          .toBe("https://news.creativeplatform.xyz");
+      } finally {
+        fetchMock.mockRestore();
+        vi.unstubAllEnvs();
+      }
+    },
+  );
+
   it("paginates via mocked Alchemy fetcher", async () => {
     setAssetTransfersFetcherForTests(async ({ direction, pageKey }) => {
       if (direction === "in") {

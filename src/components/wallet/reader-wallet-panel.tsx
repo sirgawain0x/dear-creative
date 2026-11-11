@@ -1,9 +1,12 @@
 "use client";
 
-import { useCallback, useContext, useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { privyAuthorizationHeaders } from "@/lib/privy/privy-authorization-headers";
 import { PrivyBridgeContext } from "@/components/providers/privy-root-provider";
+import { coinbaseCheckoutUrl } from "@/lib/wallet/coinbase-onramp";
+import { ReaderWalletOnramp } from "./reader-wallet-onramp";
 import { ReaderWalletCreateButton, ReaderWalletSend } from "./reader-wallet-transactions";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useAuthSession } from "@/components/providers/app-providers";
 
 type WalletSummaryResponse =
@@ -18,6 +21,7 @@ type WalletSummaryResponse =
       address: string;
       network: string;
       chainId: number;
+      embeddedOnramp?: boolean;
       balances: {
         eth: { formatted: string };
         usdc: { formatted: string; raw?: string };
@@ -61,6 +65,8 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
   const privy = useContext(PrivyBridgeContext);
   const [needsWallet, setNeedsWallet] = useState(false);
   const [receiving, setReceiving] = useState(false);
+  const [embeddedFunding, setEmbeddedFunding] = useState(false);
+  const addUsdcRef = useRef<HTMLButtonElement>(null);
   const [funding, setFunding] = useState(false);
   const [fundingError, setFundingError] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
@@ -74,6 +80,11 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
     previewData?.history ?? null,
   );
 
+  const getHeaders = useCallback(
+    () => privyAuthorizationHeaders({ privyConfigured, authenticated, getAccessToken }),
+    [privyConfigured, authenticated, getAccessToken],
+  );
+
   const fetchWallet = useCallback(async () => {
     if (previewData) {
       return;
@@ -83,11 +94,7 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
     setError(null);
     setHistoryError(null);
     try {
-      const headers = await privyAuthorizationHeaders({
-        privyConfigured,
-        authenticated,
-        getAccessToken,
-      });
+      const headers = await getHeaders();
       if (!authenticated || !headers) {
         setError(SIGN_IN_ERROR);
         setSummary(null);
@@ -139,21 +146,21 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
 
       if (historyResult.status === "rejected" || !historyResult.value.ok) {
         setHistoryError(HISTORY_ERROR);
-        setHistory({ configured: true, transfers: [] });
+        setHistory(null);
         return;
       }
 
       const historyJson = (await historyResult.value.json().catch(() => null)) as (HistoryResponse & {
         chainId?: number;
       }) | null;
-      if (!historyJson) {
+      if (!historyJson?.configured || !Array.isArray(historyJson.transfers)) {
         setHistoryError(HISTORY_ERROR);
-        setHistory({ configured: true, transfers: [] });
+        setHistory(null);
         return;
       }
       if (historyJson.chainId !== undefined && historyJson.chainId !== 8453) {
         setHistoryError(WRONG_CHAIN_ERROR);
-        setHistory({ configured: true, transfers: [] });
+        setHistory(null);
         return;
       }
       setHistory(historyJson);
@@ -164,9 +171,8 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
     }
   }, [
     authenticated,
-    getAccessToken,
+    getHeaders,
     previewData,
-    privyConfigured,
   ]);
 
   useEffect(() => {
@@ -189,17 +195,13 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
     setFunding(true);
     setFundingError(false);
     try {
-      const headers = await privyAuthorizationHeaders({
-        privyConfigured,
-        authenticated,
-        getAccessToken,
-      });
+      const headers = await getHeaders();
       if (!headers) throw new Error("Sign in required");
       const response = await fetch("/api/wallet/onramp", { method: "POST", headers });
       if (!response.ok) throw new Error("On-ramp unavailable");
       const { checkoutUrl } = (await response.json()) as { checkoutUrl: string };
-      const destination = new URL(checkoutUrl);
-      if (destination.origin !== "https://pay.coinbase.com") throw new Error("Invalid checkout URL");
+      const destination = coinbaseCheckoutUrl(checkoutUrl);
+      if (!destination) throw new Error("Invalid checkout URL");
       window.location.assign(destination.href);
     } catch {
       setFundingError(true);
@@ -257,8 +259,18 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
 
           <div className="flex flex-wrap gap-3">
             {!previewData && privy?.authenticated && (
-              <button type="button" className="rounded-full border px-3 py-1 text-sm"
-                disabled={funding} onClick={openCoinbaseOnramp}>
+              <button
+                ref={addUsdcRef}
+                type="button"
+                className="rounded-full border px-3 py-1 text-sm"
+                disabled={funding}
+                aria-haspopup={summary.embeddedOnramp ? "dialog" : undefined}
+                aria-expanded={summary.embeddedOnramp ? embeddedFunding : undefined}
+                onClick={() => {
+                  if (summary.embeddedOnramp) setEmbeddedFunding(true);
+                  else void openCoinbaseOnramp();
+                }}
+              >
                 {funding ? "Opening Coinbase…" : "Add USDC"}
               </button>
             )}
@@ -277,7 +289,38 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
               <ReaderWalletSend address={summary.address} balance={summary.balances?.usdc.raw} />
             )}
           </div>
-          {fundingError && <p role="alert" className="text-xs">Couldn’t open Coinbase checkout. Try again.</p>}
+          {!previewData && privy?.authenticated && summary.embeddedOnramp ? (
+            <Sheet open={embeddedFunding} onOpenChange={setEmbeddedFunding}>
+              <SheetContent
+                side="right"
+                className="z-[110] overflow-y-auto"
+                onCloseAutoFocus={(event) => {
+                  event.preventDefault();
+                  addUsdcRef.current?.focus();
+                }}
+              >
+                <SheetHeader>
+                  <SheetTitle>Add USDC with Apple Pay</SheetTitle>
+                  <SheetDescription>Fund your Base wallet through Coinbase.</SheetDescription>
+                </SheetHeader>
+                <ReaderWalletOnramp getHeaders={getHeaders} onSettled={fetchWallet} />
+                <button
+                  type="button"
+                  className="self-start text-xs underline"
+                  disabled={funding}
+                  onClick={openCoinbaseOnramp}
+                >
+                  {funding ? "Opening Coinbase…" : "Use Coinbase Checkout"}
+                </button>
+                {fundingError ? (
+                  <p role="alert" className="text-xs">Couldn’t open Coinbase checkout. Try again.</p>
+                ) : null}
+              </SheetContent>
+            </Sheet>
+          ) : null}
+          {fundingError && !embeddedFunding ? (
+            <p role="alert" className="text-xs">Couldn’t open Coinbase checkout. Try again.</p>
+          ) : null}
           {receiving && (
             <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
               <p className="text-sm font-medium">Receive USDC on Base</p>
@@ -336,8 +379,8 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
                 </li>
               ))}
             </ul>
-            {(history?.transfers ?? []).length === 0 && !historyError ? (
-              <p className="mt-2 text-xs text-zinc-500">No recent USDC transfers.</p>
+            {history && history.transfers.length === 0 && !historyError && !loading ? (
+              <p className="mt-2 text-xs text-zinc-500">No USDC transfers found.</p>
             ) : null}
           </div>
         </>

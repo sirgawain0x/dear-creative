@@ -1,4 +1,5 @@
 import { getAddress, type Address } from "viem";
+import { BASE_USDC_ADDRESS } from "@/lib/payments/subscription-config";
 import type { WalletHistoryDirection } from "./asset-transfers";
 
 /** Alchemy-supported categories on Base (no `internal`). */
@@ -9,6 +10,7 @@ export type BuildAlchemyAssetTransfersRpcParams = {
   direction: WalletHistoryDirection;
   maxCount?: number;
   pageKey?: string;
+  usdcOnly?: boolean;
 };
 
 function directionFilter(
@@ -25,12 +27,13 @@ function directionFilter(
 export function buildAlchemyGetAssetTransfersRpcParams(
   params: BuildAlchemyAssetTransfersRpcParams,
 ): Record<string, unknown> {
-  const { wallet, direction, maxCount = 25, pageKey } = params;
+  const { wallet, direction, maxCount = 25, pageKey, usdcOnly } = params;
   const filter = directionFilter(wallet, direction);
   return {
     fromBlock: "0x0",
     toBlock: "latest",
-    category: [...ALCHEMY_ASSET_TRANSFER_CATEGORIES],
+    category: usdcOnly ? ["erc20"] : [...ALCHEMY_ASSET_TRANSFER_CATEGORIES],
+    ...(usdcOnly ? { contractAddresses: [BASE_USDC_ADDRESS] } : {}),
     excludeZeroValue: true,
     withMetadata: true,
     order: "desc",

@@ -29,12 +29,14 @@ export async function fetchReaderUsdcTransferHistory(params: {
       wallet: params.wallet,
       direction: "in",
       maxCount: params.maxCount,
+      usdcOnly: true,
       pageKey: params.incomingPageKey,
     }),
     fetchAlchemyAssetTransfersPage({
       wallet: params.wallet,
       direction: "out",
       maxCount: params.maxCount,
+      usdcOnly: true,
       pageKey: params.outgoingPageKey,
     }),
   ]);

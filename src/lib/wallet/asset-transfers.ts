@@ -3,7 +3,7 @@ import {
   BASE_USDC_ADDRESS,
   USDC_DECIMALS,
 } from "@/lib/payments/subscription-config";
-import { alchemyBaseMainnetRpcUrl, WALLET_RPC_TIMEOUT_MS } from "./alchemy-base-rpc";
+import { ALCHEMY_API_KEY_ENV, alchemyBaseMainnetRpcUrl, WALLET_RPC_TIMEOUT_MS } from "./alchemy-base-rpc";
 import { buildAlchemyGetAssetTransfersRpcParams } from "./alchemy-get-asset-transfers-params";
 import {
   AlchemyTransfersError,
@@ -11,6 +11,7 @@ import {
 } from "./alchemy-transfers-error";
 
 const BASE_USDC_LOWER = BASE_USDC_ADDRESS.toLowerCase();
+const DEAR_CREATIVE_ORIGIN = "https://news.creativeplatform.xyz";
 
 export type WalletHistoryDirection = "in" | "out";
 
@@ -51,6 +52,7 @@ export type FetchAssetTransfersParams = {
   direction: WalletHistoryDirection;
   maxCount?: number;
   pageKey?: string;
+  usdcOnly?: boolean;
 };
 
 let assetTransfersFetcherOverride:
@@ -80,7 +82,7 @@ export async function fetchAlchemyAssetTransfersPage(
     return assetTransfersFetcherOverride(params);
   }
 
-  const { wallet, direction, maxCount = 25, pageKey } = params;
+  const { wallet, direction, maxCount = 25, pageKey, usdcOnly } = params;
 
   const body = {
     jsonrpc: "2.0",
@@ -92,17 +94,28 @@ export async function fetchAlchemyAssetTransfersPage(
         direction,
         maxCount,
         pageKey,
+        usdcOnly,
       }),
     ],
   };
+
+  const historyKey = usdcOnly ? process.env.ALCHEMY_WALLET_HISTORY_API_KEY?.trim() : undefined;
+  const rpcUrl = historyKey
+    ? `https://base-mainnet.g.alchemy.com/v2/${encodeURIComponent(historyKey)}`
+    : alchemyBaseMainnetRpcUrl();
+  const headers = new Headers({ "Content-Type": "application/json" });
+  if (usdcOnly && (historyKey || process.env[ALCHEMY_API_KEY_ENV]?.trim())) {
+    // Alchemy requires the allowlisted app origin on server requests too.
+    headers.set("Origin", DEAR_CREATIVE_ORIGIN);
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), WALLET_RPC_TIMEOUT_MS);
 
   try {
-    const response = await fetch(alchemyBaseMainnetRpcUrl(), {
+    const response = await fetch(rpcUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(body),
       signal: controller.signal,
     });
@@ -122,7 +135,7 @@ export async function fetchAlchemyAssetTransfersPage(
       result?: AlchemyAssetTransfersResult;
       error?: { message?: string };
     };
-    if (json.error || !json.result) {
+    if (json.error || !Array.isArray(json.result?.transfers)) {
       const alchemyMessage = json.error?.message ?? null;
       logAlchemyTransfersFailure({
         code: "rpc_error",
