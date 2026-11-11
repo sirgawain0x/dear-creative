@@ -251,6 +251,46 @@ describe("Adam chat loading indicator", () => {
     expect(audioConstructor).toHaveBeenCalledOnce();
   });
 
+  it("clears interrupted browser speech without reporting a playback failure", async () => {
+    const previousSynthesis = Object.getOwnPropertyDescriptor(window, "speechSynthesis");
+    const previousUtterance = Object.getOwnPropertyDescriptor(window, "SpeechSynthesisUtterance");
+    const speak = vi.fn<(utterance: SpeechSynthesisUtterance) => void>();
+    const cancel = vi.fn();
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: { speak, cancel },
+    });
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: class { constructor(readonly text: string) {} },
+    });
+
+    try {
+      mockStudioFetch({ ttsHandler: async () => new Response(null, { status: 503 }) });
+      localStorage.setItem(STUDIO_TOKEN_STORAGE_KEY, "fixture-key");
+      render(<AppProviders><AdamStudio /></AppProviders>);
+      await waitForAdamChatShell();
+      await openHistoryAndSelectThread("thread_fixture_a");
+      await screen.findByText("Saved reply from Adam.");
+      const listen = await screen.findByRole("button", { name: /Listen to Adam/ });
+      fireEvent.click(listen);
+      await waitFor(() => expect(speak).toHaveBeenCalledOnce());
+      const utterance = speak.mock.calls[0][0];
+      expect(cancel).not.toHaveBeenCalled();
+      act(() => utterance.onerror?.({ error: "interrupted" } as SpeechSynthesisErrorEvent));
+      expect(screen.queryByText("Loading audio…")).toBeNull();
+      expect(screen.queryByText("Adam could not play this reply.")).toBeNull();
+      expect(listen).toHaveAccessibleName(/Listen to Adam/);
+      expect(cancel).not.toHaveBeenCalled();
+    } finally {
+      cleanup();
+      if (previousSynthesis) Object.defineProperty(window, "speechSynthesis", previousSynthesis);
+      else Reflect.deleteProperty(window, "speechSynthesis");
+      if (previousUtterance) Object.defineProperty(window, "SpeechSynthesisUtterance", previousUtterance);
+      else Reflect.deleteProperty(window, "SpeechSynthesisUtterance");
+    }
+  });
+
   it("waiting: shows thinking bubble and disables send while POST is pending", async () => {
     let resolveChat!: (value: Response) => void;
     const chatPending = new Promise<Response>((resolve) => {

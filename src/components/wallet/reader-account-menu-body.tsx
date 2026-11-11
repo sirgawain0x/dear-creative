@@ -12,6 +12,7 @@ import {
 type ReaderAccountMenuBodyProps = {
   onSignOut?: () => void;
   onNavigate?: () => void;
+  onOpenCheckout: () => void;
   previewData?: ReaderWalletPreviewData;
   /** Fixture only — skip live admin fetch and show Admin Console link. */
   fixtureShowAdmin?: boolean;
@@ -20,6 +21,7 @@ type ReaderAccountMenuBodyProps = {
 export function ReaderAccountMenuBody({
   onSignOut,
   onNavigate,
+  onOpenCheckout,
   previewData,
   fixtureShowAdmin = false,
 }: ReaderAccountMenuBodyProps) {
@@ -137,7 +139,7 @@ export function ReaderAccountMenuBody({
     >
       {actions}
       <div className="min-h-0 flex-1 overflow-y-auto p-3 pt-3">
-        <ReaderWalletPanel previewData={previewData} />
+        <ReaderWalletPanel previewData={previewData} onOpenCheckout={onOpenCheckout} />
       </div>
     </div>
   );

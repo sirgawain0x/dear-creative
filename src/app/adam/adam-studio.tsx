@@ -843,6 +843,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
       audio: activeAudioRef.current,
       utterance: activeUtteranceRef.current,
       abortController: abort,
+      speechSynthesis: activeUtteranceRef.current ? undefined : null,
     });
     activeAudioRef.current = null;
     activeUtteranceRef.current = null;
@@ -876,6 +877,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
             audio: activeAudioRef.current,
             utterance: null,
             abortController: null,
+            speechSynthesis: null,
           });
           activeAudioRef.current = null;
         }
@@ -885,8 +887,15 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
           utterance.onend = () => {
             if (isSessionActive()) stopSpeaking();
           };
-          utterance.onerror = failPlayback;
-          window.speechSynthesis.cancel();
+          utterance.onerror = ({ error }) => {
+            if (!isSessionActive()) return;
+            if (error === "canceled" || error === "interrupted") {
+              activeUtteranceRef.current = null;
+              stopSpeaking();
+              return;
+            }
+            failPlayback();
+          };
           activeUtteranceRef.current = utterance;
           window.speechSynthesis.speak(utterance);
         } catch {

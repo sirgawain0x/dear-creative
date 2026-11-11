@@ -1,17 +1,98 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useAuthSession } from "@/components/providers/app-providers";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { privyAuthorizationHeaders } from "@/lib/privy/privy-authorization-headers";
 import {
   COINBASE_CHECKOUT_ORIGIN,
   coinbaseCheckoutUrl,
 } from "@/lib/wallet/coinbase-onramp";
 
-type Props = {
-  getHeaders: () => Promise<{ Authorization: string } | null>;
-  onSettled: () => void;
-};
+type GetHeaders = () => Promise<{ Authorization: string } | null>;
 
-export function ReaderWalletOnramp({ getHeaders, onSettled }: Props) {
+export function HostedCoinbaseCheckoutButton({ getHeaders, label, className }: {
+  getHeaders: GetHeaders;
+  label: string;
+  className: string;
+}) {
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  async function openCheckout() {
+    setPending(true);
+    setFailed(false);
+    try {
+      const headers = await getHeaders();
+      if (!headers) throw new Error("Sign in required");
+      const response = await fetch("/api/wallet/onramp", { method: "POST", headers });
+      if (!response.ok) throw new Error("Checkout unavailable");
+      const { checkoutUrl } = await response.json();
+      const destination = coinbaseCheckoutUrl(checkoutUrl);
+      if (!destination) throw new Error("Invalid checkout URL");
+      window.location.assign(destination.href);
+    } catch {
+      setFailed(true);
+      setPending(false);
+    }
+  }
+
+  return (
+    <>
+      <button type="button" className={className} disabled={pending} onClick={openCheckout}>
+        {pending ? "Opening Coinbase…" : label}
+      </button>
+      {failed ? (
+        <p role="alert" className="self-center text-xs">Couldn’t open Coinbase checkout. Try again.</p>
+      ) : null}
+    </>
+  );
+}
+
+export function ReaderWalletCheckoutSheet({ open, onOpenChange, restoreFocus }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  restoreFocus?: () => void;
+}) {
+  const amountId = useId();
+  const { authenticated, getAccessToken, privyConfigured } = useAuthSession();
+  const getHeaders = useCallback(
+    () => privyAuthorizationHeaders({ authenticated, getAccessToken, privyConfigured }),
+    [authenticated, getAccessToken, privyConfigured],
+  );
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        className="z-[110] overflow-y-auto"
+        data-testid="reader-wallet-checkout"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          document.getElementById(amountId)?.focus();
+        }}
+        onCloseAutoFocus={(event) => {
+          if (!restoreFocus) return;
+          event.preventDefault();
+          restoreFocus();
+        }}
+      >
+        <SheetHeader>
+          <SheetTitle>Add USDC with Apple Pay</SheetTitle>
+          <SheetDescription>Fund your Base wallet through Coinbase.</SheetDescription>
+        </SheetHeader>
+        <ReaderWalletOnramp getHeaders={getHeaders} amountId={amountId} />
+        <HostedCoinbaseCheckoutButton
+          getHeaders={getHeaders}
+          label="Use Coinbase Checkout"
+          className="self-start text-xs underline"
+        />
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function ReaderWalletOnramp({ getHeaders, amountId }: { getHeaders: GetHeaders; amountId: string }) {
   const [amount, setAmount] = useState("");
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -38,7 +119,6 @@ export function ReaderWalletOnramp({ getHeaders, onSettled }: Props) {
         case "onramp_api.polling_success":
           setCheckoutUrl(null);
           setNotice("Coinbase sent your USDC. Your balance may take a moment to update.");
-          onSettled();
           break;
         case "onramp_api.load_error":
           if (payload.data?.errorCode === "ERROR_CODE_GUEST_APPLE_PAY_NOT_SUPPORTED") break;
@@ -59,7 +139,7 @@ export function ReaderWalletOnramp({ getHeaders, onSettled }: Props) {
 
     window.addEventListener("message", onCheckoutMessage);
     return () => window.removeEventListener("message", onCheckoutMessage);
-  }, [onSettled]);
+  }, []);
 
   async function openCheckout(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -109,6 +189,7 @@ export function ReaderWalletOnramp({ getHeaders, onSettled }: Props) {
           <label className="block">
             Amount in USD
             <input
+              id={amountId}
               type="text"
               inputMode="decimal"
               pattern="[0-9]{1,4}(\.[0-9]{1,2})?"

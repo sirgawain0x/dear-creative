@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { createRadixLayerFocusHandlers } from "@/lib/utils/radixLayerFocus";
 import { useReaderWalletAddress } from "@/lib/wallet/use-reader-wallet-address";
 import { useAuthSession } from "@/components/providers/app-providers";
@@ -18,6 +18,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { ReaderAccountMenuBody } from "./reader-account-menu-body";
+import { ReaderWalletCheckoutSheet } from "./reader-wallet-onramp";
 import type { ReaderWalletPreviewData } from "./reader-wallet-panel";
 import { ReaderAccountTrigger } from "./reader-account-trigger";
 
@@ -41,8 +42,10 @@ export function ReaderAccountDropdown({
   fixturePreviewData,
   fixtureShowAdmin = false,
 }: ReaderAccountDropdownProps) {
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [desktopOpen, setDesktopOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const handingOffFocus = useRef(false);
+  const accountTrigger = useRef<HTMLButtonElement>(null);
   const {
     authenticated,
     login,
@@ -92,13 +95,31 @@ export function ReaderAccountDropdown({
     );
   }
 
+  function openCheckout() {
+    handingOffFocus.current = true;
+    setAccountOpen(false);
+    setCheckoutOpen(true);
+  }
+
+  const checkout = (
+    <ReaderWalletCheckoutSheet
+      open={checkoutOpen}
+      onOpenChange={setCheckoutOpen}
+      restoreFocus={() => {
+        handingOffFocus.current = false;
+        accountTrigger.current?.focus();
+      }}
+    />
+  );
+
   if (surface === "desktop") {
     return (
       <div className={className}>
-        <DropdownMenu open={desktopOpen} onOpenChange={setDesktopOpen}>
+        <DropdownMenu open={accountOpen} onOpenChange={setAccountOpen}>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
+              ref={accountTrigger}
               aria-label="Open account menu"
               data-testid="reader-wallet-header-button"
               className="outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 rounded-full"
@@ -115,25 +136,31 @@ export function ReaderAccountDropdown({
             data-radix-menu-content
             data-testid="reader-account-dropdown"
             className="flex w-[min(calc(100vw-2rem),24rem)] max-h-[min(70vh,36rem)] flex-col overflow-hidden p-0"
-            onCloseAutoFocus={dropdownFocusHandlers.onCloseAutoFocus}
+            onCloseAutoFocus={(event) => {
+              if (handingOffFocus.current) event.preventDefault();
+              else dropdownFocusHandlers.onCloseAutoFocus(event);
+            }}
           >
             <ReaderAccountMenuBody
               previewData={fixturePreviewData}
               fixtureShowAdmin={fixtureShowAdmin}
-              onNavigate={() => setDesktopOpen(false)}
+              onNavigate={() => setAccountOpen(false)}
+              onOpenCheckout={openCheckout}
             />
           </DropdownMenuContent>
         </DropdownMenu>
+        {checkout}
       </div>
     );
   }
 
   return (
     <div className={className}>
-      <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+      <Sheet open={accountOpen} onOpenChange={setAccountOpen}>
         <SheetTrigger asChild>
           <button
             type="button"
+            ref={accountTrigger}
             aria-label="Open account menu"
             data-testid={testId}
             className="outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 rounded-full"
@@ -145,7 +172,13 @@ export function ReaderAccountDropdown({
             />
           </button>
         </SheetTrigger>
-        <SheetContent side="bottom">
+        <SheetContent
+          side="bottom"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            if (!handingOffFocus.current) accountTrigger.current?.focus();
+          }}
+        >
           <SheetHeader>
             <SheetTitle>Wallet</SheetTitle>
           </SheetHeader>
@@ -153,11 +186,13 @@ export function ReaderAccountDropdown({
             <ReaderAccountMenuBody
               previewData={fixturePreviewData}
               fixtureShowAdmin={fixtureShowAdmin}
-              onNavigate={() => setMobileOpen(false)}
+              onNavigate={() => setAccountOpen(false)}
+              onOpenCheckout={openCheckout}
             />
           </div>
         </SheetContent>
       </Sheet>
+      {checkout}
     </div>
   );
 }

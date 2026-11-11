@@ -1,12 +1,10 @@
 "use client";
 
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useState } from "react";
 import { privyAuthorizationHeaders } from "@/lib/privy/privy-authorization-headers";
 import { PrivyBridgeContext } from "@/components/providers/privy-root-provider";
-import { coinbaseCheckoutUrl } from "@/lib/wallet/coinbase-onramp";
-import { ReaderWalletOnramp } from "./reader-wallet-onramp";
+import { HostedCoinbaseCheckoutButton } from "./reader-wallet-onramp";
 import { ReaderWalletCreateButton, ReaderWalletSend } from "./reader-wallet-transactions";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useAuthSession } from "@/components/providers/app-providers";
 
 type WalletSummaryResponse =
@@ -47,6 +45,7 @@ export type ReaderWalletPreviewData = {
 
 type ReaderWalletPanelProps = {
   previewData?: ReaderWalletPreviewData;
+  onOpenCheckout?: () => void;
 };
 
 const BALANCES_ERROR = "Balances are temporarily unavailable.";
@@ -54,7 +53,7 @@ const HISTORY_ERROR = "Transfer history is temporarily unavailable.";
 const SIGN_IN_ERROR = "Sign in with Privy to view your wallet.";
 const WRONG_CHAIN_ERROR = "Wallet reads are limited to Base (chain 8453).";
 
-export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
+export function ReaderWalletPanel({ previewData, onOpenCheckout }: ReaderWalletPanelProps) {
   const {
     ready,
     authenticated,
@@ -65,10 +64,6 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
   const privy = useContext(PrivyBridgeContext);
   const [needsWallet, setNeedsWallet] = useState(false);
   const [receiving, setReceiving] = useState(false);
-  const [embeddedFunding, setEmbeddedFunding] = useState(false);
-  const addUsdcRef = useRef<HTMLButtonElement>(null);
-  const [funding, setFunding] = useState(false);
-  const [fundingError, setFundingError] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
   const [loading, setLoading] = useState(() => !previewData);
   const [error, setError] = useState<string | null>(null);
@@ -191,24 +186,6 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
     };
   }, [ready, fetchWallet, previewData]);
 
-  async function openCoinbaseOnramp() {
-    setFunding(true);
-    setFundingError(false);
-    try {
-      const headers = await getHeaders();
-      if (!headers) throw new Error("Sign in required");
-      const response = await fetch("/api/wallet/onramp", { method: "POST", headers });
-      if (!response.ok) throw new Error("On-ramp unavailable");
-      const { checkoutUrl } = (await response.json()) as { checkoutUrl: string };
-      const destination = coinbaseCheckoutUrl(checkoutUrl);
-      if (!destination) throw new Error("Invalid checkout URL");
-      window.location.assign(destination.href);
-    } catch {
-      setFundingError(true);
-      setFunding(false);
-    }
-  }
-
   return (
     <div className="flex flex-col gap-5" data-testid="reader-wallet-panel">
       <div>
@@ -258,22 +235,24 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
           )}
 
           <div className="flex flex-wrap gap-3">
-            {!previewData && privy?.authenticated && (
-              <button
-                ref={addUsdcRef}
-                type="button"
-                className="rounded-full border px-3 py-1 text-sm"
-                disabled={funding}
-                aria-haspopup={summary.embeddedOnramp ? "dialog" : undefined}
-                aria-expanded={summary.embeddedOnramp ? embeddedFunding : undefined}
-                onClick={() => {
-                  if (summary.embeddedOnramp) setEmbeddedFunding(true);
-                  else void openCoinbaseOnramp();
-                }}
-              >
-                {funding ? "Opening Coinbase…" : "Add USDC"}
-              </button>
-            )}
+            {!previewData && privy?.authenticated ? (
+              summary.embeddedOnramp && onOpenCheckout ? (
+                <button
+                  type="button"
+                  className="rounded-full border px-3 py-1 text-sm"
+                  aria-haspopup="dialog"
+                  onClick={onOpenCheckout}
+                >
+                  Add USDC
+                </button>
+              ) : (
+                <HostedCoinbaseCheckoutButton
+                  getHeaders={getHeaders}
+                  label="Add USDC"
+                  className="rounded-full border px-3 py-1 text-sm"
+                />
+              )
+            ) : null}
             <button
               type="button"
               aria-expanded={receiving}
@@ -289,38 +268,6 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
               <ReaderWalletSend address={summary.address} balance={summary.balances?.usdc.raw} />
             )}
           </div>
-          {!previewData && privy?.authenticated && summary.embeddedOnramp ? (
-            <Sheet open={embeddedFunding} onOpenChange={setEmbeddedFunding}>
-              <SheetContent
-                side="right"
-                className="z-[110] overflow-y-auto"
-                onCloseAutoFocus={(event) => {
-                  event.preventDefault();
-                  addUsdcRef.current?.focus();
-                }}
-              >
-                <SheetHeader>
-                  <SheetTitle>Add USDC with Apple Pay</SheetTitle>
-                  <SheetDescription>Fund your Base wallet through Coinbase.</SheetDescription>
-                </SheetHeader>
-                <ReaderWalletOnramp getHeaders={getHeaders} onSettled={fetchWallet} />
-                <button
-                  type="button"
-                  className="self-start text-xs underline"
-                  disabled={funding}
-                  onClick={openCoinbaseOnramp}
-                >
-                  {funding ? "Opening Coinbase…" : "Use Coinbase Checkout"}
-                </button>
-                {fundingError ? (
-                  <p role="alert" className="text-xs">Couldn’t open Coinbase checkout. Try again.</p>
-                ) : null}
-              </SheetContent>
-            </Sheet>
-          ) : null}
-          {fundingError && !embeddedFunding ? (
-            <p role="alert" className="text-xs">Couldn’t open Coinbase checkout. Try again.</p>
-          ) : null}
           {receiving && (
             <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
               <p className="text-sm font-medium">Receive USDC on Base</p>
