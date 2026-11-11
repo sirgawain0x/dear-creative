@@ -24,6 +24,13 @@ export async function GET(request: Request) {
   }
 
   const { address } = gate.ctx;
+  const checkoutOrigin = URL.parse(process.env.COINBASE_EMBEDDED_ONRAMP_ORIGIN?.trim() ?? "");
+  const embeddedOnramp = Boolean(
+    checkoutOrigin?.protocol === "https:" &&
+    checkoutOrigin.origin === new URL(request.url).origin &&
+    process.env.CDP_API_KEY_ID?.trim() &&
+    process.env.CDP_API_KEY_SECRET?.trim()
+  );
 
   if (isWalletReadFixtureEnabled()) {
     const fixture = walletReadFixtureResponse();
@@ -48,6 +55,7 @@ export async function GET(request: Request) {
       network: "base",
       chainId: READER_WALLET_CHAIN_ID,
       balances,
+      ...(embeddedOnramp ? { embeddedOnramp } : {}),
     });
   } catch {
     console.error("[reader-wallet] wallet_balances_fetch_failed", {
@@ -60,6 +68,7 @@ export async function GET(request: Request) {
         network: "base",
         chainId: READER_WALLET_CHAIN_ID,
         balances: null,
+        ...(embeddedOnramp ? { embeddedOnramp } : {}),
       },
     );
   }

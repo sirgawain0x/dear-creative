@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { AdminEarnPanel } from "@/components/admin/admin-earn-panel";
-import { AdminWalletPanel } from "@/components/admin/admin-wallet-panel";
 import { OracleIngestForm } from "@/components/admin/oracle-ingest-form";
 import { useAuthSession } from "@/components/providers/app-providers";
 import { AdminLinkedInConnect } from "./admin-linkedin-connect";
@@ -50,8 +49,6 @@ export function AdminConsole() {
   const [session, setSession] = useState<AdminMeSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
-  const [walletEnabled, setWalletEnabled] = useState(false);
-  const [walletSendEnabled, setWalletSendEnabled] = useState(false);
   const [earnEnabled, setEarnEnabled] = useState(false);
   const [earnActionsEnabled, setEarnActionsEnabled] = useState(false);
 
@@ -61,12 +58,6 @@ export function AdminConsole() {
       .then((r) => (r.ok ? r.json() : null))
       .then((json) => {
         if (!cancelled && json) {
-          if (typeof json.walletEnabled === "boolean") {
-            setWalletEnabled(json.walletEnabled);
-          }
-          if (typeof json.walletSendEnabled === "boolean") {
-            setWalletSendEnabled(json.walletSendEnabled);
-          }
           if (typeof json.earnEnabled === "boolean") {
             setEarnEnabled(json.earnEnabled);
           }
@@ -214,11 +205,6 @@ export function AdminConsole() {
           className="flex w-full flex-col gap-6"
           data-testid="admin-console-panels-stack"
         >
-          <AdminWalletPanel
-            walletEnabled={walletEnabled}
-            walletSendEnabled={walletSendEnabled}
-            isAdmin={Boolean(session?.isAdmin)}
-          />
           <AdminEarnPanel
             earnEnabled={earnEnabled}
             earnActionsEnabled={earnActionsEnabled}

@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { Ellipsis, LoaderCircle, Square, Volume2 } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -411,6 +413,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
   const [speakingMessageIdx, setSpeakingMessageIdx] = useState<number | null>(
     null,
   );
+  const [isLoadingSpeech, setIsLoadingSpeech] = useState(false);
   const [copiedMessageIdx, setCopiedMessageIdx] = useState<number | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<BlobPart[]>([]);
@@ -419,7 +422,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
   const activeAudioRef = useRef<HTMLAudioElement | null>(null);
   const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const ttsAbortRef = useRef<AbortController | null>(null);
-  const ttsSessionActiveRef = useRef(false);
+  const ttsSessionRef = useRef<symbol | null>(null);
 
   // Ideas & Rough Drafts state
   const [ideas, setIdeas] = useState<AdamIdeaRecord[]>([]);
@@ -728,7 +731,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
               };
               const tMapped: StudioChatMessage[] = (tData.messages || []).map(
                 (m) => ({
-                  role: m.role === "model" ? "assistant" : "user",
+                  role: m.role === "user" ? "user" : "assistant",
                   content: m.content,
                   attachments: m.attachments,
                 }),
@@ -831,13 +834,16 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
 
   // --- TTS (Text-to-Speech) ---
   const stopSpeaking = useCallback(() => {
-    ttsSessionActiveRef.current = false;
+    if (ttsSessionRef.current === null) return;
+    ttsSessionRef.current = null;
+    setIsLoadingSpeech(false);
     const abort = ttsAbortRef.current;
     ttsAbortRef.current = null;
     stopDispatchAudioResources({
       audio: activeAudioRef.current,
       utterance: activeUtteranceRef.current,
       abortController: abort,
+      speechSynthesis: activeUtteranceRef.current ? undefined : null,
     });
     activeAudioRef.current = null;
     activeUtteranceRef.current = null;
@@ -846,81 +852,90 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
 
   useStopAudioOnLeave(stopSpeaking);
 
-  const speakWithBrowserFallback = useCallback(
-    (text: string, messageIndex: number) => {
-      if (!ttsSessionActiveRef.current) {
-        return;
-      }
-      if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-        setStatusBanner({
-          kind: "error",
-          text: "Speech synthesis is not supported in this browser.",
-        });
-        setSpeakingMessageIdx(null);
-        return;
-      }
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.onend = () => setSpeakingMessageIdx(null);
-      utterance.onerror = () => setSpeakingMessageIdx(null);
-      activeUtteranceRef.current = utterance;
-      setSpeakingMessageIdx(messageIndex);
-      window.speechSynthesis.speak(utterance);
-    },
-    [],
-  );
-
   const speakText = useCallback(
     async (text: string, messageIndex: number) => {
-      if (speakingMessageIdx === messageIndex) {
-        stopSpeaking();
-        return;
-      }
       stopSpeaking();
-      setSpeakingMessageIdx(messageIndex);
-      ttsSessionActiveRef.current = true;
+      const session = Symbol();
+      ttsSessionRef.current = session;
+      const isSessionActive = () => ttsSessionRef.current === session;
+      const markPlaying = () => {
+        if (isSessionActive()) setIsLoadingSpeech(false);
+      };
+      const failPlayback = () => {
+        if (!isSessionActive()) return;
+        stopSpeaking();
+        toast.error("Adam could not play this reply.");
+      };
+      const speakInBrowser = () => {
+        if (!isSessionActive()) return;
+        if (!("speechSynthesis" in window)) {
+          failPlayback();
+          return;
+        }
+        if (activeAudioRef.current) {
+          stopDispatchAudioResources({
+            audio: activeAudioRef.current,
+            utterance: null,
+            abortController: null,
+            speechSynthesis: null,
+          });
+          activeAudioRef.current = null;
+        }
+        try {
+          const utterance = new SpeechSynthesisUtterance(text);
+          utterance.onstart = markPlaying;
+          utterance.onend = () => {
+            if (isSessionActive()) stopSpeaking();
+          };
+          utterance.onerror = ({ error }) => {
+            if (!isSessionActive()) return;
+            if (error === "canceled" || error === "interrupted") {
+              activeUtteranceRef.current = null;
+              stopSpeaking();
+              return;
+            }
+            failPlayback();
+          };
+          activeUtteranceRef.current = utterance;
+          window.speechSynthesis.speak(utterance);
+        } catch {
+          failPlayback();
+        }
+      };
 
+      setSpeakingMessageIdx(messageIndex);
+      setIsLoadingSpeech(true);
       if (voiceEngine === "browser") {
-        speakWithBrowserFallback(text, messageIndex);
+        speakInBrowser();
         return;
       }
 
       await playAdamGoogleTts({
         text,
         messageIndex,
-        isSessionActive: () => ttsSessionActiveRef.current,
+        isSessionActive,
         abortRef: ttsAbortRef,
         fetchTts: (signal) =>
           authFetch("/api/adam/voice/tts", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              text,
-              voiceName: googleVoiceName,
-            }),
+            body: JSON.stringify({ text, voiceName: googleVoiceName }),
             signal,
           }),
-        speakBrowserFallback: speakWithBrowserFallback,
+        speakBrowserFallback: speakInBrowser,
         onAudioCreated: (audio) => {
           activeAudioRef.current = audio;
-          audio.onended = () => {
-            setSpeakingMessageIdx(null);
-            activeAudioRef.current = null;
+          audio.onplaying = markPlaying;
+          audio.onwaiting = () => {
+            if (isSessionActive()) setIsLoadingSpeech(true);
           };
-          audio.onerror = () => {
-            activeAudioRef.current = null;
+          audio.onended = () => {
+            if (isSessionActive()) stopSpeaking();
           };
         },
       });
     },
-    [
-      authFetch,
-      googleVoiceName,
-      speakWithBrowserFallback,
-      speakingMessageIdx,
-      stopSpeaking,
-      voiceEngine,
-    ],
+    [authFetch, googleVoiceName, stopSpeaking, toast, voiceEngine],
   );
 
   // --- Copy Chat Message ---
@@ -949,7 +964,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
         toast.error("Failed to copy text to clipboard.");
       }
     },
-    [],
+    [toast],
   );
 
   // --- STT (Speech-to-Text) ---
@@ -1182,6 +1197,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
   const selectChatThread = useCallback(
     async (threadId: string) => {
       cancelChatInFlight();
+      stopSpeaking();
       try {
         activeThreadIdRef.current = threadId;
         setActiveThreadId(threadId);
@@ -1198,7 +1214,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
           };
           const mapped: StudioChatMessage[] = (data.messages || []).map(
             (m) => ({
-              role: m.role === "model" ? "assistant" : "user",
+              role: m.role === "user" ? "user" : "assistant",
               content: m.content,
               attachments: m.attachments,
             }),
@@ -1219,11 +1235,12 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
         // ignore
       }
     },
-    [authFetch, cancelChatInFlight],
+    [authFetch, cancelChatInFlight, stopSpeaking],
   );
 
   const startNewChatThread = useCallback(() => {
     cancelChatInFlight();
+    stopSpeaking();
     activeThreadIdRef.current = null;
     setActiveThreadId(null);
     setChatInput("");
@@ -1235,7 +1252,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
           "Hi! I'm Adam, your Dear Creative editorial agent. You can chat with me by text or voice, upload images or reference files, paste rough ideas for me to turn into a newsletter draft, or configure my Monday morning schedule.",
       },
     ]);
-  }, [cancelChatInFlight]);
+  }, [cancelChatInFlight, stopSpeaking]);
 
   const renameChatThread = useCallback(
     async (threadId: string, newTitle: string) => {
@@ -2681,61 +2698,6 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                       <span className="font-semibold">
                         {msg.role === "user" ? "You" : "Adam"}
                       </span>
-                      {msg.role === "assistant" ? (
-                        <button
-                          type="button"
-                          onClick={() => void speakText(msg.content, idx)}
-                          aria-pressed={speakingMessageIdx === idx}
-                          aria-label={
-                            speakingMessageIdx === idx
-                              ? "Stop speaking"
-                              : "Listen to Adam read this response aloud"
-                          }
-                          title={
-                            speakingMessageIdx === idx
-                              ? "Stop speaking"
-                              : "Listen (TTS)"
-                          }
-                          className={`inline-flex items-center gap-1 rounded-md p-1 transition hover:opacity-100 ${
-                            speakingMessageIdx === idx
-                              ? "text-emerald-600 dark:text-emerald-400 font-medium"
-                              : "hover:text-zinc-900 dark:hover:text-zinc-100"
-                          }`}
-                        >
-                          {speakingMessageIdx === idx ? (
-                            <>
-                              <svg
-                                className="h-4 w-4 animate-pulse"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              >
-                                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                                <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-                                <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-                              </svg>
-                              <span className="text-[11px]">Stop</span>
-                            </>
-                          ) : (
-                            <svg
-                              className="h-4 w-4"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                              <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-                              <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-                            </svg>
-                          )}
-                        </button>
-                      ) : null}
                     </div>
                     <div
                       className={
@@ -2764,8 +2726,31 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                       </div>
                     ) : null}
 
-                    {/* Copy text icon at bottom left of chat bubble */}
-                    <div className="mt-2 flex items-center justify-start border-t border-black/5 pt-1.5 dark:border-white/5">
+                    <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-black/5 pt-1.5 dark:border-white/5">
+                      {msg.role === "assistant" ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (speakingMessageIdx === idx) stopSpeaking();
+                            else void speakText(msg.content, idx);
+                          }}
+                          aria-label={speakingMessageIdx === idx ? "Stop speaking" : "Listen to Adam read this response aloud"}
+                          className="inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-xs hover:bg-zinc-200 dark:hover:bg-zinc-800"
+                        >
+                          {speakingMessageIdx === idx ? (
+                            isLoadingSpeech ? (
+                              <>
+                                <LoaderCircle aria-hidden="true" className="size-3.5 motion-safe:animate-spin" />
+                                <span role="status">Loading audio…</span>
+                              </>
+                            ) : (
+                              <><Square aria-hidden="true" className="size-3.5" />Stop</>
+                            )
+                          ) : (
+                            <><Volume2 aria-hidden="true" className="size-3.5" />Listen</>
+                          )}
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => void handleCopyMessageText(msg.content, idx)}
@@ -2816,6 +2801,45 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                           </>
                         )}
                       </button>
+                      {msg.role === "assistant" ? (
+                        <DropdownMenu.Root>
+                          <DropdownMenu.Trigger
+                            aria-label="More reply actions"
+                            className="rounded px-1.5 py-0.5 hover:bg-zinc-200 dark:hover:bg-zinc-800"
+                          >
+                            <Ellipsis aria-hidden="true" className="size-4" />
+                          </DropdownMenu.Trigger>
+                          <DropdownMenu.Portal>
+                            <DropdownMenu.Content
+                              align="start"
+                              sideOffset={6}
+                              className="z-50 rounded-lg border border-zinc-200 bg-white p-1 text-xs shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+                            >
+                              <DropdownMenu.Item
+                                className="cursor-pointer rounded px-3 py-2 outline-none focus:bg-zinc-100 dark:focus:bg-zinc-800"
+                                onSelect={() => {
+                                  setIdeaContent((draft) => draft ? `${draft}\n\n${msg.content}` : msg.content);
+                                  setIdeaEditorMode("write");
+                                  setActiveTab("ideas");
+                                  toast.success("Reply added to your idea draft.");
+                                }}
+                              >
+                                Use in idea draft
+                              </DropdownMenu.Item>
+                              <DropdownMenu.Item
+                                className="cursor-pointer rounded px-3 py-2 outline-none focus:bg-zinc-100 dark:focus:bg-zinc-800"
+                                onSelect={() => {
+                                  const quote = msg.content.split("\n").map((line) => `> ${line}`).join("\n");
+                                  setChatInput((draft) => [draft, quote].filter(Boolean).join("\n\n") + "\n\n");
+                                  requestAnimationFrame(() => chatTextareaRef.current?.focus());
+                                }}
+                              >
+                                Quote in follow-up
+                              </DropdownMenu.Item>
+                            </DropdownMenu.Content>
+                          </DropdownMenu.Portal>
+                        </DropdownMenu.Root>
+                      ) : null}
                     </div>
                   </div>
                 </div>

@@ -3,6 +3,7 @@
 import { useCallback, useContext, useEffect, useState } from "react";
 import { privyAuthorizationHeaders } from "@/lib/privy/privy-authorization-headers";
 import { PrivyBridgeContext } from "@/components/providers/privy-root-provider";
+import { HostedCoinbaseCheckoutButton } from "./reader-wallet-onramp";
 import { ReaderWalletCreateButton, ReaderWalletSend } from "./reader-wallet-transactions";
 import { useAuthSession } from "@/components/providers/app-providers";
 
@@ -18,6 +19,7 @@ type WalletSummaryResponse =
       address: string;
       network: string;
       chainId: number;
+      embeddedOnramp?: boolean;
       balances: {
         eth: { formatted: string };
         usdc: { formatted: string; raw?: string };
@@ -43,6 +45,7 @@ export type ReaderWalletPreviewData = {
 
 type ReaderWalletPanelProps = {
   previewData?: ReaderWalletPreviewData;
+  onOpenCheckout?: () => void;
 };
 
 const BALANCES_ERROR = "Balances are temporarily unavailable.";
@@ -50,7 +53,7 @@ const HISTORY_ERROR = "Transfer history is temporarily unavailable.";
 const SIGN_IN_ERROR = "Sign in with Privy to view your wallet.";
 const WRONG_CHAIN_ERROR = "Wallet reads are limited to Base (chain 8453).";
 
-export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
+export function ReaderWalletPanel({ previewData, onOpenCheckout }: ReaderWalletPanelProps) {
   const {
     ready,
     authenticated,
@@ -61,8 +64,6 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
   const privy = useContext(PrivyBridgeContext);
   const [needsWallet, setNeedsWallet] = useState(false);
   const [receiving, setReceiving] = useState(false);
-  const [funding, setFunding] = useState(false);
-  const [fundingError, setFundingError] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
   const [loading, setLoading] = useState(() => !previewData);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +75,11 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
     previewData?.history ?? null,
   );
 
+  const getHeaders = useCallback(
+    () => privyAuthorizationHeaders({ privyConfigured, authenticated, getAccessToken }),
+    [privyConfigured, authenticated, getAccessToken],
+  );
+
   const fetchWallet = useCallback(async () => {
     if (previewData) {
       return;
@@ -83,11 +89,7 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
     setError(null);
     setHistoryError(null);
     try {
-      const headers = await privyAuthorizationHeaders({
-        privyConfigured,
-        authenticated,
-        getAccessToken,
-      });
+      const headers = await getHeaders();
       if (!authenticated || !headers) {
         setError(SIGN_IN_ERROR);
         setSummary(null);
@@ -139,21 +141,21 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
 
       if (historyResult.status === "rejected" || !historyResult.value.ok) {
         setHistoryError(HISTORY_ERROR);
-        setHistory({ configured: true, transfers: [] });
+        setHistory(null);
         return;
       }
 
       const historyJson = (await historyResult.value.json().catch(() => null)) as (HistoryResponse & {
         chainId?: number;
       }) | null;
-      if (!historyJson) {
+      if (!historyJson?.configured || !Array.isArray(historyJson.transfers)) {
         setHistoryError(HISTORY_ERROR);
-        setHistory({ configured: true, transfers: [] });
+        setHistory(null);
         return;
       }
       if (historyJson.chainId !== undefined && historyJson.chainId !== 8453) {
         setHistoryError(WRONG_CHAIN_ERROR);
-        setHistory({ configured: true, transfers: [] });
+        setHistory(null);
         return;
       }
       setHistory(historyJson);
@@ -164,9 +166,8 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
     }
   }, [
     authenticated,
-    getAccessToken,
+    getHeaders,
     previewData,
-    privyConfigured,
   ]);
 
   useEffect(() => {
@@ -184,28 +185,6 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
       cancelled = true;
     };
   }, [ready, fetchWallet, previewData]);
-
-  async function openCoinbaseOnramp() {
-    setFunding(true);
-    setFundingError(false);
-    try {
-      const headers = await privyAuthorizationHeaders({
-        privyConfigured,
-        authenticated,
-        getAccessToken,
-      });
-      if (!headers) throw new Error("Sign in required");
-      const response = await fetch("/api/wallet/onramp", { method: "POST", headers });
-      if (!response.ok) throw new Error("On-ramp unavailable");
-      const { checkoutUrl } = (await response.json()) as { checkoutUrl: string };
-      const destination = new URL(checkoutUrl);
-      if (destination.origin !== "https://pay.coinbase.com") throw new Error("Invalid checkout URL");
-      window.location.assign(destination.href);
-    } catch {
-      setFundingError(true);
-      setFunding(false);
-    }
-  }
 
   return (
     <div className="flex flex-col gap-5" data-testid="reader-wallet-panel">
@@ -256,12 +235,24 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
           )}
 
           <div className="flex flex-wrap gap-3">
-            {!previewData && privy?.authenticated && (
-              <button type="button" className="rounded-full border px-3 py-1 text-sm"
-                disabled={funding} onClick={openCoinbaseOnramp}>
-                {funding ? "Opening Coinbase…" : "Add USDC"}
-              </button>
-            )}
+            {!previewData && privy?.authenticated ? (
+              summary.embeddedOnramp && onOpenCheckout ? (
+                <button
+                  type="button"
+                  className="rounded-full border px-3 py-1 text-sm"
+                  aria-haspopup="dialog"
+                  onClick={onOpenCheckout}
+                >
+                  Add USDC
+                </button>
+              ) : (
+                <HostedCoinbaseCheckoutButton
+                  getHeaders={getHeaders}
+                  label="Add USDC"
+                  className="rounded-full border px-3 py-1 text-sm"
+                />
+              )
+            ) : null}
             <button
               type="button"
               aria-expanded={receiving}
@@ -277,7 +268,6 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
               <ReaderWalletSend address={summary.address} balance={summary.balances?.usdc.raw} />
             )}
           </div>
-          {fundingError && <p role="alert" className="text-xs">Couldn’t open Coinbase checkout. Try again.</p>}
           {receiving && (
             <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
               <p className="text-sm font-medium">Receive USDC on Base</p>
@@ -336,8 +326,8 @@ export function ReaderWalletPanel({ previewData }: ReaderWalletPanelProps) {
                 </li>
               ))}
             </ul>
-            {(history?.transfers ?? []).length === 0 && !historyError ? (
-              <p className="mt-2 text-xs text-zinc-500">No recent USDC transfers.</p>
+            {history && history.transfers.length === 0 && !historyError && !loading ? (
+              <p className="mt-2 text-xs text-zinc-500">No USDC transfers found.</p>
             ) : null}
           </div>
         </>

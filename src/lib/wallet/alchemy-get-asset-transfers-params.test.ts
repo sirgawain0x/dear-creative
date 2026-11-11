@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { BASE_USDC_ADDRESS } from "@/lib/payments/subscription-config";
 import { getAddress } from "viem";
 import {
   ALCHEMY_ASSET_TRANSFER_CATEGORIES,
@@ -25,6 +26,16 @@ describe("buildAlchemyGetAssetTransfersRpcParams", () => {
     });
     expect(params.category).toEqual([...ALCHEMY_ASSET_TRANSFER_CATEGORIES]);
     expect(params.category).not.toContain("internal");
+  });
+
+  it("filters reader history to Base USDC before Alchemy paginates", () => {
+    const params = buildAlchemyGetAssetTransfersRpcParams({
+      wallet: WALLET,
+      direction: "in",
+      usdcOnly: true,
+    });
+    expect(params.category).toEqual(["erc20"]);
+    expect(params.contractAddresses).toEqual([BASE_USDC_ADDRESS]);
   });
 
   it("scopes incoming transfers to toAddress", () => {

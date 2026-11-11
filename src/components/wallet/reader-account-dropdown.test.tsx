@@ -42,7 +42,9 @@ vi.mock("../providers/app-providers", () => ({
 }));
 
 vi.mock("./reader-wallet-panel", () => ({
-  ReaderWalletPanel: () => <div data-testid="reader-wallet-panel-mock">panel</div>,
+  ReaderWalletPanel: ({ onOpenCheckout }: { onOpenCheckout: () => void }) => (
+    <button type="button" onClick={onOpenCheckout}>Add USDC</button>
+  ),
 }));
 
 describe("ReaderAccountDropdown", () => {
@@ -94,4 +96,36 @@ describe("ReaderAccountDropdown", () => {
 
     expect(screen.getByLabelText("Open account menu")).toBeInTheDocument();
   });
+  it.each(["desktop", "mobile"] as const)(
+    "keeps checkout open after closing the %s wallet",
+    async (surface) => {
+      mockAuthenticated = true;
+      vi.stubGlobal("fetch", vi.fn(async (url: string) => Response.json(
+        url === "/api/wallet/onramp/embedded"
+          ? { checkoutUrl: "https://pay.coinbase.com/checkout" }
+          : { configured: false },
+      )));
+      const { ReaderAccountDropdown } = await import("./reader-account-dropdown");
+      render(<ReaderAccountDropdown surface={surface} />);
+      const trigger = screen.getByRole("button", { name: "Open account menu" });
+      if (surface === "desktop") {
+        fireEvent(trigger, new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
+      } else {
+        fireEvent.click(trigger);
+      }
+      fireEvent.click(await screen.findByRole("button", { name: "Add USDC" }));
+      const amount = await screen.findByRole("textbox", { name: "Amount in USD" });
+      expect(screen.queryByRole("button", { name: "Add USDC" })).toBeNull();
+      expect(screen.getByRole("button", { name: "Use Coinbase Checkout" })).toBeVisible();
+      expect(amount).toHaveFocus();
+      fireEvent.change(amount, { target: { value: "25" } });
+      fireEvent.click(screen.getByRole("button", { name: "Continue with Apple Pay" }));
+      expect(await screen.findByTitle("Coinbase Apple Pay checkout"))
+        .toHaveAttribute("src", "https://pay.coinbase.com/checkout");
+
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(trigger).toHaveFocus());
+    },
+  );
+
 });

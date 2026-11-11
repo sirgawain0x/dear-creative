@@ -66,6 +66,7 @@ const FIXTURE_THREADS = [
 ];
 
 function mockStudioFetch(options?: {
+  ttsHandler?: () => Promise<Response>;
   chatHandler?: (init: RequestInit) => Response | Promise<Response>;
   /** Delays every chat threads list response until the promise settles. */
   delayThreadsListUntil?: Promise<void>;
@@ -114,6 +115,9 @@ function mockStudioFetch(options?: {
               role: "user",
               content: "Prior message",
             },
+            ...(options?.ttsHandler
+              ? [{ id: "msg_2", role: "assistant", content: "Saved reply from Adam." }]
+              : []),
           ],
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
@@ -142,6 +146,9 @@ function mockStudioFetch(options?: {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
+    }
+    if (url.includes("/api/adam/voice/tts") && options?.ttsHandler) {
+      return options.ttsHandler();
     }
     if (url.includes("/api/adam/chat") && init?.method === "POST") {
       if (options?.chatHandler) return options.chatHandler(init);
@@ -210,6 +217,78 @@ describe("Adam chat loading indicator", () => {
       target: { value: "Hello" },
     });
     expect(screen.getByTestId("adam-chat-send")).not.toBeDisabled();
+  });
+
+  it("shows audio loading until playback starts and clears it when cancelled", async () => {
+    let finishTts!: (response: Response) => void;
+    const tts = new Promise<Response>((resolve) => { finishTts = resolve; });
+    const fakeAudio = { play: vi.fn(async () => {}), pause: vi.fn(), onplaying: () => {} };
+    const audioConstructor = vi.spyOn(window, "Audio").mockImplementation(function () {
+      return fakeAudio as unknown as HTMLAudioElement;
+    });
+    mockStudioFetch({ ttsHandler: () => tts });
+    localStorage.setItem(STUDIO_TOKEN_STORAGE_KEY, "fixture-key");
+    render(<AppProviders><AdamStudio /></AppProviders>);
+    await waitForAdamChatShell();
+    await openHistoryAndSelectThread("thread_fixture_a");
+    await screen.findByText("Saved reply from Adam.");
+    const listen = await screen.findByRole("button", { name: /Listen to Adam/ });
+    fireEvent.click(listen);
+    expect(screen.getByText("Loading audio…")).toBeInTheDocument();
+
+    await act(async () => finishTts(Response.json({ audioBase64: "AA==" })));
+    expect(fakeAudio.play).toHaveBeenCalledOnce();
+    expect(screen.getByText("Loading audio…")).toBeInTheDocument();
+    act(() => fakeAudio.onplaying());
+    expect(screen.queryByText("Loading audio…")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop speaking" }));
+    expect(fakeAudio.pause).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: /Listen to Adam/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Stop speaking" }));
+    expect(screen.queryByText("Loading audio…")).toBeNull();
+    await act(async () => {});
+    expect(audioConstructor).toHaveBeenCalledOnce();
+  });
+
+  it("clears interrupted browser speech without reporting a playback failure", async () => {
+    const previousSynthesis = Object.getOwnPropertyDescriptor(window, "speechSynthesis");
+    const previousUtterance = Object.getOwnPropertyDescriptor(window, "SpeechSynthesisUtterance");
+    const speak = vi.fn<(utterance: SpeechSynthesisUtterance) => void>();
+    const cancel = vi.fn();
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: { speak, cancel },
+    });
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: class { constructor(readonly text: string) {} },
+    });
+
+    try {
+      mockStudioFetch({ ttsHandler: async () => new Response(null, { status: 503 }) });
+      localStorage.setItem(STUDIO_TOKEN_STORAGE_KEY, "fixture-key");
+      render(<AppProviders><AdamStudio /></AppProviders>);
+      await waitForAdamChatShell();
+      await openHistoryAndSelectThread("thread_fixture_a");
+      await screen.findByText("Saved reply from Adam.");
+      const listen = await screen.findByRole("button", { name: /Listen to Adam/ });
+      fireEvent.click(listen);
+      await waitFor(() => expect(speak).toHaveBeenCalledOnce());
+      const utterance = speak.mock.calls[0][0];
+      expect(cancel).not.toHaveBeenCalled();
+      act(() => utterance.onerror?.({ error: "interrupted" } as SpeechSynthesisErrorEvent));
+      expect(screen.queryByText("Loading audio…")).toBeNull();
+      expect(screen.queryByText("Adam could not play this reply.")).toBeNull();
+      expect(listen).toHaveAccessibleName(/Listen to Adam/);
+      expect(cancel).not.toHaveBeenCalled();
+    } finally {
+      cleanup();
+      if (previousSynthesis) Object.defineProperty(window, "speechSynthesis", previousSynthesis);
+      else Reflect.deleteProperty(window, "speechSynthesis");
+      if (previousUtterance) Object.defineProperty(window, "SpeechSynthesisUtterance", previousUtterance);
+      else Reflect.deleteProperty(window, "SpeechSynthesisUtterance");
+    }
   });
 
   it("waiting: shows thinking bubble and disables send while POST is pending", async () => {
