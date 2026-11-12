@@ -97,6 +97,12 @@ const RECONCILE_0025 = {
   hash: "2e567759e078dacb7654b567a6cec062f6348b9320b061d9b721b3b51779e6b5",
 } as const;
 
+const RECONCILE_0026 = {
+  tag: "0026_adam_chat_thread_owner",
+  when: 1792624000000,
+  hash: "c09031cfc564574c533899126a1010eaf17c7c6a2b143e3bd08528a17529a991",
+} as const;
+
 describe("drizzle journal reconciliation hashes (0009–0014)", () => {
   it("matches drizzle-orm readMigrationFiles hash algorithm", () => {
     const migrations = readMigrationFiles({ migrationsFolder: "./drizzle" });

@@ -541,6 +541,7 @@ export const adamChatThreads = sqliteTable(
     isArchived: integer("is_archived", { mode: "boolean" })
       .notNull()
       .default(false),
+    ownerUserId: text("owner_user_id"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
@@ -551,6 +552,7 @@ export const adamChatThreads = sqliteTable(
   (table) => [
     index("adam_chat_threads_updated_at_idx").on(table.updatedAt),
     index("adam_chat_threads_is_archived_idx").on(table.isArchived),
+    index("adam_chat_threads_owner_user_id_idx").on(table.ownerUserId),
   ],
 );
 

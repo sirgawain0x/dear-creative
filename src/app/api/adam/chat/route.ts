@@ -56,20 +56,24 @@ export async function POST(request: Request) {
 
   try {
     const db = getDb();
+    const access = { actor: auth.actor, mode: auth.mode };
+    const ownerUserId = auth.mode === "privy_admin" ? auth.actor : null;
     let threadId = body.threadId?.trim();
 
     try {
       if (threadId) {
-        const existing = await getChatThread(db, threadId);
+        const existing = await getChatThread(db, threadId, access);
         if (!existing) {
           const created = await createChatThread(db, {
             title: autoGenerateThreadTitle(message || "Editorial Review"),
+            ownerUserId,
           });
           threadId = created.id;
         }
       } else {
         const created = await createChatThread(db, {
           title: autoGenerateThreadTitle(message || "Editorial Review"),
+          ownerUserId,
         });
         threadId = created.id;
       }

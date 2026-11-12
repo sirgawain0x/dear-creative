@@ -14,7 +14,9 @@ export async function GET(request: Request) {
 
   try {
     const db = getDb();
-    const threads = await listChatThreads(db);
+    const threads = await listChatThreads(db, {
+      access: { actor: auth.actor, mode: auth.mode },
+    });
     return NextResponse.json({ threads });
   } catch (error) {
     const message =
@@ -41,6 +43,7 @@ export async function POST(request: Request) {
     const thread = await createChatThread(db, {
       title: body.title,
       summary: body.summary,
+      ownerUserId: auth.mode === "privy_admin" ? auth.actor : null,
     });
     return NextResponse.json({ thread }, { status: 201 });
   } catch (error) {

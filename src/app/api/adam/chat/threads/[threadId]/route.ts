@@ -20,7 +20,10 @@ export async function GET(request: Request, context: RouteContext) {
   const { threadId } = await context.params;
   try {
     const db = getDb();
-    const data = await getChatThreadWithMessages(db, threadId);
+    const data = await getChatThreadWithMessages(db, threadId, {
+      actor: auth.actor,
+      mode: auth.mode,
+    });
     if (!data) {
       return NextResponse.json({ error: "Thread not found" }, { status: 404 });
     }
@@ -52,7 +55,10 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   try {
     const db = getDb();
-    const updated = await updateChatThread(db, threadId, body);
+    const updated = await updateChatThread(db, threadId, body, {
+      actor: auth.actor,
+      mode: auth.mode,
+    });
     if (!updated) {
       return NextResponse.json({ error: "Thread not found" }, { status: 404 });
     }
@@ -73,7 +79,10 @@ export async function DELETE(request: Request, context: RouteContext) {
   const { threadId } = await context.params;
   try {
     const db = getDb();
-    const ok = await deleteChatThread(db, threadId);
+    const ok = await deleteChatThread(db, threadId, {
+      actor: auth.actor,
+      mode: auth.mode,
+    });
     if (!ok) {
       return NextResponse.json({ error: "Thread not found" }, { status: 404 });
     }

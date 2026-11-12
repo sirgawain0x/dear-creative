@@ -42,10 +42,10 @@ describe("DELETE /api/adam/chat/threads/[threadId]", () => {
     expect(deleteChatThreadMock).not.toHaveBeenCalled();
   });
 
-  it("deletes an existing thread for an authenticated caller", async () => {
+  it("passes caller access into deleteChatThread", async () => {
     requireStudioOrAdamAuthMock.mockResolvedValue({
       ok: true,
-      actor: "user-a",
+      actor: "did:privy:user-a",
       mode: "privy_admin",
     });
     deleteChatThreadMock.mockResolvedValue(true);
@@ -56,14 +56,25 @@ describe("DELETE /api/adam/chat/threads/[threadId]", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(deleteChatThreadMock).toHaveBeenCalledWith(expect.anything(), "t1");
+    expect(deleteChatThreadMock).toHaveBeenCalledWith(expect.anything(), "t1", {
+      actor: "did:privy:user-a",
+      mode: "privy_admin",
+    });
   });
 
-  /**
-   * Per-user delete isolation needs `owner_user_id` on adam_chat_threads (set on create
-   * from requireStudioOrAdamAuth actor, enforced in GET/PATCH/DELETE/list).
-   */
-  it.skip("rejects delete when the thread belongs to another user (needs owner_user_id column)", () => {
-    expect(true).toBe(true);
+  it("returns 404 when deleteChatThread rejects cross-user access", async () => {
+    requireStudioOrAdamAuthMock.mockResolvedValue({
+      ok: true,
+      actor: "did:privy:user-a",
+      mode: "privy_admin",
+    });
+    deleteChatThreadMock.mockResolvedValue(false);
+
+    const { DELETE } = await import("./route");
+    const res = await DELETE(new Request("https://example.test/api/adam/chat/threads/t-owned-by-b"), {
+      params: Promise.resolve({ threadId: "t-owned-by-b" }),
+    });
+
+    expect(res.status).toBe(404);
   });
 });
