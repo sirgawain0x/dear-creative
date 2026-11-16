@@ -66,6 +66,7 @@ const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/g;
 function normalizeUrlAttribute(raw: string | undefined): string {
   if (!raw) return "";
   let value = decodeHtmlEntitiesOnce(raw.trim());
+  value = value.replace(/^(https?|ipfs|lens)\\:/i, "$1:").replace(/\\&/g, "&");
   value = value.replace(CONTROL_CHARS, "");
   value = value.replace(/\s+/g, "");
   return value;

@@ -18,6 +18,7 @@ import {
   useSafePrivy,
 } from "@/components/providers/app-providers";
 import { useToast } from "@/components/ui/toast";
+import { ArticleHtmlBody } from "@/components/article-html-body";
 import type {
   StudioAttachmentInput,
   StudioChatMessage,
@@ -83,7 +84,7 @@ export const ADAM_USER_BUBBLE_BODY_CLASS =
 export type StudioTab = "chat" | "ideas" | "posts" | "approvals" | "schedule";
 type VoiceEngineMode = "google" | "browser";
 type IdeaEditorMode = "write" | "preview";
-type PostEditorMode = "markdown" | "html" | "preview";
+type PostEditorMode = "markdown" | "html";
 
 type ClientAttachment = StudioAttachmentInput & {
   id: string;
@@ -480,6 +481,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
   const bannerFileInputRef = useRef<HTMLInputElement>(null);
   const videoFileInputRef = useRef<HTMLInputElement>(null);
   const [editPostMode, setEditPostMode] = useState<PostEditorMode>("markdown");
+  const [showPostPreview, setShowPostPreview] = useState(false);
   const [editPaywallSettings, setEditPaywallSettings] =
     useState<PaywallSettings>(DEFAULT_PAYWALL_SETTINGS);
   const [isSavingPost, setIsSavingPost] = useState(false);
@@ -4218,9 +4220,10 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                           setEditPostMarkdown(htmlToMarkdown(editPostHtml));
                         }
                         setEditPostMode("markdown");
+                        setShowPostPreview(false);
                       }}
                       className={`rounded-md px-3 py-1 font-medium ${
-                        editPostMode === "markdown"
+                        editPostMode === "markdown" && !showPostPreview
                           ? "bg-white text-zinc-900 shadow-xs dark:bg-zinc-800 dark:text-zinc-100"
                           : "text-zinc-600 dark:text-zinc-400"
                       }`}
@@ -4234,9 +4237,10 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                           setEditPostHtml(ensureArticleHtml(editPostMarkdown));
                         }
                         setEditPostMode("html");
+                        setShowPostPreview(false);
                       }}
                       className={`rounded-md px-3 py-1 font-medium ${
-                        editPostMode === "html"
+                        editPostMode === "html" && !showPostPreview
                           ? "bg-white text-zinc-900 shadow-xs dark:bg-zinc-800 dark:text-zinc-100"
                           : "text-zinc-600 dark:text-zinc-400"
                       }`}
@@ -4245,9 +4249,9 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                     </button>
                     <button
                       type="button"
-                      onClick={() => setEditPostMode("preview")}
+                      onClick={() => setShowPostPreview(true)}
                       className={`rounded-md px-3 py-1 font-medium ${
-                        editPostMode === "preview"
+                        showPostPreview
                           ? "bg-white text-zinc-900 shadow-xs dark:bg-zinc-800 dark:text-zinc-100"
                           : "text-zinc-600 dark:text-zinc-400"
                       }`}
@@ -4273,7 +4277,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                   </button>
                 </div>
 
-                {editPostMode === "markdown" ? (
+                {!showPostPreview && editPostMode === "markdown" ? (
                   <>
                     <div className="mt-2 flex flex-wrap gap-1.5 rounded-t-xl border border-b-0 border-zinc-300 bg-zinc-100 px-2.5 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-900">
                       <button
@@ -4482,7 +4486,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                       className="w-full rounded-b-xl border border-zinc-300 bg-zinc-50 p-3.5 font-mono text-xs leading-relaxed dark:border-zinc-700 dark:bg-zinc-950"
                     />
                   </>
-                ) : editPostMode === "html" ? (
+                ) : !showPostPreview ? (
                   <textarea
                     id="edit-post-html"
                     aria-label="Post HTML Source"
@@ -4504,16 +4508,11 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                         </p>
                       ) : null}
                     </header>
-                    <div
-                      className="prose prose-zinc dark:prose-invert max-w-none"
-                      dangerouslySetInnerHTML={{
-                        __html:
-                          ensureArticleHtml(
-                            editPostMode === "preview"
-                              ? editPostMarkdown || editPostHtml
-                              : editPostHtml,
-                          ) || "<p><em>No content yet.</em></p>",
-                      }}
+                    <ArticleHtmlBody
+                      bodyHtml={
+                        (editPostMode === "html" ? editPostHtml : editPostMarkdown) ||
+                        "<p><em>No content yet.</em></p>"
+                      }
                     />
                   </div>
                 )}

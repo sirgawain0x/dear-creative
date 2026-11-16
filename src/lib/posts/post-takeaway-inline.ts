@@ -12,25 +12,27 @@ export function splitArticleAtParagraph(
     return { introHtml: "", restHtml: "" };
   }
 
-  const pCloseTag = "</p>";
-  let currentIndex = 0;
+  const voidTags = new Set(["br", "hr", "img", "source"]);
+  let depth = 0;
   let count = 0;
 
-  while (count < paragraphIndex) {
-    const nextIdx = bodyHtml.indexOf(pCloseTag, currentIndex);
-    if (nextIdx === -1) {
-      break;
+  for (const tag of bodyHtml.matchAll(/<(\/?)([a-z][\w-]*)\b[^>]*>/gi)) {
+    const [, closing, name] = tag;
+    if (voidTags.has(name)) continue;
+    if (!closing) {
+      depth++;
+      continue;
     }
-    count++;
-    currentIndex = nextIdx + pCloseTag.length;
+
+    depth--;
+    if (depth === 0 && name === "p" && ++count === paragraphIndex) {
+      const end = tag.index + tag[0].length;
+      return {
+        introHtml: bodyHtml.slice(0, end),
+        restHtml: bodyHtml.slice(end),
+      };
+    }
   }
 
-  if (count < paragraphIndex || currentIndex >= bodyHtml.length) {
-    return { introHtml: bodyHtml, restHtml: "" };
-  }
-
-  return {
-    introHtml: bodyHtml.slice(0, currentIndex),
-    restHtml: bodyHtml.slice(currentIndex),
-  };
+  return { introHtml: bodyHtml, restHtml: "" };
 }

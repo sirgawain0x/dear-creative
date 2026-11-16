@@ -1,3 +1,4 @@
+import { ArticleHtmlMarkup } from "@/components/article-html-markup";
 import { PredictionLinkEmbedCard } from "@/components/predictions/prediction-link-embed-card";
 import {
   fetchPredictionEmbedCached,
@@ -57,11 +58,7 @@ export async function PostBodyWithPredictions({
         if (segment.kind === "html") {
           if (!segment.html.trim()) return null;
           return (
-            <div
-              key={`html-${index}`}
-              className="prose prose-zinc dark:prose-invert max-w-none"
-              dangerouslySetInnerHTML={{ __html: segment.html }}
-            />
+            <ArticleHtmlMarkup key={`html-${index}`} html={segment.html} />
           );
         }
 

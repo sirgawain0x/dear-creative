@@ -7,6 +7,7 @@ import { isPreviewLinksEnabled } from "@/lib/preview-links/feature-flag";
 import { isPublishedPostStatus } from "@/lib/preview-links/post-eligibility";
 import { resolvePreviewLinkByToken } from "@/lib/preview-links/links";
 import { previewPostBodyHtml } from "@/lib/preview-links/preview-post-body";
+import { ArticleHtmlMarkup } from "@/components/article-html-markup";
 import { calculateReadingTime } from "@/lib/posts/reading-time";
 import { getAdminPostByIdOrSlug } from "@/lib/posts/manage-posts";
 import { resolvePublicPostCoverImage } from "@/lib/posts/post-cover-image";
@@ -81,10 +82,7 @@ export default async function PostPreviewPage({ params }: PageProps) {
           </p>
         </header>
 
-        <div
-          className="prose prose-zinc max-w-none dark:prose-invert"
-          dangerouslySetInnerHTML={{ __html: bodyHtml }}
-        />
+        <ArticleHtmlMarkup html={bodyHtml} />
       </article>
     </>
   );
