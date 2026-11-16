@@ -1,4 +1,5 @@
 import { resolveGroveOrIpfsUrl } from "@/lib/storage/lens-grove";
+import { decodeHtmlEntitiesOnce } from "./decode-html-entities-once";
 import { sanitizeArticleHtml } from "./sanitize-article-html";
 import {
   generateVideoEmbedHtml,
@@ -14,6 +15,17 @@ function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
+const X_POST_URL =
+  /^https?:\/\/(?:www\.)?(?:x\.com|twitter\.com)\/([a-zA-Z0-9_]+)\/status\/(\d+)(?:[/?#][^\s"<>]*)?$/i;
+const RAW_VIDEO_START = /^\\?<(iframe|video)\b/i;
+
+function xPostCard(url: string): string | null {
+  const match = X_POST_URL.exec(url);
+  if (!match) return null;
+  const [, username, id] = match;
+  return `<blockquote class="twitter-tweet dear-x-card" data-dnt="true"><div class="dear-x-card-header"><span class="dear-x-card-logo">𝕏</span><span class="dear-x-card-author">@${username}</span></div><p class="dear-x-card-body"><a href="https://x.com/${username}/status/${id}" target="_blank" rel="noopener noreferrer nofollow" class="dear-x-link">View post on 𝕏 (@${username}) ↗</a></p></blockquote>`;
+}
+
 function formatInlineMarkdown(raw: string): string {
   // Extract inline code spans first so inner characters are not formatted
   const codeSpans: string[] = [];
@@ -22,7 +34,7 @@ function formatInlineMarkdown(raw: string): string {
     return `\u0000CODE_${idx}\u0000`;
   });
 
-  working = escapeHtml(working);
+  working = escapeHtml(working).replace(/\\?&lt;br\s*\/?&gt;/gi, "<br />");
 
   // Images: ![alt](url) - supports https, http, relative /, ipfs://, lens://, data:image/
   working = working.replace(
@@ -149,18 +161,23 @@ export function renderMarkdownToSafeHtml(markdown: string): string {
       .trim()
       .replace(/^<(.+)>$/, "$1")
       .replace(/^\[[^\]]*\]\((.+)\)$/, "$1");
-    const xStatusMatch =
-      /^(?:https?:\/\/(?:www\.)?(?:x\.com|twitter\.com)\/([a-zA-Z0-9_]+)\/status\/(\d+)(?:\?[^\s]*)?)$/i.exec(
-        cleanLine,
-      );
-    if (xStatusMatch) {
-      const username = xStatusMatch[1]!;
-      const postUrl = cleanLine;
-      blocks.push(
-        `<blockquote class="twitter-tweet dear-x-card" data-dnt="true"><div class="dear-x-card-header"><span class="dear-x-card-logo">𝕏</span><span class="dear-x-card-author">@${username}</span></div><p class="dear-x-card-body"><a href="${postUrl}" target="_blank" rel="noopener noreferrer nofollow" class="dear-x-link">View post on 𝕏 (@${username}) ↗</a></p></blockquote>`,
-      );
+    const xCard = xPostCard(cleanLine);
+    if (xCard) {
+      blocks.push(xCard);
       i++;
       continue;
+    }
+
+    const rawVideo = RAW_VIDEO_START.exec(line.trim());
+    if (rawVideo) {
+      const closeTag = new RegExp(`</${rawVideo[1]}>\\s*$`, "i");
+      let end = i;
+      while (!closeTag.test(lines[end]!) && lines[end + 1]?.trim()) end++;
+      if (closeTag.test(lines[end]!)) {
+        blocks.push(lines.slice(i, end + 1).join("\n").replace(/\\(?=<\/?\w)/g, ""));
+        i = end + 1;
+        continue;
+      }
     }
 
     // Standalone Video Embed: Creative TV, Livepeer, YouTube, Vimeo, direct video
@@ -257,6 +274,7 @@ export function renderMarkdownToSafeHtml(markdown: string): string {
       !lines[i]!.trim().startsWith("```") &&
       !/^(#{1,6})\s+/.test(lines[i]!.trim()) &&
       !lines[i]!.trim().startsWith(">") &&
+      (paraLines.length === 0 || !RAW_VIDEO_START.test(lines[i]!.trim())) &&
       !/^[-*+]\s+/.test(lines[i]!.trim()) &&
       !/^\d+\.\s+/.test(lines[i]!.trim()) &&
       !/^(?:-{3,}|\*{3,}|_{3,})\s*$/.test(lines[i]!.trim())
@@ -270,7 +288,7 @@ export function renderMarkdownToSafeHtml(markdown: string): string {
     }
   }
 
-  return sanitizeArticleHtml(blocks.join("\n"));
+  return sanitizeArticleHtml(cleanArchiveBodyArtifacts(blocks.join("\n")));
 }
 
 /**
@@ -280,6 +298,25 @@ export function renderMarkdownToSafeHtml(markdown: string): string {
 export function cleanArchiveBodyArtifacts(raw: string): string {
   return raw
     .replace(/",?\s*postPreview:\s*(?=<\/p>|$)/gi, "")
+    .replace(
+      /<p>\s*(\\?&lt;(?:iframe|video)\b[^<]*)<\/p>/gi,
+      (paragraph, escaped: string) => {
+        const markup = decodeHtmlEntitiesOnce(escaped)
+          .replace(/\\(?=<\/?\w)/g, "")
+          .trim();
+        return /^<(iframe|video)\b[^>]*>[\s\S]*<\/\1>$/i.test(markup)
+          ? sanitizeArticleHtml(markup)
+          : paragraph;
+      },
+    )
+    .replace(
+      /<(pre|code)\b[^>]*>[\s\S]*?<\/\1>|\\?&lt;br\s*\/?&gt;/gi,
+      (match, codeTag: string | undefined) => codeTag ? match : "<br />",
+    )
+    .replace(
+      /<blockquote>\s*<p>\s*𝕏\s*@[\w]+\s*<a\b[^>]*\bhref="([^"]+)"[^>]*>View post on 𝕏[^<]*<\/a>\s*<\/p>\s*<\/blockquote>/gi,
+      (match, url: string) => xPostCard(url) ?? match,
+    )
     .replace(/<p>\s*(#{1,4})\s+([^<]+)<\/p>/g, (_m, hashes: string, text: string) => {
       const level = hashes.length;
       const tag = level <= 2 ? "h2" : level === 3 ? "h3" : "h4";
@@ -287,9 +324,7 @@ export function cleanArchiveBodyArtifacts(raw: string): string {
     })
     .replace(
       /<p>\s*<a\s+[^>]*href="(https?:\/\/(?:www\.)?(?:x\.com|twitter\.com)\/([a-zA-Z0-9_]+)\/status\/(\d+)[^"]*)"[^>]*>.*?<\/a>\s*<\/p>/gi,
-      (_m, url: string, user: string) => {
-        return `<blockquote class="twitter-tweet dear-x-card" data-dnt="true"><div class="dear-x-card-header"><span class="dear-x-card-logo">𝕏</span><span class="dear-x-card-author">@${user}</span></div><p class="dear-x-card-body"><a href="${url}" target="_blank" rel="noopener noreferrer nofollow" class="dear-x-link">View post on 𝕏 (@${user}) ↗</a></p></blockquote>`;
-      },
+      (match, url: string) => xPostCard(url) ?? match,
     )
     .replace(
       /<p>\s*<a\s+[^>]*href="(https?:\/\/[^"]+)"[^>]*>(?:https?:\/\/[^<]+)?<\/a>\s*<\/p>/gi,

@@ -38,4 +38,30 @@ describe("htmlToMarkdown & roundtrip formatting", () => {
     expect(normalized).toContain("<h2>Restored Section Header</h2>");
     expect(normalized).toContain("<p>Body paragraph.</p>");
   });
+
+  it("keeps saved videos and X cards playable after switching to Markdown", () => {
+    const url = "https://x.com/EvidentlyDenzel/status/2115606402139889766";
+    const asset = "https://tv.creativeplatform.xyz/discover/c1a0f016-06df-4c04-bc9e-4f697d5b9b4b";
+    const video = "https://api.grove.storage/video?ext=mp4";
+    const stored = [
+      `<blockquote><p>𝕏@EvidentlyDenzel <a href="${url}?s=20">View post on 𝕏 (@EvidentlyDenzel) ↗</a></p></blockquote>`,
+      "<p>Studio footage</p>",
+      `<p><video controls><br /><source src="${video}" type="video/mp4"><br /></video></p>`,
+      `<p>&lt;iframe src="${asset}"&gt;&lt;/iframe&gt;</p>`,
+    ].join("");
+
+    const markdown = htmlToMarkdown(stored);
+    expect(markdown.startsWith(`${url}\n\n`)).toBe(true);
+    const html = ensureArticleHtml(markdown);
+    expect(html).toContain('class="twitter-tweet dear-x-card"');
+    expect(html).toContain(`src="${video}"`);
+    expect(html).toContain(`src="${asset}"`);
+    expect(html).not.toContain("<p><video");
+  });
+
+  it("converts a generated MP4 player back into the editor's video syntax", () => {
+    const url = "https://gateway.pinata.cloud/ipfs/example?ext=mp4";
+    const markdown = "[video](" + url + ")";
+    expect(htmlToMarkdown(ensureArticleHtml(markdown))).toBe(markdown);
+  });
 });

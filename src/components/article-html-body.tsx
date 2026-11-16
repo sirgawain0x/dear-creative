@@ -1,4 +1,5 @@
 import { preparePostBodyHtmlForRender } from "@/lib/posts/body-html-for-render";
+import { ArticleHtmlMarkup } from "./article-html-markup";
 
 type ArticleHtmlBodyProps = {
   bodyHtml: string | null | undefined;
@@ -14,10 +15,5 @@ export function ArticleHtmlBody({ bodyHtml, className }: ArticleHtmlBodyProps) {
   if (!safeHtml) {
     return null;
   }
-  return (
-    <div
-      className={className ?? "prose prose-zinc dark:prose-invert max-w-none"}
-      dangerouslySetInnerHTML={{ __html: safeHtml }}
-    />
-  );
+  return <ArticleHtmlMarkup html={safeHtml} className={className} />;
 }

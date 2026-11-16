@@ -16,6 +16,15 @@ describe("splitArticleAtParagraph", () => {
     expect(result.restHtml).toBe("");
   });
 
+  it("does not cut through an X card between the first two paragraphs", () => {
+    const card = '<blockquote class="twitter-tweet"><p>Post preview</p></blockquote>';
+    const intro = `<p>First</p>${card}<p>Second</p>`;
+    expect(splitArticleAtParagraph(`${intro}<p>Third</p>`, 2)).toEqual({
+      introHtml: intro,
+      restHtml: "<p>Third</p>",
+    });
+  });
+
   it("handles empty or null content safely", () => {
     expect(splitArticleAtParagraph(null, 2)).toEqual({
       introHtml: "",

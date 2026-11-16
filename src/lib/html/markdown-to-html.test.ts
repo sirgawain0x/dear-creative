@@ -148,5 +148,26 @@ describe("renderMarkdownToSafeHtml & ensureArticleHtml", () => {
     expect(html).toContain('title="Live Broadcast"');
     expect(html).toContain('src="https://tv.creativeplatform.xyz/embed/live-feed"');
   });
+
+  it("renders a disclosure line break and decodes escaped affiliate query separators", () => {
+    const disclosure = String.raw`*Ethical Disclosure.*\<br />[**Shure SM7B**](https://www.ebay.com/itm/860144446914?_skw=Shure%20SM7B\&campid=5339132041\&mkevt=1)`;
+    expect(ensureArticleHtml(disclosure)).toBe(
+      '<p><em>Ethical Disclosure.</em><br /><a href="https://www.ebay.com/itm/860144446914?_skw=Shure%20SM7B&amp;campid=5339132041&amp;mkevt=1" rel="noopener noreferrer nofollow"><strong>Shure SM7B</strong></a></p>',
+    );
+  });
+
+  it("restores line breaks in saved prose but preserves them as text inside code", () => {
+    const stored = "<p>Disclosure&lt;br /&gt;Product <code>&lt;br /&gt;</code></p>";
+    expect(ensureArticleHtml(stored)).toBe(
+      "<p>Disclosure<br />Product <code>&lt;br /&gt;</code></p>",
+    );
+  });
+
+  it("renders a video copied with escaped tags and an escaped URL scheme", () => {
+    const markdown = String.raw`\<video controls preload="metadata" playsinline class="dear-video-element">\<br />\<source src="https\://gateway.pinata.cloud/ipfs/example?ext=mp4" type="video/mp4">\</source>\<br />Your browser does not support the video tag.\<br />\</video>`;
+    const html = ensureArticleHtml(markdown);
+    expect(html).toContain('<video controls');
+    expect(html).toContain('src="https://gateway.pinata.cloud/ipfs/example?ext=mp4"');
+  });
 });
 

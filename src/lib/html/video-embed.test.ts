@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { linkCreativeTvDiscoverEmbeds } from "./creative-tv-discover";
 import {
   generateVideoEmbedHtml,
   isSupportedVideoUrl,
@@ -77,6 +78,20 @@ describe("video-embed", () => {
   });
 
   describe("generateVideoEmbedHtml", () => {
+    it("plays FrameWorks MP4 URLs directly", () => {
+      const url = "https://foghorn.frameworks.network/play/pk_example.mp4";
+      expect(generateVideoEmbedHtml(url)).toContain(`<source src="${url}" type="video/mp4" />`);
+    });
+
+    it("renders a watch link for Creative TV pages that block being framed", () => {
+      const url = "https://tv.creativeplatform.xyz/discover/c1a0f016-06df-4c04-bc9e-4f697d5b9b4b";
+      const youtube = '<iframe src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"></iframe>';
+      const html = linkCreativeTvDiscoverEmbeds(generateVideoEmbedHtml(url) + youtube);
+      expect(html).toContain(`href="${url}"`);
+      expect(html).toContain(youtube);
+      expect(html).not.toContain("/embed/discover/");
+    });
+
     it("generates responsive iframe HTML with allowfullscreen and permissions", () => {
       const html = generateVideoEmbedHtml("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
       expect(html).toContain('class="dear-video-container"');

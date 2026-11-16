@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Script from "next/script";
 import { Suspense, type ComponentProps } from "react";
 import type { Address } from "viem";
 import { DispatchAudioPlayer } from "@/components/audio/dispatch-audio-player";
@@ -200,11 +199,6 @@ async function PostArticle({
       <PredictionCard slug={post.slug} />
 
       <PostFeedbackWidget slug={post.slug} />
-
-      <Script
-        src="https://platform.twitter.com/widgets.js"
-        strategy="lazyOnload"
-      />
     </article>
   );
 }
