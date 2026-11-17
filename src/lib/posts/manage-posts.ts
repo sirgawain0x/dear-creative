@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { desc, eq, or } from "drizzle-orm";
+import { and, desc, eq, ne, or } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
 import {
   corePostColumns,
@@ -7,7 +7,6 @@ import {
   getPostAudioColumns,
   getPostPaywallColumns,
   setPostAudioColumns,
-  setPostPaywallColumns,
   type CorePostRow,
 } from "@/db/ensure-schema";
 import { approvals, posts, type PostStatus } from "@/db/schema";
@@ -53,6 +52,7 @@ export type UpdateAdminPostInput = {
   title?: string;
   slug?: string;
   status?: PostStatus;
+  scheduledAt?: string;
   teaserText?: string | null;
   emailSubject?: string | null;
   emailHtml?: string | null;
@@ -68,7 +68,7 @@ export type UpdateAdminPostInput = {
 };
 
 function toAdminPostRecord(
-  row: CorePostRow,
+  row: CorePostRow & { status: PostStatus },
   audio?: { audioUrl: string | null; audioVoice: string | null },
   paywall?: {
     isGated: boolean;
@@ -110,27 +110,23 @@ export async function listAdminPosts(
 ): Promise<AdminPostRecord[]> {
   await ensurePostsSchema(db);
   const limit = Math.min(Math.max(options?.limit ?? 100, 1), 250);
-  const rows = options?.status
-    ? await db
-        .select(corePostColumns)
-        .from(posts)
-        .where(eq(posts.status, options.status))
-        .orderBy(desc(posts.publishedAt), desc(posts.updatedAt))
-        .limit(limit)
-    : await db
-        .select(corePostColumns)
-        .from(posts)
-        .orderBy(desc(posts.publishedAt), desc(posts.updatedAt))
-        .limit(limit);
+  const rows = await db
+    .select(corePostColumns)
+    .from(posts)
+    .where(options?.status ? eq(posts.status, options.status) : ne(posts.status, "deleted"))
+    .orderBy(desc(posts.publishedAt), desc(posts.updatedAt))
+    .limit(limit);
 
   return Promise.all(
-    rows.map(async (row) => {
-      const [audio, paywall] = await Promise.all([
-        getPostAudioColumns(db, row.id),
-        getPostPaywallColumns(db, row.id),
-      ]);
-      return toAdminPostRecord(row, audio, paywall);
-    }),
+    rows
+      .filter((row): row is CorePostRow & { status: PostStatus } => row.status !== "deleted")
+      .map(async (row) => {
+        const [audio, paywall] = await Promise.all([
+          getPostAudioColumns(db, row.id),
+          getPostPaywallColumns(db, row.id),
+        ]);
+        return toAdminPostRecord(row, audio, paywall);
+      }),
   );
 }
 
@@ -146,15 +142,16 @@ export async function getAdminPostByIdOrSlug(
   const [row] = await db
     .select(corePostColumns)
     .from(posts)
-    .where(or(eq(posts.id, trimmed), eq(posts.slug, trimmed)))
+    .where(or(eq(posts.id, trimmed), eq(posts.slug, trimmed.replace(/^content:/, ""))))
     .limit(1);
 
   if (row) {
+    if (row.status === "deleted") return null;
     const [audio, paywall] = await Promise.all([
       getPostAudioColumns(db, row.id),
       getPostPaywallColumns(db, row.id),
     ]);
-    return toAdminPostRecord(row, audio, paywall);
+    return toAdminPostRecord({ ...row, status: row.status }, audio, paywall);
   }
 
   // Fallback to static MDX content (e.g. hello-dear-creative)
@@ -187,6 +184,40 @@ export async function getAdminPostByIdOrSlug(
   return null;
 }
 
+export async function deleteAdminDraft(db: DearCreativeDb, postId: string, actor: string) {
+  // Keep the post ID for historical delivery and payment records.
+  return db.transaction(async (tx) => {
+    const [deleted] = await tx.update(posts)
+      .set({ status: "deleted", updatedAt: new Date() })
+      .where(and(eq(posts.id, postId), eq(posts.status, "draft")))
+      .returning({ id: posts.id, slug: posts.slug });
+    if (!deleted) {
+      const [post] = await tx.select({ status: posts.status })
+        .from(posts).where(eq(posts.id, postId));
+      if (!post || post.status === "deleted") return { outcome: "not_found" } as const;
+      return { outcome: "not_a_draft" } as const;
+    }
+    await writeAuditEvent(tx, {
+      actor,
+      action: "post.deleted",
+      entityType: "post",
+      entityId: deleted.id,
+      payload: { slug: deleted.slug },
+    });
+    return { outcome: "deleted", ...deleted } as const;
+  });
+}
+
+function resolveScheduledTime(value: string | undefined, now: Date) {
+  const scheduledAt = typeof value === "string" && /(?:Z|[+-]\d\d:\d\d)$/.test(value)
+    ? new Date(value)
+    : null;
+  if (!scheduledAt || !(scheduledAt > now)) {
+    throw new Error("Choose a publish date and time in the future.");
+  }
+  return scheduledAt;
+}
+
 export async function updateAdminPost(
   db: DearCreativeDb,
   postIdOrSlug: string,
@@ -198,7 +229,7 @@ export async function updateAdminPost(
   const [existing] = await db
     .select(corePostColumns)
     .from(posts)
-    .where(or(eq(posts.id, trimmedKey), eq(posts.slug, trimmedKey)))
+    .where(or(eq(posts.id, trimmedKey), eq(posts.slug, trimmedKey.replace(/^content:/, ""))))
     .limit(1);
 
   if (!existing) {
@@ -236,6 +267,9 @@ export async function updateAdminPost(
     }
 
     const nextStatus: PostStatus = input.status ?? "published";
+    if (nextStatus === "scheduled") {
+      throw new Error("Save the post as a draft before scheduling it.");
+    }
     const nextTeaserText =
       input.teaserText !== undefined
         ? input.teaserText?.trim() || null
@@ -292,10 +326,12 @@ export async function updateAdminPost(
 
     const createdAudio = await getPostAudioColumns(db, newId);
     return {
-      post: toAdminPostRecord(created, createdAudio),
+      post: toAdminPostRecord({ ...created, status: nextStatus }, createdAudio),
       previousSlug: fullContent.slug,
     };
   }
+
+  if (existing.status === "deleted") return null;
 
   const nextTitle =
     input.title !== undefined ? input.title.trim() : existing.title;
@@ -328,7 +364,10 @@ export async function updateAdminPost(
 
   const nextStatus: PostStatus = input.status ?? existing.status;
 
-  if (nextStatus === "published" && existing.status !== "published") {
+  if (nextStatus === "scheduled" && existing.status === "published") {
+    throw new Error("Move the published post to Draft before scheduling it.");
+  }
+  if (nextStatus !== "draft" && existing.status !== "published") {
     await assertCowriterPublishAllowed(db, existing.id);
   }
 
@@ -359,12 +398,16 @@ export async function updateAdminPost(
   }
 
   const now = new Date();
-  const nextPublishedAt =
-    nextStatus === "published" && !existing.publishedAt
-      ? now
-      : existing.publishedAt;
+  let nextPublishedAt = existing.publishedAt;
+  if (nextStatus === "scheduled") {
+    if (input.status === "scheduled" || input.scheduledAt !== undefined) {
+      nextPublishedAt = resolveScheduledTime(input.scheduledAt, now);
+    }
+  } else if (existing.status === "scheduled" || !nextPublishedAt) {
+    nextPublishedAt = nextStatus === "published" ? now : null;
+  }
 
-  await db
+  const [saved] = await db
     .update(posts)
     .set({
       title: nextTitle,
@@ -375,43 +418,20 @@ export async function updateAdminPost(
       emailSubject: nextEmailSubject,
       emailHtml: nextEmailHtml,
       bodyHtml: nextBodyHtml,
+      isGated: input.isGated,
+      freeContent: input.freeContent === undefined ? undefined : input.freeContent?.trim() || null,
+      gatedContent: input.gatedContent === undefined ? undefined : input.gatedContent?.trim() || null,
+      gatePriceUsdc: input.gatePriceUsdc,
+      audioUrl: input.audioUrl === undefined ? undefined : input.audioUrl?.trim() || null,
+      audioVoice: input.audioVoice === undefined ? undefined : input.audioVoice?.trim() || null,
       updatedAt: now,
     })
-    .where(eq(posts.id, existing.id));
-
-  if (
-    input.isGated !== undefined ||
-    input.freeContent !== undefined ||
-    input.gatedContent !== undefined ||
-    input.gatePriceUsdc !== undefined
-  ) {
-    await setPostPaywallColumns(db, existing.id, {
-      isGated: input.isGated,
-      freeContent:
-        input.freeContent !== undefined
-          ? input.freeContent?.trim() || null
-          : undefined,
-      gatedContent:
-        input.gatedContent !== undefined
-          ? input.gatedContent?.trim() || null
-          : undefined,
-      gatePriceUsdc: input.gatePriceUsdc,
-    });
-  }
+    .where(and(eq(posts.id, existing.id), eq(posts.status, existing.status), eq(posts.updatedAt, existing.updatedAt)))
+    .returning({ id: posts.id });
+  if (!saved) throw new Error("This post changed. Refresh it before saving again.");
 
   const explicitAudioUpdate =
     input.audioUrl !== undefined || input.audioVoice !== undefined;
-
-  if (input.audioUrl !== undefined || input.audioVoice !== undefined) {
-    await setPostAudioColumns(db, existing.id, {
-      audioUrl:
-        input.audioUrl !== undefined ? input.audioUrl?.trim() || null : undefined,
-      audioVoice:
-        input.audioVoice !== undefined
-          ? input.audioVoice?.trim() || null
-          : undefined,
-    });
-  }
 
   maybeSchedulePublishedPostNarrationRegeneration({
     db,

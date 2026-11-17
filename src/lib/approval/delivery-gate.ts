@@ -50,8 +50,11 @@ export async function assertDeliverable(
     .where(eq(posts.id, postId))
     .limit(1);
   const post = postRows[0];
-  if (!post) {
+  if (!post || post.status === "deleted") {
     return { ok: false, reason: "not_found" };
+  }
+  if (post.status === "scheduled") {
+    return { ok: false, reason: "not_approved" };
   }
 
   if (post.source === "paragraph") {

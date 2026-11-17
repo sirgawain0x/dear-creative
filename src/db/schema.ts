@@ -8,7 +8,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
-export const postStatusEnum = ["draft", "published"] as const;
+export const postStatusEnum = ["draft", "published", "scheduled"] as const;
 export type PostStatus = (typeof postStatusEnum)[number];
 
 /** Imported Paragraph archive rows; null means Adam newsletter content. */
@@ -117,7 +117,10 @@ export const posts = sqliteTable(
     slug: text("slug").notNull(),
     title: text("title").notNull(),
     authorId: text("author_id").references(() => authors.id),
-    status: text("status", { enum: postStatusEnum }).notNull().default("draft"),
+    status: text("status", { enum: [...postStatusEnum, "deleted"] })
+      .notNull()
+      .default("draft"),
+    // For scheduled posts, this is the requested go-live time.
     publishedAt: integer("published_at", { mode: "timestamp_ms" }),
     teaserText: text("teaser_text"),
     emailSubject: text("email_subject"),

@@ -70,7 +70,7 @@ export function EditorPaywallSidebar({
           </p>
         </div>
         <span className="rounded-full bg-blue-500/10 px-2 py-0.5 font-mono text-[11px] font-medium text-blue-400 border border-blue-500/20">
-          Base L2
+          Base
         </span>
       </div>
 
