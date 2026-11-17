@@ -7,6 +7,7 @@
  */
 
 import { resolveGroveOrIpfsUrl } from "@/lib/storage/lens-grove";
+import { CREATIVE_TV_DISCOVER } from "./creative-tv-discover";
 
 export type VideoProvider =
   | "creative-tv"
@@ -63,6 +64,18 @@ export function parseVideoUrl(rawUrl: string, title?: string): ParsedVideo | nul
       originalUrl: trimmed,
       videoId,
       title: title || "YouTube Video Player",
+    };
+  }
+
+  const discoverMatch = CREATIVE_TV_DISCOVER.exec(trimmed);
+  if (discoverMatch) {
+    const videoId = discoverMatch[1]!.toLowerCase();
+    return {
+      provider: "creative-tv",
+      embedUrl: `https://tv.creativeplatform.xyz/embed/discover/${videoId}`,
+      originalUrl: trimmed,
+      videoId,
+      title: title || "Creative TV Player",
     };
   }
 

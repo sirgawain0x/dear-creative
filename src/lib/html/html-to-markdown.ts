@@ -1,5 +1,6 @@
 import { decodeHtmlEntitiesOnce } from "./decode-html-entities-once";
 import { cleanArchiveBodyArtifacts } from "./markdown-to-html";
+import { parseVideoUrl } from "./video-embed";
 
 function stripTags(html: string): string {
   return decodeHtmlEntitiesOnce(html.replace(/<[^>]+>/g, "")).trim();
@@ -85,7 +86,7 @@ export function htmlToMarkdown(raw: string | null | undefined): string {
 
   // If it already looks like pure Markdown with no block HTML tags, return normalized
   const hasBlockHtml =
-    /<(?:p|h[1-6]|ul|ol|li|blockquote|pre|div|hr|img)\b[^>]*>/i.test(cleaned);
+    /<(?:p|h[1-6]|ul|ol|li|blockquote|pre|div|hr|img|iframe|video)\b[^>]*>/i.test(cleaned);
   if (!hasBlockHtml) {
     return cleaned;
   }
@@ -116,8 +117,12 @@ export function htmlToMarkdown(raw: string | null | undefined): string {
   );
 
   working = working.replace(
-    /<blockquote\b[^>]*>([\s\S]*?)<\/blockquote>/gi,
-    (_m, inner: string) => {
+    /<blockquote\b([^>]*)>([\s\S]*?)<\/blockquote>/gi,
+    (_m, attributes: string, inner: string) => {
+      if (/\bdear-x-card\b/.test(attributes)) {
+        const post = /\bhref="(https:\/\/x\.com\/[\w]+\/status\/\d+)"/i.exec(inner);
+        if (post) return `\n\n${post[1]}\n\n`;
+      }
       const stripped = inner.replace(/<\/?p\b[^>]*>/gi, "\n");
       const lines = convertInlineHtmlToMarkdown(stripped)
         .split(/\r?\n/)
@@ -175,6 +180,15 @@ export function htmlToMarkdown(raw: string | null | undefined): string {
 
   // Convert any remaining inline tags
   working = convertInlineHtmlToMarkdown(working);
+  working = working.replace(
+    /<video controls(?:="")? preload="metadata" playsinline(?:="")? class="dear-video-element">\s*<source src="([^"\s)]+)" type="video\/mp4"\s*\/?>(?:<\/source>)?\s*Your browser does not support the video tag\.\s*<\/video>/gi,
+    (markup, url: string) =>
+      parseVideoUrl(url)?.provider === "direct" ? "\n\n[video](" + url + ")\n\n" : markup,
+  );
+  working = working.replace(
+    /<(iframe|video)\b[^>]*>[\s\S]*?<\/\1>/gi,
+    (media) => `\n\n${media.replace(/\s*\r?\n\s*/g, " ")}\n\n`,
+  );
 
   // Normalize blank lines (max 2 consecutive newlines)
   return working
