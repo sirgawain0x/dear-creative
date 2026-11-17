@@ -6,6 +6,7 @@ import { DuplicateSlugError } from "@/lib/adam/publish-draft";
 import { requireStudioOrAdamAuth } from "@/lib/adam/studio-auth";
 import { CowriterPublishBlockedError } from "@/lib/cowriters/publish-gate";
 import {
+  deleteAdminDraft,
   getAdminPostByIdOrSlug,
   updateAdminPost,
 } from "@/lib/posts/manage-posts";
@@ -36,6 +37,7 @@ type PatchPostBody = {
   title?: string;
   slug?: string;
   status?: string;
+  scheduledAt?: string;
   teaserText?: string | null;
   emailSubject?: string | null;
   emailHtml?: string | null;
@@ -80,6 +82,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         title: body.title,
         slug: body.slug,
         status: body.status as PostStatus | undefined,
+        scheduledAt: body.scheduledAt,
         teaserText: body.teaserText,
         emailSubject: body.emailSubject,
         emailHtml: body.emailHtml,
@@ -100,10 +103,10 @@ export async function PATCH(request: Request, context: RouteContext) {
       return NextResponse.json({ error: "Post not found" }, { status: 404 });
     }
 
-    revalidateTag("posts-recent", "max");
-    revalidateTag(publishedPostCacheTag(updated.previousSlug), "max");
+    revalidateTag("posts-recent", { expire: 0 });
+    revalidateTag(publishedPostCacheTag(updated.previousSlug), { expire: 0 });
     if (updated.post.slug !== updated.previousSlug) {
-      revalidateTag(publishedPostCacheTag(updated.post.slug), "max");
+      revalidateTag(publishedPostCacheTag(updated.post.slug), { expire: 0 });
     }
 
     return NextResponse.json({
@@ -128,4 +131,21 @@ export async function PATCH(request: Request, context: RouteContext) {
       error instanceof Error ? error.message : "Failed to update post";
     return NextResponse.json({ error: errMsg }, { status: 400 });
   }
+}
+
+export async function DELETE(request: Request, context: RouteContext) {
+  const auth = await requireStudioOrAdamAuth(request);
+  if (!auth.ok) return auth.response;
+
+  const { postId } = await context.params;
+  const result = await deleteAdminDraft(getDb(), postId, auth.actor);
+  if (result.outcome === "not_a_draft") {
+    return NextResponse.json({ error: "Move this post to Draft before deleting it." }, { status: 409 });
+  }
+  if (result.outcome === "not_found") {
+    return NextResponse.json({ error: "Draft not found." }, { status: 404 });
+  }
+  revalidateTag("posts-recent", { expire: 0 });
+  revalidateTag(publishedPostCacheTag(result.slug), { expire: 0 });
+  return NextResponse.json({ outcome: "deleted" });
 }

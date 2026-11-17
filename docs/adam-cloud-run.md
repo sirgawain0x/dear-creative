@@ -130,4 +130,10 @@ The unified private studio at `/adam` (also accessible via `/approvals` and `/ad
      ```bash
      ./scripts/gcp/adam-schedule-cloud-scheduler.sh
      ```
+5. **Scheduled post publishing:** In Studio, open a saved draft in **Posts**, set its status to **Scheduled**, choose a date and time, then select **Schedule Post**. The **Schedule** tab lists queued posts. Save a scheduled post as **Draft** to cancel its release.
+   - After deploying the web app, set `DEAR_CREATIVE_API_BASE_URL` to its URL and supply its `ADAM_API_TOKEN` in the local Adam GCP configuration. Create or update the publishing job with:
+     ```bash
+     bash scripts/gcp/publish-posts-cloud-scheduler.sh
+     ```
+   - The job checks for due posts once a minute and publishes them to the website. Newsletter delivery is a separate action.
 

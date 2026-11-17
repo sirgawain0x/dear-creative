@@ -384,7 +384,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
     {
       role: "assistant",
       content:
-        "Hi! I'm Adam, your Dear Creative editorial agent. You can chat with me by text or voice, upload images or reference files, paste rough ideas for me to turn into a newsletter draft, or configure my Monday morning schedule.",
+        "Hi! I'm Adam, your Dear Creative editorial agent. You can chat with me by text or voice, upload images or reference files, paste rough ideas for me to turn into a newsletter draft, or configure my drafting schedule.",
     },
   ]);
   const [chatInput, setChatInput] = useState("");
@@ -444,7 +444,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
   const [adminPosts, setAdminPosts] = useState<AdminPostRecord[]>([]);
   const [postSearchQuery, setPostSearchQuery] = useState("");
   const [postStatusFilter, setPostStatusFilter] = useState<
-    "all" | "published" | "draft"
+    "all" | AdminPostRecord["status"]
   >("all");
   const [selectedEditPostId, setSelectedEditPostId] = useState<string | null>(
     null,
@@ -458,9 +458,14 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
   );
   const [editPostTitle, setEditPostTitle] = useState("");
   const [editPostSlug, setEditPostSlug] = useState("");
-  const [editPostStatus, setEditPostStatus] = useState<"published" | "draft">(
+  const [editPostStatus, setEditPostStatus] = useState<AdminPostRecord["status"]>(
     "published",
   );
+  const [editPostScheduledAt, setEditPostScheduledAt] = useState("");
+  const [isDeletingDraft, setIsDeletingDraft] = useState(false);
+  const selectedSavedPost = adminPosts.find((post) => post.id === selectedEditPostId);
+  const scheduledPosts = adminPosts.filter((post) => post.status === "scheduled")
+    .sort((left, right) => (left.publishedAt ?? "").localeCompare(right.publishedAt ?? ""));
   const [editPostTeaser, setEditPostTeaser] = useState("");
   const [editPostEmailSubject, setEditPostEmailSubject] = useState("");
   const [editPostMarkdown, setEditPostMarkdown] = useState("");
@@ -528,6 +533,13 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
     setEditPostTitle(post.title);
     setEditPostSlug(post.slug);
     setEditPostStatus(post.status);
+    const scheduledAt = post.status === "scheduled" && post.publishedAt
+      ? new Date(post.publishedAt)
+      : null;
+    setEditPostScheduledAt(scheduledAt
+      ? new Date(scheduledAt.getTime() - scheduledAt.getTimezoneOffset() * 60_000)
+          .toISOString().slice(0, 16)
+      : "");
     setEditPostTeaser(post.teaserText ?? "");
     setEditPostEmailSubject(post.emailSubject ?? post.title);
     setEditPostMarkdown(
@@ -600,13 +612,15 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
 
   const loadStudioData = useCallback(async () => {
     try {
-      const [meRes, ideasRes, approvalsRes, scheduleRes, postsRes, threadsRes] =
+      const [meRes, ideasRes, approvalsRes, scheduleRes, postsRes, draftPostsRes, scheduledPostsRes, threadsRes] =
         await Promise.all([
           authFetch("/api/admin/me"),
           authFetch("/api/adam/ideas"),
           authFetch("/api/approvals"),
           authFetch("/api/adam/schedule"),
           authFetch("/api/adam/posts"),
+          authFetch("/api/adam/posts?status=draft"),
+          authFetch("/api/adam/posts?status=scheduled"),
           authFetch("/api/adam/chat/threads"),
         ]);
 
@@ -647,8 +661,16 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
       }
 
       if (postsRes.ok) {
-        const data = (await postsRes.json()) as { posts: AdminPostRecord[] };
-        let loadedPosts = data.posts ?? [];
+        const postLists = await Promise.all(
+          [postsRes, draftPostsRes, scheduledPostsRes].map(async (response) => {
+            if (!response.ok) return [];
+            const data = (await response.json()) as { posts: AdminPostRecord[] };
+            return data.posts ?? [];
+          }),
+        );
+        let loadedPosts = Array.from(
+          new Map(postLists.flat().map((post) => [post.id, post])).values(),
+        );
         const urlSlug =
           typeof window !== "undefined"
             ? new URLSearchParams(window.location.search).get("slug")?.trim() ||
@@ -1251,7 +1273,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
       {
         role: "assistant",
         content:
-          "Hi! I'm Adam, your Dear Creative editorial agent. You can chat with me by text or voice, upload images or reference files, paste rough ideas for me to turn into a newsletter draft, or configure my Monday morning schedule.",
+          "Hi! I'm Adam, your Dear Creative editorial agent. You can chat with me by text or voice, upload images or reference files, paste rough ideas for me to turn into a newsletter draft, or configure my drafting schedule.",
       },
     ]);
   }, [cancelChatInFlight, stopSpeaking]);
@@ -2068,10 +2090,43 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
     }
   }, [authFetch, selectedEditPostId, setStatusBanner]);
 
-  // --- Save Edited Post (Published or Draft) ---
+  const handleDeleteDraft = useCallback(async (post: AdminPostRecord) => {
+    if (isDeletingDraft || isSavingPost) return;
+    if (!window.confirm(`Delete “${post.title}”? This removes the draft and its preview links from the app.`)) return;
+
+    setIsDeletingDraft(true);
+    setStatusBanner(null);
+    try {
+      const res = await authFetch(`/api/adam/posts/${encodeURIComponent(post.id)}`, { method: "DELETE" });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(data.error || "Failed to delete draft.");
+      setAdminPosts((current) => current.filter((item) => item.id !== post.id));
+      setApprovals((current) => current.filter((item) => item.postId !== post.id));
+      if (selectedEditPostIdRef.current === post.id) {
+        selectedEditPostIdRef.current = null;
+        selectedEditPostSlugRef.current = null;
+        setSelectedEditPostId(null);
+        setEditPostTitle("");
+        setEditPostSlug("");
+        setEditPostStatus("draft");
+        setEditPostScheduledAt("");
+        setEditPostTeaser("");
+        setEditPostEmailSubject("");
+        setEditPostMarkdown("");
+        setEditPostHtml("");
+      }
+      setStatusBanner({ kind: "success", text: `Deleted draft “${post.title}”.` });
+    } catch (error) {
+      setStatusBanner({ kind: "error", text: error instanceof Error ? error.message : "Failed to delete draft." });
+    } finally {
+      setIsDeletingDraft(false);
+    }
+  }, [authFetch, isDeletingDraft, isSavingPost, setStatusBanner]);
+
   const handleSaveEditedPost = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
+      if (isDeletingDraft) return;
       if (!selectedEditPostId) {
         setStatusBanner({
           kind: "error",
@@ -2084,6 +2139,11 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
           kind: "error",
           text: "Title and slug are required.",
         });
+        return;
+      }
+      const scheduledAt = editPostStatus === "scheduled" ? new Date(editPostScheduledAt) : null;
+      if (scheduledAt && !(scheduledAt.getTime() > Date.now())) {
+        setStatusBanner({ kind: "error", text: "Choose a publish date and time in the future." });
         return;
       }
 
@@ -2103,6 +2163,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                 title: editPostTitle.trim(),
                 slug: editPostSlug.trim(),
                 status: editPostStatus,
+                scheduledAt: scheduledAt?.toISOString(),
                 teaserText: editPostTeaser.trim() || null,
                 emailSubject: editPostEmailSubject.trim() || null,
                 bodyHtml: editPostHtml,
@@ -2113,6 +2174,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                 title: editPostTitle.trim(),
                 slug: editPostSlug.trim(),
                 status: editPostStatus,
+                scheduledAt: scheduledAt?.toISOString(),
                 teaserText: editPostTeaser.trim() || null,
                 emailSubject: editPostEmailSubject.trim() || null,
                 markdown: editPostMarkdown,
@@ -2148,10 +2210,16 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
         }
 
         selectPostForEditing(data.post);
+        const savedPost = data.post;
+        setAdminPosts((current) => current.some((post) => post.id === savedPost.id)
+          ? current.map((post) => post.id === savedPost.id ? savedPost : post)
+          : [savedPost, ...current]);
         await loadStudioData();
         setStatusBanner({
           kind: "success",
-          text: `Saved changes to "${data.post.title}" (/posts/${data.post.slug})!`,
+          text: scheduledAt
+            ? `“${data.post.title}” is scheduled to publish on ${scheduledAt.toLocaleString()}.`
+            : `Saved changes to “${data.post.title}”.`,
         });
       } catch {
         setStatusBanner({
@@ -2168,14 +2236,17 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
       editPostHtml,
       editPostMarkdown,
       editPostMode,
+      editPostScheduledAt,
       editPostSlug,
       editPostStatus,
       editPostTeaser,
       editPostTitle,
       editPaywallSettings,
+      isDeletingDraft,
       loadStudioData,
       selectPostForEditing,
       selectedEditPostId,
+      setStatusBanner,
     ],
   );
 
@@ -2410,7 +2481,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
             Multimodal chat, file &amp; image analysis, Google/local voice (STT
             &amp; TTS), ideas-to-drafts pipeline, published post editor, and
-            Monday morning schedule.
+            drafting schedule.
           </p>
         </div>
 
@@ -2628,7 +2699,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
               : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
           }`}
         >
-          Schedule (Monday Issue)
+          Schedule
         </button>
       </nav>
 
@@ -3491,7 +3562,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                   onClick={() => void submitIdea("queue")}
                   className="rounded-lg border border-zinc-300 px-4 py-2.5 text-xs font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
                 >
-                  Save to Backlog (For Monday Schedule)
+                  Save to Backlog
                 </button>
               </div>
             </div>
@@ -3629,8 +3700,8 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                 aria-label="Search posts by title or slug"
                 className="w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-950"
               />
-              <div className="flex gap-1">
-                {(["all", "published", "draft"] as const).map((statusOpt) => (
+              <div className="flex flex-wrap gap-1">
+                {(["all", "published", "draft", "scheduled"] as const).map((statusOpt) => (
                   <button
                     key={statusOpt}
                     type="button"
@@ -3732,7 +3803,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                   (H2/H3), preview live, and save directly to Dear Creative.
                 </p>
               </div>
-              {editPostSlug ? (
+              {selectedSavedPost?.status === "published" ? (
                 <Link
                   href={`/posts/${editPostSlug}`}
                   className="inline-flex items-center gap-1 rounded-full border border-zinc-300 px-3.5 py-1.5 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
@@ -3771,18 +3842,36 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                   <select
                     id="edit-post-status"
                     value={editPostStatus}
-                    onChange={(e) =>
-                      setEditPostStatus(
-                        e.target.value === "draft" ? "draft" : "published",
-                      )
-                    }
+                    onChange={(e) => setEditPostStatus(e.target.value as AdminPostRecord["status"])}
                     className="mt-1 w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                   >
                     <option value="published">Published</option>
                     <option value="draft">Draft</option>
+                    <option value="scheduled" disabled={selectedSavedPost?.status === "published" || !selectedEditPostId}>
+                      Scheduled
+                    </option>
                   </select>
                 </div>
               </div>
+
+              {editPostStatus === "scheduled" ? (
+                <div>
+                  <label htmlFor="edit-post-scheduled-at" className="block text-xs font-medium">
+                    Publish date and time
+                  </label>
+                  <input
+                    id="edit-post-scheduled-at"
+                    type="datetime-local"
+                    required
+                    value={editPostScheduledAt}
+                    onChange={(e) => setEditPostScheduledAt(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm sm:w-auto dark:border-zinc-700 dark:bg-zinc-950"
+                  />
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Local time ({Intl.DateTimeFormat().resolvedOptions().timeZone}). The post will go live on the website.
+                  </p>
+                </div>
+              ) : null}
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
@@ -4521,17 +4610,20 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 pt-2">
                 <button
                   type="submit"
-                  disabled={isSavingPost || !selectedEditPostId}
+                  disabled={isSavingPost || isDeletingDraft || !selectedEditPostId}
                   className="rounded-xl bg-zinc-900 px-5 py-2.5 text-xs font-semibold text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
                 >
-                  {isSavingPost ? "Saving Changes…" : "Save & Update Post"}
+                  {isSavingPost ? "Saving Changes…" : editPostStatus === "scheduled" ? "Schedule Post" : "Save & Update Post"}
                 </button>
-                {editPostSlug ? (
-                  <span className="min-w-0 max-w-full break-words text-xs text-zinc-500">
-                    Saving immediately revalidates{" "}
-                    <code className="break-all">/posts/{editPostSlug}</code> and{" "}
-                    <code>/posts</code>.
-                  </span>
+                {selectedSavedPost?.status === "draft" ? (
+                  <button
+                    type="button"
+                    disabled={isSavingPost || isDeletingDraft}
+                    onClick={() => void handleDeleteDraft(selectedSavedPost)}
+                    className="rounded-xl border border-red-300 px-4 py-2.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950"
+                  >
+                    {isDeletingDraft ? "Deleting…" : "Delete Draft"}
+                  </button>
                 ) : null}
               </div>
             </div>
@@ -4697,9 +4789,50 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
         </section>
       ) : null}
 
-      {/* TAB 4: SCHEDULE (REGULAR MONDAY DRAFTING) */}
       {activeTab === "schedule" ? (
         <section className="mt-6 grid gap-6 lg:grid-cols-2">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs lg:col-span-2 dark:border-zinc-800 dark:bg-zinc-900/60">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold">Scheduled Posts</h2>
+              <button
+                type="button"
+                className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium dark:border-zinc-700"
+                onClick={() => {
+                  setPostSearchQuery("");
+                  setPostStatusFilter("draft");
+                  setActiveTab("posts");
+                  const draft = adminPosts.find((post) => post.status === "draft");
+                  if (draft) selectPostForEditing(draft);
+                }}
+              >
+                Browse Drafts
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+              Open a draft in Posts and set its status to Scheduled to choose when it goes live.
+            </p>
+            {scheduledPosts.length > 0 ? (
+              <ul className="mt-3 divide-y divide-zinc-200 dark:divide-zinc-800">
+                {scheduledPosts.map((post) => (
+                  <li key={post.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                    <button type="button" className="text-left font-medium underline" onClick={() => {
+                      selectPostForEditing(post);
+                      setPostSearchQuery("");
+                      setPostStatusFilter("scheduled");
+                      setActiveTab("posts");
+                    }}>
+                      {post.title}
+                    </button>
+                    {post.publishedAt ? (
+                      <time dateTime={post.publishedAt} className="text-xs text-zinc-500">
+                        {new Date(post.publishedAt).toLocaleString()}
+                      </time>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="mt-3 text-sm text-zinc-500">No posts scheduled.</p>}
+          </div>
           <form
             onSubmit={(e) => void handleSaveSchedule(e)}
             className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs dark:border-zinc-800 dark:bg-zinc-900/60"
@@ -4828,7 +4961,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
               Scheduled Run Status &amp; Manual Trigger
             </h2>
             <p className="text-xs text-zinc-600 dark:text-zinc-400">
-              When triggered (by Cloud Scheduler on Monday mornings or manually
+              When triggered (by Cloud Scheduler or manually
               below), Adam checks your <strong>Ideas Backlog</strong> first. If
               no ideas are queued, he autonomously drafts a fresh issue.
             </p>

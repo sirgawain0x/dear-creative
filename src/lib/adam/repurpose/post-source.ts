@@ -51,13 +51,6 @@ export async function loadRepurposePostSource(
       "Post not found (save the post to the database first).",
     );
   }
-  if (post.status !== "published" && post.status !== "draft") {
-    throw new RepurposePostError(
-      "ineligible",
-      "Only published or draft posts can be repurposed.",
-    );
-  }
-
   const body = stripHtmlTags(post.bodyHtml ?? post.emailHtml ?? "")
     .replace(/\s+/g, " ")
     .trim();
@@ -74,7 +67,7 @@ export async function loadRepurposePostSource(
     id: post.id,
     slug: post.slug,
     title: post.title,
-    status: post.status,
+    status: post.status === "published" ? "published" : "draft",
     authorId,
     teaserText: post.teaserText ?? null,
     plainText,

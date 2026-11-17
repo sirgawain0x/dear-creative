@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { eq } from "drizzle-orm";
 import { getDb, type DearCreativeDb } from "@/db/client";
+import { posts } from "@/db/schema";
 import { htmlToMarkdown } from "@/lib/html/html-to-markdown";
 import { preparePostBodyHtmlForRender } from "@/lib/posts/body-html-for-render";
 import type { ContentPostSlug } from "@/lib/posts/content-slugs";
@@ -47,6 +49,11 @@ export async function loadFullPostContent(
         bodyHtml: safeHtml,
         publishedAt: published.publishedAt,
       };
+    }
+    if (isContentPostSlug(trimmedSlug)) {
+      const [stored] = await db.select({ id: posts.id }).from(posts)
+        .where(eq(posts.slug, trimmedSlug)).limit(1);
+      if (stored) return null;
     }
   } catch {
     // Fall back to static MDX content if DB is unavailable or unmigrated in unit tests

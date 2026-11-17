@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { DearCreativeDb } from "@/db/client";
 import { corePostColumns, ensurePostsSchema } from "@/db/ensure-schema";
@@ -39,8 +39,11 @@ export async function approvePost(
     .where(eq(posts.id, postId))
     .limit(1);
   const post = postRows[0];
-  if (!post) {
+  if (!post || post.status === "deleted") {
     return "not_found";
+  }
+  if (post.status === "scheduled") {
+    return "not_pending";
   }
 
   const currentHash = contentHashForPost(post);
@@ -55,25 +58,28 @@ export async function approvePost(
   await assertCowriterPublishAllowed(db, postId);
 
   const now = new Date();
-  await db
-    .update(approvals)
-    .set({
-      status: "approved",
-      approvedBy,
-      approvedAt: now,
-      updatedAt: now,
-    })
-    .where(eq(approvals.id, approval.id));
+  const approved = await db.transaction(async (tx) => {
+    const [current] = await tx.select({ id: approvals.id }).from(approvals)
+      .where(and(eq(approvals.id, approval.id), eq(approvals.status, "pending")));
+    if (!current) return false;
 
-  await db
-    .update(posts)
-    .set({
-      status: "published",
-      publishedAt: post.publishedAt ?? now,
-      bodyHtml: post.bodyHtml ?? post.emailHtml,
-      updatedAt: now,
-    })
-    .where(eq(posts.id, postId));
+    const [published] = await tx.update(posts)
+      .set({
+        status: "published",
+        publishedAt: post.publishedAt ?? now,
+        bodyHtml: post.bodyHtml ?? post.emailHtml,
+        updatedAt: now,
+      })
+      .where(and(eq(posts.id, postId), eq(posts.status, post.status), eq(posts.updatedAt, post.updatedAt)))
+      .returning({ id: posts.id });
+    if (!published) return false;
+
+    await tx.update(approvals)
+      .set({ status: "approved", approvedBy, approvedAt: now, updatedAt: now })
+      .where(eq(approvals.id, approval.id));
+    return true;
+  });
+  if (!approved) return "not_pending";
 
   expirePublishedPostExistenceCache(post.slug);
 

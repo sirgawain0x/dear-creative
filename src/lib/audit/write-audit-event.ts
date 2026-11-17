@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import type { DearCreativeDb } from "@/db/client";
+import type { DearCreativeDbSession } from "@/db/client";
 import { auditEvents } from "@/db/schema";
 
 export async function writeAuditEvent(
-  db: DearCreativeDb,
+  db: Pick<DearCreativeDbSession, "insert">,
   input: {
     actor: string;
     action: string;

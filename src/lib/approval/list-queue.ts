@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, notInArray } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
 import { approvals, posts } from "@/db/schema";
 
@@ -35,6 +35,7 @@ export async function listApprovalQueue(
     })
     .from(approvals)
     .innerJoin(posts, eq(approvals.postId, posts.id))
+    .where(notInArray(posts.status, ["deleted", "scheduled"]))
     .orderBy(desc(approvals.createdAt));
 
   return rows.map((row) => ({
