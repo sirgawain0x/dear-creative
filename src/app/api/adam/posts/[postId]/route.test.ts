@@ -9,6 +9,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getDb, type DearCreativeDb } from "@/db/client";
 import * as schema from "@/db/schema";
 import { GET as runScheduler } from "@/app/api/cron/publish-scheduled-posts/route";
+import {
+  setPostNarrationAfterHookForTests,
+  setRegenerateStoredPostNarrationForTests,
+} from "@/lib/audio/schedule-narration-regeneration";
 import { listApprovalQueue } from "@/lib/approval/list-queue";
 import { listAdminPosts } from "@/lib/posts/manage-posts";
 import { publishedVisibilityFilter } from "@/lib/posts/published-posts";
@@ -39,9 +43,15 @@ describe("Studio post lifecycle", () => {
   let db: DearCreativeDb;
   let client: Client;
   let directory: string;
+  const narrationTasks: Promise<void>[] = [];
+  const regenerate = vi.fn(async () => ({ ok: true as const, url: "https://example.com/fresh.mp3" }));
 
   beforeEach(async () => {
     vi.stubEnv("ADAM_API_TOKEN", "route-test-token");
+    regenerate.mockClear();
+    narrationTasks.length = 0;
+    setPostNarrationAfterHookForTests((task) => narrationTasks.push(Promise.resolve(task())));
+    setRegenerateStoredPostNarrationForTests(regenerate);
     directory = mkdtempSync(join(tmpdir(), "dear-post-lifecycle-"));
     client = createClient({ url: `file:${join(directory, "test.db")}` });
     db = drizzle({ client, schema });
@@ -50,7 +60,10 @@ describe("Studio post lifecycle", () => {
     await db.insert(schema.posts).values({ id: "post", slug: "test-post", title: "Test Post" });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await Promise.all(narrationTasks);
+    setPostNarrationAfterHookForTests(null);
+    setRegenerateStoredPostNarrationForTests(null);
     client.close();
     rmSync(directory, { recursive: true, force: true });
     vi.unstubAllEnvs();
@@ -74,6 +87,18 @@ describe("Studio post lifecycle", () => {
   it("validates, reschedules, cancels and publishes through the authenticated worker", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-11-16T13:00:00Z"));
+    await db.update(schema.posts).set({
+      status: "published",
+      publishedAt: new Date("2026-11-12T14:00:00Z"),
+      bodyHtml: "<p>Old article</p>",
+      audioUrl: "https://example.com/stale.mp3",
+      audioVoice: "Puck",
+    });
+    expect((await patch({ status: "draft", bodyHtml: "<p>Updated article</p>" })).status).toBe(200);
+    const [editedDraft] = await db.select().from(schema.posts).where(eq(schema.posts.id, "post"));
+    expect(editedDraft.audioUrl).toBeNull();
+    expect(editedDraft.audioVoice).toBe("Puck");
+
     const monday = "2026-11-16T14:00:00.000Z";
     const thursday = "2026-11-19T14:00:00.000Z";
     const run = () => runScheduler(new Request(cronUrl, { headers }));
@@ -93,6 +118,8 @@ describe("Studio post lifecycle", () => {
     expect((await schedule(thursday)).status).toBe(200);
     vi.setSystemTime(new Date(thursday));
     expect(await (await run()).json()).toMatchObject({ published: ["test-post"] });
+    await Promise.all(narrationTasks);
+    expect(regenerate).toHaveBeenCalledExactlyOnceWith(db, "post", { actor: "adam-scheduler" });
     expect(await db.select().from(schema.posts).where(publishedVisibilityFilter())).toMatchObject([
       { status: "published", publishedAt: new Date(thursday) },
     ]);

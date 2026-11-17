@@ -5,6 +5,8 @@ import { requireAdamAuth } from "@/lib/adam/require-auth";
 import { publishScheduledPosts } from "@/lib/posts/publish-scheduled-posts";
 import { publishedPostCacheTag } from "@/lib/posts/published-posts";
 
+export const maxDuration = 300;
+
 export async function GET(request: Request) {
   const cronSecret = process.env.CRON_SECRET?.trim();
   if (!cronSecret || request.headers.get("authorization") !== `Bearer ${cronSecret}`) {

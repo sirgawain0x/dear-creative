@@ -15,6 +15,7 @@ import { computeApprovalContentHash } from "@/lib/approval/content-hash";
 import { writeAuditEvent } from "@/lib/audit/write-audit-event";
 import { htmlToMarkdown } from "@/lib/html/html-to-markdown";
 import { ensureArticleHtml } from "@/lib/html/markdown-to-html";
+import { postNarrationContentChanged } from "@/lib/audio/invalidate-post-audio";
 import { maybeSchedulePublishedPostNarrationRegeneration } from "@/lib/audio/schedule-narration-regeneration";
 import {
   assertCowriterPublishAllowed,
@@ -407,6 +408,13 @@ export async function updateAdminPost(
     nextPublishedAt = nextStatus === "published" ? now : null;
   }
 
+  const audioUrl = input.audioUrl === undefined ? undefined : input.audioUrl?.trim() || null;
+  const invalidateAudio = audioUrl === undefined && nextStatus !== "published" &&
+    postNarrationContentChanged(
+      { ...existing, bodyHtml: existing.bodyHtml ?? existing.emailHtml },
+      { title: nextTitle, teaserText: nextTeaserText, bodyHtml: nextBodyHtml ?? nextEmailHtml },
+    );
+
   const [saved] = await db
     .update(posts)
     .set({
@@ -422,7 +430,7 @@ export async function updateAdminPost(
       freeContent: input.freeContent === undefined ? undefined : input.freeContent?.trim() || null,
       gatedContent: input.gatedContent === undefined ? undefined : input.gatedContent?.trim() || null,
       gatePriceUsdc: input.gatePriceUsdc,
-      audioUrl: input.audioUrl === undefined ? undefined : input.audioUrl?.trim() || null,
+      audioUrl: invalidateAudio ? null : audioUrl,
       audioVoice: input.audioVoice === undefined ? undefined : input.audioVoice?.trim() || null,
       updatedAt: now,
     })
