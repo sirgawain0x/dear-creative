@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export const NEWSLETTER_POSTAL_ADDRESS =
   "Creative Platform Inc, 8 The Green, Suite G, Dover, Delaware 19901";
 
@@ -21,6 +23,9 @@ export function SiteFooter() {
             >
               Unsubscribe
             </a>
+          </p>
+          <p className="mt-1">
+            <Link href="/install" className="underline underline-offset-2 hover:text-zinc-900 dark:hover:text-zinc-200">Install app</Link>
           </p>
         </div>
         <div>

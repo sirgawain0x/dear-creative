@@ -133,7 +133,7 @@ export function SiteHeader({
                 alt="Dear Creative Logo"
                 className="h-8 w-8 shrink-0 rounded-full border border-zinc-200/80 object-cover shadow-2xs dark:border-zinc-800"
               />
-              <span className="whitespace-nowrap">Dear Creative</span>
+              <span className="font-brand whitespace-nowrap text-sm font-semibold sm:text-lg">Dear Creative</span>
             </Link>
             <span className="hidden rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-medium text-zinc-600 sm:inline-block dark:bg-zinc-900 dark:text-zinc-400">
               Creative Platform

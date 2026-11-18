@@ -22,7 +22,7 @@ export default function Home() {
           <p className="text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
             Creative Platform Dispatches
           </p>
-          <h1 className="mt-1 text-4xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+          <h1 className="font-brand mt-1 text-3xl font-semibold tracking-tight text-zinc-900 sm:text-4xl dark:text-zinc-50">
             Dear Creative
           </h1>
           <p className="mt-2 text-base text-zinc-600 dark:text-zinc-400">
