@@ -1,9 +1,12 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import { BotIdProtect } from "@/components/botid-protect";
 import { AppProviders } from "@/components/providers/app-providers";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeaderShell } from "@/components/site-header-shell";
+import { PwaInstall } from "@/components/pwa-install";
 import { getPrivyAppId } from "@/lib/privy/config";
 import { isReaderWalletEnabled } from "@/lib/wallet/reader-wallet-feature-flag";
 import { isReaderWalletE2eAuthEnabled } from "@/lib/wallet/reader-wallet-e2e-auth";
@@ -19,13 +22,22 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const conthrax = localFont({
+  src: "./fonts/conthrax-sb.ttf",
+  variable: "--font-conthrax",
+  weight: "600",
+  style: "normal",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: "Dear Creative",
   description: "The publication for autonomous creators, onchain builders, and independent founders.",
-  icons: {
-    icon: "/images/dear-creative-logo.png",
-    apple: "/images/dear-creative-logo.png",
-  },
+  appleWebApp: { capable: true, title: "Dear Creative", statusBarStyle: "default" },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#09090b",
 };
 
 export default function RootLayout({
@@ -41,7 +53,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${conthrax.variable} h-full antialiased`}
     >
       <head>
         <BotIdProtect />
@@ -55,6 +67,9 @@ export default function RootLayout({
           <div className="min-w-0 flex-1">{children}</div>
         </AppProviders>
         <SiteFooter />
+        <Suspense fallback={null}>
+          <PwaInstall />
+        </Suspense>
       </body>
     </html>
   );
