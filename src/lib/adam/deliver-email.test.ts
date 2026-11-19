@@ -905,7 +905,7 @@ describe("sendNewsletterEmail", () => {
     expect(batchSend).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back to title and bodyHtml when emailSubject/emailHtml are null, and returns not_found when both HTML fields are empty", async () => {
+  it("falls back to title when emailSubject is null, and returns not_found when emailHtml is empty even if bodyHtml is set", async () => {
     process.env.RESEND_LIVE = "true";
     batchSend.mockResolvedValue({
       data: { data: [{ id: "email-fallback" }] },
@@ -916,13 +916,13 @@ describe("sendNewsletterEmail", () => {
     const fallbackPostId = randomUUID();
     const fallbackRow = {
       id: fallbackPostId,
-      slug: "fallback-post",
+      slug: "fallback-subject-post",
       title: "Fallback Title",
       status: "published" as const,
       teaserText: "Teaser",
       emailSubject: null,
-      emailHtml: null,
-      bodyHtml: "<p>Body fallback HTML</p>",
+      emailHtml: "<p>Approved email HTML</p>",
+      bodyHtml: "<p>Different body HTML</p>",
       sponsorId: null,
     };
     await db.insert(posts).values(fallbackRow);
@@ -944,7 +944,7 @@ describe("sendNewsletterEmail", () => {
 
     const sent = await sendNewsletterEmail(db, {
       postId: fallbackPostId,
-      idempotencyKey: "post:fallback-send",
+      idempotencyKey: "post:fallback-subject-send",
     });
     expect(sent.outcome).toBe("sent");
     expect(batchSend).toHaveBeenCalledTimes(1);
@@ -952,35 +952,69 @@ describe("sendNewsletterEmail", () => {
       { subject: string; html: string }[],
     ];
     expect(payload[0]?.subject).toBe("Fallback Title");
-    expect(payload[0]?.html).toBe("<p>Body fallback HTML</p>");
+    expect(payload[0]?.html).toBe("<p>Approved email HTML</p>");
 
-    const emptyPostId = randomUUID();
-    const emptyRow = {
-      id: emptyPostId,
-      slug: "empty-html-post",
-      title: "Empty HTML",
+    batchSend.mockClear();
+
+    const unhashedBodyPostId = randomUUID();
+    const unhashedBodyRow = {
+      id: unhashedBodyPostId,
+      slug: "empty-email-html-post",
+      title: "Empty Email HTML",
       status: "published" as const,
       teaserText: "Teaser",
-      emailSubject: null,
+      emailSubject: "Approved Subject",
       emailHtml: "   ",
-      bodyHtml: null,
+      bodyHtml: "<p>Unapproved body HTML</p>",
       sponsorId: null,
     };
-    await db.insert(posts).values(emptyRow);
+    await db.insert(posts).values(unhashedBodyRow);
     await db.insert(approvals).values({
       id: randomUUID(),
-      postId: emptyPostId,
+      postId: unhashedBodyPostId,
       status: "approved",
-      contentHash: contentHashForPost(emptyRow),
+      contentHash: contentHashForPost(unhashedBodyRow),
       approvedAt: new Date(),
       approvedBy: "did:privy:g2",
     });
 
-    const blocked = await sendNewsletterEmail(db, {
-      postId: emptyPostId,
-      idempotencyKey: "post:empty-html",
+    const blockedWhitespace = await sendNewsletterEmail(db, {
+      postId: unhashedBodyPostId,
+      idempotencyKey: "post:empty-email-html",
     });
-    expect(blocked).toEqual({ outcome: "blocked", reason: "not_found" });
+    expect(blockedWhitespace).toEqual({
+      outcome: "blocked",
+      reason: "not_found",
+    });
+
+    const nullEmailPostId = randomUUID();
+    const nullEmailRow = {
+      id: nullEmailPostId,
+      slug: "null-email-html-post",
+      title: "Null Email HTML",
+      status: "published" as const,
+      teaserText: "Teaser",
+      emailSubject: "Approved Subject",
+      emailHtml: null,
+      bodyHtml: "<p>Unapproved body HTML</p>",
+      sponsorId: null,
+    };
+    await db.insert(posts).values(nullEmailRow);
+    await db.insert(approvals).values({
+      id: randomUUID(),
+      postId: nullEmailPostId,
+      status: "approved",
+      contentHash: contentHashForPost(nullEmailRow),
+      approvedAt: new Date(),
+      approvedBy: "did:privy:g2",
+    });
+
+    const blockedNull = await sendNewsletterEmail(db, {
+      postId: nullEmailPostId,
+      idempotencyKey: "post:null-email-html",
+    });
+    expect(blockedNull).toEqual({ outcome: "blocked", reason: "not_found" });
+    expect(batchSend).not.toHaveBeenCalled();
   });
 
   it("returns no_recipients without creating a receipt when there are 0 subscribers", async () => {

@@ -27,7 +27,6 @@ export type DeliveryGatePost = {
   teaserText: string | null;
   emailSubject: string | null;
   emailHtml: string | null;
-  bodyHtml: string | null;
   sponsorId: string | null;
 };
 

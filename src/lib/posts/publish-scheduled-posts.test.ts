@@ -17,6 +17,7 @@ import {
   subscribers,
 } from "@/db/schema";
 import { setPostNarrationAfterHookForTests } from "@/lib/audio/schedule-narration-regeneration";
+import { contentHashForPost } from "@/lib/approval/snapshot-from-post";
 import { resetResendBroadcastClientForTests } from "@/lib/resend/broadcast";
 import { publishScheduledPosts } from "./publish-scheduled-posts";
 
@@ -184,5 +185,59 @@ describe("publishScheduledPosts", () => {
       },
     ]);
     expect(batchSend).toHaveBeenCalledTimes(1);
+  });
+
+  it("backfills emailHtml from bodyHtml before sealing approval contentHash and sends email", async () => {
+    batchSend.mockResolvedValue({
+      data: { data: [{ id: "sched-backfill-1" }] },
+      error: null,
+    });
+
+    const now = new Date("2026-11-22T14:00:00.000Z");
+    const postId = randomUUID();
+    await db.insert(posts).values({
+      id: postId,
+      slug: "body-only-scheduled-issue",
+      title: "Body Only Scheduled Issue",
+      status: "scheduled",
+      publishedAt: new Date("2026-11-22T13:00:00.000Z"),
+      teaserText: "Teaser",
+      emailSubject: null,
+      emailHtml: null,
+      bodyHtml: "<p>From body</p>",
+    });
+
+    const result = await publishScheduledPosts(db, now);
+    expect(result.published).toEqual(["body-only-scheduled-issue"]);
+    expect(result.emailDelivery).toEqual([
+      {
+        postId,
+        slug: "body-only-scheduled-issue",
+        result: {
+          outcome: "sent",
+          broadcastId: "sched-backfill-1",
+          dryRun: false,
+        },
+      },
+    ]);
+    expect(batchSend).toHaveBeenCalledTimes(1);
+
+    const [post] = await db.select().from(posts).where(eq(posts.id, postId));
+    expect(post?.emailHtml).toBe("<p>From body</p>");
+
+    const [approval] = await db
+      .select()
+      .from(approvals)
+      .where(eq(approvals.postId, postId));
+    expect(approval?.contentHash).toBe(
+      contentHashForPost({
+        slug: post!.slug,
+        title: post!.title,
+        teaserText: post!.teaserText,
+        emailSubject: post!.emailSubject,
+        emailHtml: "<p>From body</p>",
+        sponsorId: post!.sponsorId,
+      }),
+    );
   });
 });

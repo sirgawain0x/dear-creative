@@ -6,6 +6,7 @@ import {
   posts,
   type DeliveryReceiptStatus,
 } from "@/db/schema";
+import { DEFAULT_DELIVERY_PENDING_STALE_MS } from "./delivery-receipt-constants";
 
 export type ApprovalQueueItem = {
   postId: string;
@@ -21,11 +22,14 @@ export type ApprovalQueueItem = {
   createdAt: string;
   emailDeliveryStatus: DeliveryReceiptStatus | null;
   emailDeliveredAt: string | null;
+  emailDeliveryUpdatedAt: string | null;
+  emailDeliveryPendingStale: boolean;
   emailDeliveryError: string | null;
 };
 
 export async function listApprovalQueue(
   db: DearCreativeDb,
+  now = new Date(),
 ): Promise<ApprovalQueueItem[]> {
   const rows = await db
     .select({
@@ -42,6 +46,7 @@ export async function listApprovalQueue(
       createdAt: approvals.createdAt,
       emailDeliveryStatus: deliveryReceipts.status,
       emailCompletedAt: deliveryReceipts.completedAt,
+      emailUpdatedAt: deliveryReceipts.updatedAt,
       emailDeliveryError: deliveryReceipts.lastError,
     })
     .from(approvals)
@@ -55,6 +60,8 @@ export async function listApprovalQueue(
     )
     .where(notInArray(posts.status, ["deleted", "scheduled"]))
     .orderBy(desc(approvals.createdAt));
+
+  const staleBeforeMs = now.getTime() - DEFAULT_DELIVERY_PENDING_STALE_MS;
 
   return rows.map((row) => ({
     postId: row.postId,
@@ -73,6 +80,13 @@ export async function listApprovalQueue(
       row.emailDeliveryStatus === "completed" && row.emailCompletedAt
         ? row.emailCompletedAt.toISOString()
         : null,
+    emailDeliveryUpdatedAt: row.emailUpdatedAt
+      ? row.emailUpdatedAt.toISOString()
+      : null,
+    emailDeliveryPendingStale:
+      row.emailDeliveryStatus === "pending" &&
+      row.emailUpdatedAt != null &&
+      row.emailUpdatedAt.getTime() < staleBeforeMs,
     emailDeliveryError: row.emailDeliveryError ?? null,
   }));
 }

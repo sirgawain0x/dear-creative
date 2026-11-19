@@ -274,8 +274,7 @@ export async function sendNewsletterEmail(
 
   const subject =
     gate.value.post.emailSubject?.trim() || gate.value.post.title.trim();
-  const emailHtml =
-    gate.value.post.emailHtml?.trim() || gate.value.post.bodyHtml?.trim();
+  const emailHtml = gate.value.post.emailHtml?.trim();
   if (!subject || !emailHtml) {
     return { outcome: "blocked", reason: "not_found" };
   }

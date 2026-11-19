@@ -73,6 +73,8 @@ function makeItem(
     createdAt: "2026-11-19T12:00:00.000Z",
     emailDeliveryStatus: null,
     emailDeliveredAt: null,
+    emailDeliveryUpdatedAt: null,
+    emailDeliveryPendingStale: false,
     emailDeliveryError: null,
     ...overrides,
   };
@@ -317,5 +319,116 @@ describe("AdamStudio Approval Queue email delivery UI", () => {
       ).toBeGreaterThan(0);
     });
     expect(screen.getByText("Email Sent")).toBeInTheDocument();
+  });
+
+  it("shows Email Sending badge and disabled Sending button for an active pending receipt", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/admin/config")) {
+        return new Response(
+          JSON.stringify({ privyConfigured: true, adamTokenConfigured: true }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("/api/admin/me")) {
+        return new Response(
+          JSON.stringify({ userId: "admin-1", isAdmin: true }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("/api/approvals")) {
+        return new Response(
+          JSON.stringify({
+            approvals: [
+              makeItem({
+                emailDeliveryStatus: "pending",
+                emailDeliveryUpdatedAt: "2026-11-19T12:09:00.000Z",
+                emailDeliveryPendingStale: false,
+              }),
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+
+    renderApprovalsStudio();
+
+    expect(await screen.findByText("Email Sending…")).toBeInTheDocument();
+    const button = screen.getByRole("button", { name: "Sending…" });
+    expect(button).toBeDisabled();
+  });
+
+  it("shows Email Stalled badge and enabled Retry Newsletter button for a stale pending receipt", async () => {
+    let retried = false;
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (input, init) => {
+        const url = String(input);
+        if (url.includes("/api/admin/config")) {
+          return new Response(
+            JSON.stringify({ privyConfigured: true, adamTokenConfigured: true }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/api/admin/me")) {
+          return new Response(
+            JSON.stringify({ userId: "admin-1", isAdmin: true }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/api/adam/deliver/email")) {
+          expect(init?.method).toBe("POST");
+          retried = true;
+          return new Response(
+            JSON.stringify({
+              outcome: "sent",
+              broadcastId: "b-retry",
+              dryRun: false,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        if (url.includes("/api/approvals")) {
+          return new Response(
+            JSON.stringify({
+              approvals: [
+                makeItem({
+                  emailDeliveryStatus: retried ? "completed" : "pending",
+                  emailDeliveredAt: retried
+                    ? "2026-11-19T12:15:00.000Z"
+                    : null,
+                  emailDeliveryUpdatedAt: "2026-11-19T12:00:00.000Z",
+                  emailDeliveryPendingStale: !retried,
+                }),
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+    renderApprovalsStudio();
+
+    expect(await screen.findByText("Email Stalled")).toBeInTheDocument();
+    const retryButton = screen.getByRole("button", {
+      name: "Retry Newsletter",
+    });
+    expect(retryButton).toBeEnabled();
+    fireEvent.click(retryButton);
+
+    await waitFor(() => {
+      expect(screen.getByText("Email Sent")).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByRole("button", { name: "Retry Newsletter" }),
+    ).not.toBeInTheDocument();
+    expect(
+      fetchSpy.mock.calls.some(([u]) =>
+        String(u).includes("/api/adam/deliver/email"),
+      ),
+    ).toBe(true);
   });
 });

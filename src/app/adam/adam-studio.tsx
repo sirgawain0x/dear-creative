@@ -4803,9 +4803,11 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
               {approvals.map((item) => {
                 const isExpanded = expandedPostId === item.postId;
                 const emailStatus = item.emailDeliveryStatus ?? null;
+                const isPendingStale = Boolean(item.emailDeliveryPendingStale);
+                const isPendingActive =
+                  emailStatus === "pending" && !isPendingStale;
                 const isSendingEmail =
-                  sendingEmailPostId === item.postId ||
-                  emailStatus === "pending";
+                  sendingEmailPostId === item.postId || isPendingActive;
                 return (
                   <li
                     key={item.postId}
@@ -4829,9 +4831,13 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                             <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
                               Email Sent
                             </span>
-                          ) : emailStatus === "pending" ? (
+                          ) : isPendingActive ? (
                             <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-300">
                               Email Sending…
+                            </span>
+                          ) : emailStatus === "pending" && isPendingStale ? (
+                            <span className="rounded-full bg-orange-500/15 px-2.5 py-0.5 text-xs font-medium text-orange-800 dark:text-orange-300">
+                              Email Stalled
                             </span>
                           ) : emailStatus === "failed" ? (
                             <span className="rounded-full bg-red-500/15 px-2.5 py-0.5 text-xs font-medium text-red-700 dark:text-red-300">
@@ -4940,7 +4946,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                               >
                                 {isSendingEmail
                                   ? "Sending…"
-                                  : emailStatus === "failed"
+                                  : emailStatus === "failed" || isPendingStale
                                     ? "Retry Newsletter"
                                     : "Send Newsletter"}
                               </button>

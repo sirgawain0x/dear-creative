@@ -44,6 +44,7 @@ export async function publishScheduledPosts(db: DearCreativeDb, now = new Date()
       const [row] = await tx.update(posts)
         .set({
           status: "published",
+          emailHtml: sql`coalesce(nullif(trim(${posts.emailHtml}), ''), ${posts.bodyHtml})`,
           bodyHtml: sql`coalesce(${posts.bodyHtml}, ${posts.emailHtml})`,
           updatedAt: now,
         })
