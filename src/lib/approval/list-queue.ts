@@ -1,6 +1,12 @@
-import { desc, eq, notInArray } from "drizzle-orm";
+import { and, desc, eq, notInArray } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
-import { approvals, posts } from "@/db/schema";
+import {
+  approvals,
+  deliveryReceipts,
+  posts,
+  type DeliveryReceiptStatus,
+} from "@/db/schema";
+import { DEFAULT_DELIVERY_PENDING_STALE_MS } from "./delivery-receipt-constants";
 
 export type ApprovalQueueItem = {
   postId: string;
@@ -14,10 +20,16 @@ export type ApprovalQueueItem = {
   bodyHtml: string | null;
   contentHash: string;
   createdAt: string;
+  emailDeliveryStatus: DeliveryReceiptStatus | null;
+  emailDeliveredAt: string | null;
+  emailDeliveryUpdatedAt: string | null;
+  emailDeliveryPendingStale: boolean;
+  emailDeliveryError: string | null;
 };
 
 export async function listApprovalQueue(
   db: DearCreativeDb,
+  now = new Date(),
 ): Promise<ApprovalQueueItem[]> {
   const rows = await db
     .select({
@@ -32,11 +44,24 @@ export async function listApprovalQueue(
       bodyHtml: posts.bodyHtml,
       contentHash: approvals.contentHash,
       createdAt: approvals.createdAt,
+      emailDeliveryStatus: deliveryReceipts.status,
+      emailCompletedAt: deliveryReceipts.completedAt,
+      emailUpdatedAt: deliveryReceipts.updatedAt,
+      emailDeliveryError: deliveryReceipts.lastError,
     })
     .from(approvals)
     .innerJoin(posts, eq(approvals.postId, posts.id))
+    .leftJoin(
+      deliveryReceipts,
+      and(
+        eq(deliveryReceipts.postId, approvals.postId),
+        eq(deliveryReceipts.channel, "email"),
+      ),
+    )
     .where(notInArray(posts.status, ["deleted", "scheduled"]))
     .orderBy(desc(approvals.createdAt));
+
+  const staleBeforeMs = now.getTime() - DEFAULT_DELIVERY_PENDING_STALE_MS;
 
   return rows.map((row) => ({
     postId: row.postId,
@@ -50,5 +75,18 @@ export async function listApprovalQueue(
     bodyHtml: row.bodyHtml,
     contentHash: row.contentHash,
     createdAt: row.createdAt.toISOString(),
+    emailDeliveryStatus: row.emailDeliveryStatus ?? null,
+    emailDeliveredAt:
+      row.emailDeliveryStatus === "completed" && row.emailCompletedAt
+        ? row.emailCompletedAt.toISOString()
+        : null,
+    emailDeliveryUpdatedAt: row.emailUpdatedAt
+      ? row.emailUpdatedAt.toISOString()
+      : null,
+    emailDeliveryPendingStale:
+      row.emailDeliveryStatus === "pending" &&
+      row.emailUpdatedAt != null &&
+      row.emailUpdatedAt.getTime() < staleBeforeMs,
+    emailDeliveryError: row.emailDeliveryError ?? null,
   }));
 }
