@@ -1,7 +1,7 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
 import { ensurePostsSchema } from "@/db/ensure-schema";
-import { posts } from "@/db/schema";
+import { deliveryReceipts, posts } from "@/db/schema";
 import {
   claimDeliverySlot,
   markDeliveryCompleted,
@@ -42,6 +42,7 @@ export type DeliverEmailInput = {
   postId: string;
   idempotencyKey: string;
   dryRun?: boolean;
+  actor?: string;
   claimOptions?: ClaimDeliveryOptions;
   providerTimeoutMs?: number;
   /** Injectable clock; a fresh reading is taken per chunk operation. */
@@ -93,6 +94,7 @@ async function sendNewsletterChunks(
   | { ok: true; broadcastId: string }
   | { ok: false; kind: "provider_failed"; message: string }
   | { ok: false; kind: "needs_review"; message: string }
+  | { ok: false; kind: "blocked"; reason: string }
 > {
   const client = getResendBroadcastClient();
   if (!client) {
@@ -116,7 +118,16 @@ async function sendNewsletterChunks(
     input.clock(),
   );
   if (chunks.length === 0) {
-    throw new Error("No newsletter recipients");
+    await markDeliveryFailed(
+      db,
+      {
+        postId: input.postId,
+        channel: "email",
+        errorMessage: "No newsletter recipients",
+      },
+      input.clock(),
+    );
+    return { ok: false, kind: "blocked", reason: "no_recipients" };
   }
 
   let firstBroadcastId: string | undefined;
@@ -255,13 +266,16 @@ export async function sendNewsletterEmail(
   db: DearCreativeDb,
   input: DeliverEmailInput,
 ): Promise<DeliverEmailResult> {
-  const gate = await assertDeliverable(db, input.postId, "email");
+  const clock = input.clock ?? systemClock;
+  const gate = await assertDeliverable(db, input.postId, "email", clock());
   if (!gate.ok) {
     return { outcome: "blocked", reason: gate.reason };
   }
 
-  const subject = gate.value.post.emailSubject?.trim();
-  const emailHtml = gate.value.post.emailHtml?.trim();
+  const subject =
+    gate.value.post.emailSubject?.trim() || gate.value.post.title.trim();
+  const emailHtml =
+    gate.value.post.emailHtml?.trim() || gate.value.post.bodyHtml?.trim();
   if (!subject || !emailHtml) {
     return { outcome: "blocked", reason: "not_found" };
   }
@@ -297,11 +311,30 @@ export async function sendNewsletterEmail(
     return { outcome: "sent", broadcastId: "dry-run", dryRun: true };
   }
 
-  if (getResendBroadcastClient() === null) {
+  if (
+    getResendBroadcastClient() === null ||
+    (isResendLiveEnabled() && !getListUnsubscribeConfig())
+  ) {
     return { outcome: "blocked", reason: "client_unconfigured" };
   }
 
-  const clock = input.clock ?? systemClock;
+  const [existingReceipt] = await db
+    .select({ id: deliveryReceipts.id })
+    .from(deliveryReceipts)
+    .where(
+      and(
+        eq(deliveryReceipts.postId, input.postId),
+        eq(deliveryReceipts.channel, "email"),
+      ),
+    )
+    .limit(1);
+
+  if (!existingReceipt) {
+    const subscribed = await listSubscribedSubscribersForFreeze(db);
+    if (subscribed.length === 0) {
+      return { outcome: "blocked", reason: "no_recipients" };
+    }
+  }
 
   const claim = await claimDeliverySlot(
     db,
@@ -336,6 +369,9 @@ export async function sendNewsletterEmail(
   });
 
   if (chunkResult.ok === false) {
+    if (chunkResult.kind === "blocked") {
+      return { outcome: "blocked", reason: chunkResult.reason };
+    }
     if (chunkResult.kind === "needs_review") {
       return { outcome: "needs_review", message: chunkResult.message };
     }
@@ -357,7 +393,7 @@ export async function sendNewsletterEmail(
     postId: input.postId,
     channel: "email",
     idempotencyKey: input.idempotencyKey,
-    actor: "adam",
+    actor: input.actor ?? "adam",
   });
 
   return {
@@ -365,4 +401,19 @@ export async function sendNewsletterEmail(
     broadcastId: chunkResult.broadcastId,
     dryRun: false,
   };
+}
+
+export async function deliverNewsletterEmailBestEffort(
+  db: DearCreativeDb,
+  input: DeliverEmailInput,
+): Promise<DeliverEmailResult> {
+  try {
+    return await sendNewsletterEmail(db, input);
+  } catch (error) {
+    console.error("[deliver-email] unexpected delivery failure", error);
+    return {
+      outcome: "provider_failed",
+      errorMessage: formatProviderFailureMessage(error),
+    };
+  }
 }

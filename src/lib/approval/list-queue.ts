@@ -1,6 +1,11 @@
-import { desc, eq, notInArray } from "drizzle-orm";
+import { and, desc, eq, notInArray } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
-import { approvals, posts } from "@/db/schema";
+import {
+  approvals,
+  deliveryReceipts,
+  posts,
+  type DeliveryReceiptStatus,
+} from "@/db/schema";
 
 export type ApprovalQueueItem = {
   postId: string;
@@ -14,6 +19,9 @@ export type ApprovalQueueItem = {
   bodyHtml: string | null;
   contentHash: string;
   createdAt: string;
+  emailDeliveryStatus: DeliveryReceiptStatus | null;
+  emailDeliveredAt: string | null;
+  emailDeliveryError: string | null;
 };
 
 export async function listApprovalQueue(
@@ -32,9 +40,19 @@ export async function listApprovalQueue(
       bodyHtml: posts.bodyHtml,
       contentHash: approvals.contentHash,
       createdAt: approvals.createdAt,
+      emailDeliveryStatus: deliveryReceipts.status,
+      emailCompletedAt: deliveryReceipts.completedAt,
+      emailDeliveryError: deliveryReceipts.lastError,
     })
     .from(approvals)
     .innerJoin(posts, eq(approvals.postId, posts.id))
+    .leftJoin(
+      deliveryReceipts,
+      and(
+        eq(deliveryReceipts.postId, approvals.postId),
+        eq(deliveryReceipts.channel, "email"),
+      ),
+    )
     .where(notInArray(posts.status, ["deleted", "scheduled"]))
     .orderBy(desc(approvals.createdAt));
 
@@ -50,5 +68,11 @@ export async function listApprovalQueue(
     bodyHtml: row.bodyHtml,
     contentHash: row.contentHash,
     createdAt: row.createdAt.toISOString(),
+    emailDeliveryStatus: row.emailDeliveryStatus ?? null,
+    emailDeliveredAt:
+      row.emailDeliveryStatus === "completed" && row.emailCompletedAt
+        ? row.emailCompletedAt.toISOString()
+        : null,
+    emailDeliveryError: row.emailDeliveryError ?? null,
   }));
 }

@@ -439,6 +439,9 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
   const [approvals, setApprovals] = useState<ApprovalQueueItem[]>([]);
   const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
   const [actingOnPostId, setActingOnPostId] = useState<string | null>(null);
+  const [sendingEmailPostId, setSendingEmailPostId] = useState<string | null>(
+    null,
+  );
 
   // Published & Draft Posts Editor state
   const [adminPosts, setAdminPosts] = useState<AdminPostRecord[]>([]);
@@ -1660,7 +1663,15 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
         const res = await authFetch(`/api/approvals/${postId}/${decision}`, {
           method: "POST",
         });
-        const data = (await res.json()) as { error?: string };
+        const data = (await res.json()) as {
+          error?: string;
+          emailDelivery?: {
+            outcome?: string;
+            reason?: string;
+            errorMessage?: string;
+            message?: string;
+          };
+        };
         if (!res.ok) {
           setStatusBanner({
             kind: "error",
@@ -1669,18 +1680,153 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
           return;
         }
         await loadStudioData();
-        setStatusBanner({
-          kind: "success",
-          text:
-            decision === "approve"
-              ? "Post approved and published to Dear Creative!"
-              : "Draft rejected.",
-        });
+        if (decision === "reject") {
+          setStatusBanner({
+            kind: "success",
+            text: "Draft rejected.",
+          });
+          return;
+        }
+
+        const emailDelivery = data.emailDelivery;
+        if (emailDelivery?.outcome === "sent") {
+          setStatusBanner({
+            kind: "success",
+            text: "Post approved, published, and newsletter email sent!",
+          });
+        } else if (emailDelivery?.outcome === "blocked") {
+          if (emailDelivery.reason === "already_delivered") {
+            setStatusBanner({
+              kind: "info",
+              text: "Post approved and published. Newsletter email was already sent earlier.",
+            });
+          } else if (emailDelivery.reason === "no_recipients") {
+            setStatusBanner({
+              kind: "success",
+              text: "Post approved and published! No active email subscribers to send to yet.",
+            });
+          } else if (emailDelivery.reason === "client_unconfigured") {
+            setStatusBanner({
+              kind: "info",
+              text: "Post approved and published. Email delivery is not configured yet.",
+            });
+          } else {
+            setStatusBanner({
+              kind: "info",
+              text: `Post approved and published. Email skipped (${emailDelivery.reason ?? "blocked"}).`,
+            });
+          }
+        } else if (emailDelivery?.outcome === "provider_failed") {
+          setStatusBanner({
+            kind: "error",
+            text: `Post approved and published, but newsletter email failed: ${emailDelivery.errorMessage ?? "provider error"}. You can retry from the Approval Queue.`,
+          });
+        } else if (emailDelivery?.outcome === "needs_review") {
+          setStatusBanner({
+            kind: "error",
+            text: `Post approved and published, but newsletter email needs admin review: ${emailDelivery.message ?? "manual review required"}.`,
+          });
+        } else {
+          setStatusBanner({
+            kind: "success",
+            text: "Post approved and published to Dear Creative!",
+          });
+        }
       } finally {
         setActingOnPostId(null);
       }
     },
-    [authFetch, loadStudioData],
+    [authFetch, loadStudioData, setStatusBanner],
+  );
+
+  // --- Send Newsletter Email Manually ---
+  const handleSendNewsletterEmail = useCallback(
+    async (item: ApprovalQueueItem) => {
+      if (
+        item.emailDeliveryStatus === "completed" ||
+        sendingEmailPostId === item.postId
+      ) {
+        return;
+      }
+      setSendingEmailPostId(item.postId);
+      setStatusBanner(null);
+      try {
+        const res = await authFetch("/api/adam/deliver/email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            postId: item.postId,
+            idempotencyKey: `manual:${item.postId}:email:${Date.now()}`,
+          }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          outcome?: string;
+          reason?: string;
+          error?: string;
+          message?: string;
+        };
+        await loadStudioData();
+
+        if (res.ok || data.outcome === "sent") {
+          setStatusBanner({
+            kind: "success",
+            text: `Newsletter email sent for “${item.title}”.`,
+          });
+          return;
+        }
+
+        if (data.reason === "already_delivered") {
+          setStatusBanner({
+            kind: "info",
+            text: `Newsletter email was already sent for “${item.title}”.`,
+          });
+        } else if (data.reason === "in_progress") {
+          setStatusBanner({
+            kind: "info",
+            text: `Newsletter email delivery is already in progress for “${item.title}”.`,
+          });
+        } else if (data.reason === "client_unconfigured") {
+          setStatusBanner({
+            kind: "error",
+            text: "Email delivery is not configured (missing Resend or site URL/token secrets).",
+          });
+        } else if (data.reason === "no_recipients") {
+          setStatusBanner({
+            kind: "info",
+            text: "No active subscribers to email yet.",
+          });
+        } else if (data.reason === "approval_expired") {
+          setStatusBanner({
+            kind: "error",
+            text: "Approval window (48 hours) has expired for email delivery.",
+          });
+        } else if (data.reason === "content_changed") {
+          setStatusBanner({
+            kind: "error",
+            text: "Post content changed since approval; cannot send newsletter email.",
+          });
+        } else {
+          setStatusBanner({
+            kind: "error",
+            text:
+              data.message ||
+              data.error ||
+              "Failed to send newsletter email.",
+          });
+        }
+      } catch (err) {
+        setStatusBanner({
+          kind: "error",
+          text:
+            err instanceof Error
+              ? err.message
+              : "Failed to send newsletter email.",
+        });
+      } finally {
+        setSendingEmailPostId(null);
+      }
+    },
+    [authFetch, loadStudioData, sendingEmailPostId, setStatusBanner],
   );
 
   // --- Save & Run Schedule ---
@@ -4641,7 +4787,8 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
               </h2>
               <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
                 Review drafts created by Adam. Approving a post publishes it to
-                Dear Creative and unlocks the 48-hour delivery gate.
+                Dear Creative and sends the newsletter email to subscribers (once
+                per post).
               </p>
             </div>
           </div>
@@ -4655,6 +4802,10 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
             <ul className="mt-6 space-y-4">
               {approvals.map((item) => {
                 const isExpanded = expandedPostId === item.postId;
+                const emailStatus = item.emailDeliveryStatus ?? null;
+                const isSendingEmail =
+                  sendingEmailPostId === item.postId ||
+                  emailStatus === "pending";
                 return (
                   <li
                     key={item.postId}
@@ -4662,7 +4813,7 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                   >
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span
                             className={`rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase ${
                               item.status === "pending"
@@ -4674,6 +4825,23 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                           >
                             {item.status}
                           </span>
+                          {emailStatus === "completed" ? (
+                            <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                              Email Sent
+                            </span>
+                          ) : emailStatus === "pending" ? (
+                            <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-300">
+                              Email Sending…
+                            </span>
+                          ) : emailStatus === "failed" ? (
+                            <span className="rounded-full bg-red-500/15 px-2.5 py-0.5 text-xs font-medium text-red-700 dark:text-red-300">
+                              Email Failed
+                            </span>
+                          ) : emailStatus === "needs_review" ? (
+                            <span className="rounded-full bg-orange-500/15 px-2.5 py-0.5 text-xs font-medium text-orange-800 dark:text-orange-300">
+                              Email Needs Review
+                            </span>
+                          ) : null}
                           <code className="text-xs text-zinc-500">
                             /{item.slug}
                           </code>
@@ -4687,6 +4855,13 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                         {item.teaserText ? (
                           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
                             {item.teaserText}
+                          </p>
+                        ) : null}
+                        {(emailStatus === "failed" ||
+                          emailStatus === "needs_review") &&
+                        item.emailDeliveryError ? (
+                          <p className="mt-1 text-xs text-red-700 dark:text-red-300">
+                            Email error: {item.emailDeliveryError}
                           </p>
                         ) : null}
                       </div>
@@ -4752,12 +4927,31 @@ export function AdamStudio({ initialTab = "chat" }: { initialTab?: StudioTab }) 
                             </button>
                           </>
                         ) : item.status === "approved" ? (
-                          <Link
-                            href={`/posts/${item.slug}`}
-                            className="rounded-lg bg-zinc-900 px-3.5 py-1.5 text-xs font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
-                          >
-                            View Published Post →
-                          </Link>
+                          <>
+                            {emailStatus !== "completed" &&
+                            emailStatus !== "needs_review" ? (
+                              <button
+                                type="button"
+                                disabled={isSendingEmail}
+                                onClick={() =>
+                                  void handleSendNewsletterEmail(item)
+                                }
+                                className="rounded-lg bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+                              >
+                                {isSendingEmail
+                                  ? "Sending…"
+                                  : emailStatus === "failed"
+                                    ? "Retry Newsletter"
+                                    : "Send Newsletter"}
+                              </button>
+                            ) : null}
+                            <Link
+                              href={`/posts/${item.slug}`}
+                              className="rounded-lg bg-zinc-900 px-3.5 py-1.5 text-xs font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+                            >
+                              View Published Post →
+                            </Link>
+                          </>
                         ) : null}
                       </div>
                     </div>

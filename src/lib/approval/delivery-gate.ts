@@ -1,9 +1,10 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { DearCreativeDb } from "@/db/client";
 import { corePostColumns, ensurePostsSchema } from "@/db/ensure-schema";
 import {
   approvals,
   deliveryChannelEnum,
+  deliveryReceipts,
   posts,
   type DeliveryChannel,
 } from "@/db/schema";
@@ -26,6 +27,7 @@ export type DeliveryGatePost = {
   teaserText: string | null;
   emailSubject: string | null;
   emailHtml: string | null;
+  bodyHtml: string | null;
   sponsorId: string | null;
 };
 
@@ -53,11 +55,30 @@ export async function assertDeliverable(
   if (!post || post.status === "deleted") {
     return { ok: false, reason: "not_found" };
   }
+  if (!deliveryChannelEnum.includes(channel)) {
+    return { ok: false, reason: "not_found" };
+  }
+
+  const completedRows = await db
+    .select({ id: deliveryReceipts.id })
+    .from(deliveryReceipts)
+    .where(
+      and(
+        eq(deliveryReceipts.postId, postId),
+        eq(deliveryReceipts.channel, channel),
+        eq(deliveryReceipts.status, "completed"),
+      ),
+    )
+    .limit(1);
+  if (completedRows[0]) {
+    return { ok: false, reason: "already_delivered" };
+  }
+
   if (post.status === "scheduled") {
     return { ok: false, reason: "not_approved" };
   }
 
-  if (post.source === "paragraph") {
+  if (post.source === "paragraph" || post.source === "beehiiv") {
     return { ok: false, reason: "imported_archive" };
   }
 
@@ -77,10 +98,6 @@ export async function assertDeliverable(
 
   if (now.getTime() - approval.approvedAt.getTime() > APPROVAL_MAX_AGE_MS) {
     return { ok: false, reason: "approval_expired" };
-  }
-
-  if (!deliveryChannelEnum.includes(channel)) {
-    return { ok: false, reason: "not_found" };
   }
 
   return { ok: true, value: { post, approvalId: approval.id } };

@@ -872,4 +872,169 @@ describe("sendNewsletterEmail", () => {
       expect(result.errorMessage).toContain("timed out");
     }
   });
+
+  it("blocks duplicate email delivery with already_delivered even for new idempotencyKey or dryRun", async () => {
+    process.env.RESEND_LIVE = "true";
+    batchSend.mockResolvedValue({
+      data: { data: [{ id: "email-first" }] },
+      error: null,
+    });
+
+    const db = await createTestDb();
+    const postId = await seedApprovedNewsletterPost(db, { subscriberCount: 1 });
+
+    const first = await sendNewsletterEmail(db, {
+      postId,
+      idempotencyKey: "post:dup-first",
+    });
+    expect(first.outcome).toBe("sent");
+    expect(batchSend).toHaveBeenCalledTimes(1);
+
+    const second = await sendNewsletterEmail(db, {
+      postId,
+      idempotencyKey: "post:dup-second",
+    });
+    expect(second).toEqual({ outcome: "blocked", reason: "already_delivered" });
+
+    const dry = await sendNewsletterEmail(db, {
+      postId,
+      idempotencyKey: "post:dup-dry",
+      dryRun: true,
+    });
+    expect(dry).toEqual({ outcome: "blocked", reason: "already_delivered" });
+    expect(batchSend).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to title and bodyHtml when emailSubject/emailHtml are null, and returns not_found when both HTML fields are empty", async () => {
+    process.env.RESEND_LIVE = "true";
+    batchSend.mockResolvedValue({
+      data: { data: [{ id: "email-fallback" }] },
+      error: null,
+    });
+
+    const db = await createTestDb();
+    const fallbackPostId = randomUUID();
+    const fallbackRow = {
+      id: fallbackPostId,
+      slug: "fallback-post",
+      title: "Fallback Title",
+      status: "published" as const,
+      teaserText: "Teaser",
+      emailSubject: null,
+      emailHtml: null,
+      bodyHtml: "<p>Body fallback HTML</p>",
+      sponsorId: null,
+    };
+    await db.insert(posts).values(fallbackRow);
+    await db.insert(approvals).values({
+      id: randomUUID(),
+      postId: fallbackPostId,
+      status: "approved",
+      contentHash: contentHashForPost(fallbackRow),
+      approvedAt: new Date(),
+      approvedBy: "did:privy:g2",
+    });
+    await db.insert(subscribers).values({
+      id: randomUUID(),
+      email: "reader@example.test",
+      status: "subscribed",
+      source: "signup",
+      subscribedAt: new Date(),
+    });
+
+    const sent = await sendNewsletterEmail(db, {
+      postId: fallbackPostId,
+      idempotencyKey: "post:fallback-send",
+    });
+    expect(sent.outcome).toBe("sent");
+    expect(batchSend).toHaveBeenCalledTimes(1);
+    const [payload] = batchSend.mock.calls[0] as [
+      { subject: string; html: string }[],
+    ];
+    expect(payload[0]?.subject).toBe("Fallback Title");
+    expect(payload[0]?.html).toBe("<p>Body fallback HTML</p>");
+
+    const emptyPostId = randomUUID();
+    const emptyRow = {
+      id: emptyPostId,
+      slug: "empty-html-post",
+      title: "Empty HTML",
+      status: "published" as const,
+      teaserText: "Teaser",
+      emailSubject: null,
+      emailHtml: "   ",
+      bodyHtml: null,
+      sponsorId: null,
+    };
+    await db.insert(posts).values(emptyRow);
+    await db.insert(approvals).values({
+      id: randomUUID(),
+      postId: emptyPostId,
+      status: "approved",
+      contentHash: contentHashForPost(emptyRow),
+      approvedAt: new Date(),
+      approvedBy: "did:privy:g2",
+    });
+
+    const blocked = await sendNewsletterEmail(db, {
+      postId: emptyPostId,
+      idempotencyKey: "post:empty-html",
+    });
+    expect(blocked).toEqual({ outcome: "blocked", reason: "not_found" });
+  });
+
+  it("returns no_recipients without creating a receipt when there are 0 subscribers", async () => {
+    process.env.RESEND_LIVE = "true";
+    const db = await createTestDb();
+    const postId = await seedApprovedNewsletterPost(db, { subscriberCount: 0 });
+
+    const result = await sendNewsletterEmail(db, {
+      postId,
+      idempotencyKey: "post:no-subs",
+    });
+
+    expect(result).toEqual({ outcome: "blocked", reason: "no_recipients" });
+    expect(batchSend).not.toHaveBeenCalled();
+    expect(
+      await db
+        .select()
+        .from(deliveryReceipts)
+        .where(eq(deliveryReceipts.postId, postId)),
+    ).toEqual([]);
+  });
+
+  it("returns client_unconfigured without creating a receipt when RESEND_LIVE is true and site URL or token secret is missing", async () => {
+    process.env.RESEND_LIVE = "true";
+    delete process.env.NEXT_PUBLIC_SITE_URL;
+    const db = await createTestDb();
+    const postId = await seedApprovedNewsletterPost(db, { subscriberCount: 1 });
+
+    const missingUrl = await sendNewsletterEmail(db, {
+      postId,
+      idempotencyKey: "post:missing-site-url",
+    });
+    expect(missingUrl).toEqual({
+      outcome: "blocked",
+      reason: "client_unconfigured",
+    });
+
+    process.env.NEXT_PUBLIC_SITE_URL = "https://dear.example.test";
+    delete process.env.SUBSCRIBER_TOKEN_SECRET;
+    const missingSecret = await sendNewsletterEmail(db, {
+      postId,
+      idempotencyKey: "post:missing-unsub-secret",
+    });
+    expect(missingSecret).toEqual({
+      outcome: "blocked",
+      reason: "client_unconfigured",
+    });
+
+    expect(batchSend).not.toHaveBeenCalled();
+    expect(
+      await db
+        .select()
+        .from(deliveryReceipts)
+        .where(eq(deliveryReceipts.postId, postId)),
+    ).toEqual([]);
+  });
 });
