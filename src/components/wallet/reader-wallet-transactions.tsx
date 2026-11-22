@@ -8,6 +8,7 @@ import {
   buildAdminWalletSendCall,
   validateAdminWalletSendInput,
 } from "@/lib/wallet/send-validation";
+import { useGasSponsorship } from "@/lib/wallet/use-gas-sponsorship";
 
 export function ReaderWalletCreateButton({ onCreated }: { onCreated: () => Promise<void> }) {
   const { createWallet } = useCreateWallet();
@@ -40,6 +41,7 @@ export function ReaderWalletCreateButton({ onCreated }: { onCreated: () => Promi
 export function ReaderWalletSend({ address, balance }: { address: string; balance?: string }) {
   const { wallets } = useWallets();
   const { sendTransaction } = useSendTransaction();
+  const { sponsored } = useGasSponsorship();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const submitting = useRef(false);
@@ -81,7 +83,11 @@ export function ReaderWalletSend({ address, balance }: { address: string; balanc
             const transaction = buildAdminWalletSendCall(result);
             const sent = await sendTransaction(
               { ...transaction, chainId: base.id },
-              { address: fromAddress, uiOptions: { showWalletUIs: true } },
+              {
+                address: fromAddress,
+                uiOptions: { showWalletUIs: true },
+                ...(sponsored ? { sponsor: true } : {}),
+              },
             );
             setHash(sent.hash);
             form.reset();
