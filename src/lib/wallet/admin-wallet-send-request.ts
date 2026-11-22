@@ -9,7 +9,6 @@ import {
   validateAdminWalletSendInput,
 } from "./send-validation";
 import { estimateAdminWalletSendGas } from "./send-gas-estimate";
-import { isPrivyEmbeddedGasSponsorshipEnabled } from "./embedded-gas-sponsorship";
 
 export const ADMIN_WALLET_SEND_VALIDATION_ERROR =
   "Unable to validate wallet send. Try again later.";
@@ -21,6 +20,7 @@ export type AdminWalletSendRequestBody = {
 
 export async function resolveAdminWalletSendValidation(
   body: AdminWalletSendRequestBody,
+  options: { gasSponsorshipAvailable?: boolean } = {},
 ) {
   const config = resolveAdminWalletConfig();
   if (!config.configured) {
@@ -70,15 +70,17 @@ export async function resolveAdminWalletSendValidation(
     call,
     gas,
     chain: { network: "base", chainId: 8453 },
-    gasSponsorshipAvailable: isPrivyEmbeddedGasSponsorshipEnabled(),
+    // Sponsored only for an active Creator Pass holder (decided by the route).
+    gasSponsorshipAvailable: Boolean(options.gasSponsorshipAvailable),
   };
 }
 
 export async function resolveAdminWalletSendValidationSafe(
   body: AdminWalletSendRequestBody,
+  options: { gasSponsorshipAvailable?: boolean } = {},
 ) {
   try {
-    return await resolveAdminWalletSendValidation(body);
+    return await resolveAdminWalletSendValidation(body, options);
   } catch {
     return {
       ok: false as const,
