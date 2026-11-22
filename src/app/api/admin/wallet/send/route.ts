@@ -1,5 +1,6 @@
 import { connection, NextResponse } from "next/server";
 import { resolveAdminWalletSendValidationSafe } from "@/lib/wallet/admin-wallet-send-request";
+import { resolveGasSponsorshipFromAuthorization } from "@/lib/wallet/gas-sponsorship";
 import { requireAdminWalletSendApi } from "@/lib/wallet/require-admin-wallet-send-api";
 
 type SendBody = {
@@ -21,7 +22,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  const parsed = await resolveAdminWalletSendValidationSafe(body);
+  const gasSponsorship = await resolveGasSponsorshipFromAuthorization(
+    request.headers.get("authorization"),
+  );
+  const parsed = await resolveAdminWalletSendValidationSafe(body, {
+    gasSponsorshipAvailable: gasSponsorship.mode === "sponsored",
+  });
   if (!parsed.ok) {
     return NextResponse.json(
       { error: parsed.error, ...(parsed.field ? { field: parsed.field } : {}) },

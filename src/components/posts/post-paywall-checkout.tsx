@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { encodeFunctionData, erc20Abi, type Address } from "viem";
 import { useSendTransaction } from "@privy-io/react-auth";
 import { useAuthSession } from "@/components/providers/app-providers";
+import { useGasSponsorship } from "@/lib/wallet/use-gas-sponsorship";
 
 export type PostPaywallCheckoutProps = {
   title: string;
@@ -37,6 +38,7 @@ export function PostPaywallCheckout({
   const { authenticated, login, getAccessToken, privyConfigured } =
     useAuthSession();
   const { sendTransaction } = useSendTransaction();
+  const { sponsored } = useGasSponsorship();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -50,14 +52,17 @@ export function PostPaywallCheckout({
         functionName: "transfer",
         args: [to, BigInt(amountRaw)],
       });
-      const { hash } = await sendTransaction({
-        to: tokenAddress as Address,
-        data,
-        chainId,
-      });
+      const { hash } = await sendTransaction(
+        {
+          to: tokenAddress as Address,
+          data,
+          chainId,
+        },
+        sponsored ? { sponsor: true } : undefined,
+      );
       return hash;
     },
-    [chainId, sendTransaction, tokenAddress],
+    [chainId, sendTransaction, sponsored, tokenAddress],
   );
 
   const verifyUnlock = useCallback(
