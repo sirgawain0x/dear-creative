@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { STUDIO_TOKEN_FIXTURE } from "./e2e/fixtures/adam-posts-fixture";
 
 export default defineConfig({
   testDir: "e2e",
@@ -21,6 +22,8 @@ export default defineConfig({
       READER_WALLET_ENABLED: "true",
       READER_WALLET_E2E_AUTH: "true",
       READER_WALLET_FIXTURE: "true",
+      // Server-side studio gate: the layout tests present this as the Studio Key cookie.
+      ADAM_API_TOKEN: STUDIO_TOKEN_FIXTURE,
     },
   },
   projects: [
