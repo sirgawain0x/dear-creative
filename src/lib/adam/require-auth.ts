@@ -22,6 +22,18 @@ export function getAdamApiToken(): string | undefined {
   return process.env.ADAM_API_TOKEN?.trim() || undefined;
 }
 
+/**
+ * True when the presented value equals ADAM_API_TOKEN (constant-time compare).
+ * Used for the Studio Key cookie so the page gate and API gate agree.
+ */
+export function isAdamApiToken(token: string | null | undefined): boolean {
+  const expected = getAdamApiToken();
+  if (!expected || !token) {
+    return false;
+  }
+  return tokensMatch(token, expected);
+}
+
 export function requireAdamAuth(request: Request): AdamAuthResult {
   const expected = getAdamApiToken();
   if (!expected) {

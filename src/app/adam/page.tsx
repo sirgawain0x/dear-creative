@@ -4,8 +4,10 @@ import { Suspense } from "react";
 import { getDb } from "@/db/client";
 import { buildPostPageMetadata } from "@/lib/posts/post-page-metadata";
 import { getPublishedPostBySlug } from "@/lib/posts/published-posts";
-import { AdamStudio } from "./adam-studio";
 import { STUDIO_PAGE_MAIN_CLASS } from "./studio-page-main-class";
+import { StudioAccessGate } from "./studio-access-gate";
+
+export const instant = false;
 
 export async function generateMetadata({
   searchParams,
@@ -25,10 +27,24 @@ async function RequestTimeMetadata() {
   return null;
 }
 
+function StudioAccessFallback() {
+  return (
+    <div className="min-w-0 w-full">
+      <p className="text-zinc-500">Loading Adam Studio…</p>
+    </div>
+  );
+}
+
+/**
+ * Adam Studio is members-only. `StudioAccessGate` checks the Privy session's
+ * linked wallets against the Studio allowlist and the Creative Creator Pass.
+ */
 export default function AdamPage() {
   return (
     <main className={STUDIO_PAGE_MAIN_CLASS}>
-      <AdamStudio initialTab="chat" />
+      <Suspense fallback={<StudioAccessFallback />}>
+        <StudioAccessGate initialTab="chat" />
+      </Suspense>
       <Suspense fallback={null}>
         <RequestTimeMetadata />
       </Suspense>

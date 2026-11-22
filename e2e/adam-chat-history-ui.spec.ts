@@ -11,6 +11,7 @@ import {
   STUDIO_TOKEN_FIXTURE,
 } from "./fixtures/adam-posts-fixture";
 import { READER_WALLET_E2E_STORAGE_KEY } from "../src/lib/wallet/reader-wallet-e2e-auth";
+import { grantStudioFixtureAccess } from "./fixtures/studio-fixture-session";
 
 const PR_ASSET_DIR = "docs/pr-assets/adam-chat-history-ui";
 
@@ -18,6 +19,7 @@ async function installStudioFixtureSession(
   page: import("@playwright/test").Page,
   width: number,
 ) {
+  await grantStudioFixtureAccess(page);
   await page.setViewportSize({ width, height: 900 });
   await page.addInitScript(
     ({ token, e2eKey }) => {

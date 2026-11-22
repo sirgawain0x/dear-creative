@@ -13,6 +13,7 @@ import {
   STUDIO_TOKEN_FIXTURE,
 } from "./fixtures/adam-posts-fixture";
 import { READER_WALLET_E2E_STORAGE_KEY } from "../src/lib/wallet/reader-wallet-e2e-auth";
+import { grantStudioFixtureAccess } from "./fixtures/studio-fixture-session";
 
 async function mockAdamStudioApis(page: Page) {
   const posts = buildAdamPostsFixture(40);
@@ -134,6 +135,7 @@ async function openAdamChatTab(page: Page, width: number) {
 }
 
 async function installStudioFixtureSession(page: Page, width: number) {
+  await grantStudioFixtureAccess(page);
   await page.setViewportSize({ width, height: 900 });
   await page.addInitScript(
     ({ token, e2eKey }) => {
